@@ -1,0 +1,9 @@
+{
+  "name": "sparkle-clean-team",
+  "version": "0.1.0",
+  "description": "캐주얼 청소 게임 'Sparkle Clean(싹싹 클린, 작업명)'을 출시·운영하는 팀 플러그인 — 운영총괄PM, 게임개발·릴리스, 라이브옵스·밸런스, 광고수익화, 광고·마케팅(인스타·틱톡·숏츠 ASMR 숏폼·UA), 데이터분석, CS·정책, 브랜드 제휴·스폰서 영업(실제 성능 기반 청소용품 광고) 8개 담당 스킬",
+  "author": {
+    "name": "Peter"
+  },
+  "keywords": ["game", "cleaning game", "asmr", "sponsorship", "brand partnership", "admob", "capacitor", "liveops", "aso", "ua", "싹싹클린", "청소게임", "스폰서", "광고수익"]
+}

@@ -7,7 +7,7 @@ import { scrubSound, setSoundEnabled, sfx, stopScrub, unlockAudio } from './audi
 import { CleanSession, scoreSession, type Result, type SessionEvent } from './game/engine';
 import { allItems, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
 import { getLevel, LEVELS, type LevelDef } from './game/levels';
-import { performanceRatios } from './game/sponsor';
+import { performanceRatios, REFERENCE_REMOVAL } from './game/sponsor';
 import { detectLang, setLang, t, type Lang } from './i18n';
 import { Renderer } from './render/renderer';
 import { getStore, loadStore, persist, resetStore } from './storage';
@@ -500,7 +500,12 @@ function openEvidence(e: ItemEntry) {
   track('sponsor_evidence_view', { sponsor: p.id });
   const ratios = performanceRatios(p);
   const rows = p.lab
-    .map((l) => `<tr><td>${t(`dirt_${l.dirt}`)}</td><td>${l.removalPct}%</td><td>${t('vsStandard', { pct: Math.round(ratios[l.dirt] * 100) })}</td></tr>`)
+    .map((l) => {
+      const ref = REFERENCE_REMOVAL[p.base]?.[l.dirt];
+      const raw = ref ? l.removalPct / ref : null;
+      const cell = raw === null ? t('notApplied') : `${t('vsStandard', { pct: Math.round(ratios[l.dirt] * 100) })}${Math.abs(raw - ratios[l.dirt]) > 0.005 ? ` (${t('capped')})` : ''}`;
+      return `<tr><td>${t(`dirt_${l.dirt}`)}</td><td>${l.removalPct}%</td><td>${cell}</td></tr>`;
+    })
     .join('');
   const ev = p.evidence!;
   modal(
