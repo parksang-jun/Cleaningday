@@ -581,3 +581,168 @@ button {
   font-weight: 900;
   letter-spacing: 0.1em;
 }
+
+/* ---------- 월드·구역 ---------- */
+.world {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.areas {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  text-align: left;
+  box-shadow: 0 2px 0 var(--line);
+}
+.area.is-locked {
+  opacity: 0.55;
+}
+.area__icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.area__name {
+  font-weight: 800;
+  flex: 1;
+}
+.area__meta {
+  font-size: 11px;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+.stage__tier,
+.hud__tier {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--primary);
+  background: #e3f7f4;
+  border-radius: 6px;
+  padding: 1px 5px;
+  vertical-align: middle;
+}
+
+/* ---------- 제한시간·통과선·세제 용량 ---------- */
+.bar {
+  position: relative;
+}
+.bar__mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--accent);
+  transform: translateX(-1px);
+}
+.hud__limit {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.hud__limit.is-urgent {
+  color: var(--warn);
+  animation: pulse 0.6s infinite alternate;
+}
+@keyframes pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.45;
+  }
+}
+.tool__budget {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 2px auto 0;
+  border-radius: 99px;
+  background: #e6eeee;
+  overflow: hidden;
+}
+.tool__budget i {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.2s;
+}
+.tool__budget.is-empty {
+  background: #ffd9d6;
+}
+
+/* ---------- 상점 탭·마켓 칩·추천 ---------- */
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  flex: 1;
+  padding: 8px 6px;
+  border: 0;
+  background: none;
+  font-weight: 800;
+  color: var(--ink2);
+  border-bottom: 3px solid transparent;
+}
+.tab.is-on {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+.chip {
+  padding: 6px 12px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  font-size: 13px;
+  font-weight: 700;
+}
+.chip.is-on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-ink);
+}
+.mall h3 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+}
+.rec {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px dashed var(--line);
+  background: #f6fbfb;
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+}
+.rec__icon svg {
+  width: 36px;
+  height: 36px;
+}
+.rec__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}

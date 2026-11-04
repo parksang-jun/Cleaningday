@@ -49,6 +49,9 @@ export interface SponsorProduct {
   /** 데모용 가상 브랜드 여부 */
   sample?: boolean
   tagline?: string
+  /** 실제 제품 구매 페이지 (마켓별 제휴 링크가 우선) */
+  productUrl?: string
+  links?: Partial<Record<'coupang' | 'amazon_us' | 'amazon_jp' | 'rakuten', string>>
 }
 
 /** 일반 기준 제품의 같은 시험 기준 제거율(%) — 운영사가 자체 시험으로 갱신 */
@@ -58,6 +61,7 @@ export const REFERENCE_REMOVAL: Record<ToolId | DetergentId, Partial<Record<Dirt
   brush: { mud: 85, stain: 60, scale: 45, mold: 55 },
   vacuum: { dust: 95 },
   washer: { mud: 92, dust: 80, mold: 45 },
+  rinse: { dust: 50, mud: 60 },
   allpurpose: { grease: 55, stain: 60, mud: 70 },
   degreaser: { grease: 80, stain: 55 },
   descaler: { scale: 75, stain: 40 },
@@ -65,7 +69,7 @@ export const REFERENCE_REMOVAL: Record<ToolId | DetergentId, Partial<Record<Dirt
 }
 
 /** 기준 제품의 1분당 닦는 면적(m²) */
-export const REFERENCE_COVERAGE: Partial<Record<ToolId, number>> = { cloth: 1.2, sponge: 0.9, brush: 0.5, vacuum: 3.0, washer: 6.0 }
+export const REFERENCE_COVERAGE: Partial<Record<ToolId, number>> = { cloth: 1.2, sponge: 0.9, brush: 0.5, vacuum: 3.0, washer: 6.0, rinse: 2.0 }
 
 export const RATIO_MIN = 0.5
 export const RATIO_MAX = 1.8
@@ -158,6 +162,7 @@ export const SAMPLE_SPONSORS: SponsorProduct[] = [
     campaign: { start: '2026-01-01', end: '2027-12-31' },
     sample: true,
     tagline: 'Cuts kitchen grease fast',
+    productUrl: 'https://example.com/brightmax',
   },
   {
     id: 'aquajet-washer',
@@ -175,5 +180,6 @@ export const SAMPLE_SPONSORS: SponsorProduct[] = [
     campaign: { start: '2026-01-01', end: '2027-12-31' },
     sample: true,
     tagline: 'Outdoor mud, gone',
+    productUrl: 'https://example.com/aquajet',
   },
 ]

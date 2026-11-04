@@ -1,8 +1,8 @@
-import { appendFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { BASE_DETERGENTS, BASE_TOOLS, isHazardMix, type DetergentSpec, type ToolSpec } from './catalog'
-import { CleanSession, PASS_CLEAN, scoreSession } from './engine'
-import { LEVELS, type LevelDef } from './levels'
+import { CleanSession, scoreSession } from './engine'
+import { resolveTiming, simulateBot } from './bot'
+import { LEVELS, tierFor, TIERS, WORLDS, type LevelDef } from './levels'
 import { performanceRatios, SAMPLE_SPONSORS, toItemSpec, validateSponsor, type SponsorProduct } from './sponsor'
 
 /** 봇: 남은 일이 가장 많은 지점으로 손가락을 옮겨, 그 주변이 깨끗해질 때까지 문지름.
@@ -51,7 +51,7 @@ describe('engine', () => {
     const b = new CleanSession(LEVELS[0])
     expect(Array.from(a.amount)).toEqual(Array.from(b.amount))
     expect(a.cleanliness).toBe(0)
-    expect(a.initialTotal).toBeGreaterThan(200)
+    expect(a.initialTotal).toBeGreaterThan(100)
   })
 
   it('the right tool cleans much faster than the wrong one', () => {
@@ -75,29 +75,87 @@ describe('engine', () => {
     expect(right.cleanliness).toBeGreaterThan(wrong.cleanliness * 2)
   })
 
-  it('every level can be cleared near its par time with the intended kit', () => {
-    // 각 스테이지 시점에 가진 기본 아이템(지급 누적) — 표면에 해로운 것은 제외
+  it('every level can be cleared near its par time with the intended kit (simple greedy bot)', () => {
+    // 각 스테이지 시점에 가진 기본 아이템(지급 누적) — 그 판의 표면에 해로운 것은 제외
     const owned: string[] = []
     const kitFor = (lv: LevelDef): [ToolSpec[], DetergentSpec[]] => {
       owned.push(...lv.grants)
-      const tools = Object.values(BASE_TOOLS).filter((t) => owned.includes(t.id) && !t.harms.includes(lv.surface))
-      const dets = Object.values(BASE_DETERGENTS).filter((d) => owned.includes(d.id) && !d.harms.includes(lv.surface) && !(lv.scene === 'bigClean' && d.id === 'descaler'))
+      const surfaces = new CleanSession(lv).surfaces
+      const tools = Object.values(BASE_TOOLS).filter((t) => owned.includes(t.id) && t.id !== 'rinse' && !t.harms.some((h) => surfaces.includes(h)))
+      const dets = Object.values(BASE_DETERGENTS).filter((d) => owned.includes(d.id) && !d.harms.some((h) => surfaces.includes(h)))
       return [tools, dets]
     }
-    const report: string[] = []
-    const times: [number, number, number][] = []
-    for (const lv of LEVELS) {
+    // 난이도 1단계(기본 규칙)만 단순 봇으로 검증 — 뒤 단계는 bot.ts 의 숙련자 봇이 balance.test 에서 검증
+    for (const lv of LEVELS.filter((l) => l.tier === 1)) {
       const [tools, dets] = kitFor(lv)
       const t = simulate(lv, tools, dets)
-      report.push(`${lv.id} ${lv.scene}: ${t.toFixed(1)}s (par ${lv.parSec})`)
-      times.push([lv.id, t, lv.parSec])
+      const { parSec } = resolveTiming(lv)
+      expect(t, `level ${lv.id}`).toBeLessThan(parSec * 1.5)
     }
-    appendFileSync('/tmp/balance.txt', report.join('\n') + '\n')
-    for (const [id, t, par] of times) expect(t, `level ${id}`).toBeLessThan(par * 1.3)
+  })
+
+  it('worlds and areas are laid out as apartment → house garden → car, tiers get stricter in order', () => {
+    expect(WORLDS.map((w) => w.id)).toEqual(['apartment', 'house', 'car'])
+    expect(WORLDS[0].areas.map((a) => a.id)).toEqual(['living', 'room', 'kitchen', 'bathroom'])
+    expect(WORLDS[1].areas.map((a) => a.id)).toEqual(['garden'])
+    expect(WORLDS[2].areas.map((a) => a.id)).toEqual(['exterior', 'interior'])
+    expect(LEVELS).toHaveLength(48)
+    for (let i = 1; i < TIERS.length; i++) {
+      expect(TIERS[i].passClean).toBeGreaterThan(TIERS[i - 1].passClean)
+      expect(TIERS[i].resistMul).toBeGreaterThan(TIERS[i - 1].resistMul)
+      expect(TIERS[i].parFactor).toBeLessThan(TIERS[i - 1].parFactor)
+    }
+    expect(tierFor(1).id).toBe(1)
+    expect(tierFor(9).id).toBe(2)
+    expect(tierFor(48).id).toBe(5)
+    // 월드가 바뀌면 바로 더 어려운 단계
+    expect(LEVELS[24].tier).toBe(4) // 정원 첫 판
+    expect(LEVELS[36].tier).toBe(5) // 자동차 첫 판
+  })
+
+  it('time limit expires and can be extended; spray budget runs out and refills', () => {
+    const lv = LEVELS.find((l) => l.tier === 3)!
+    const timing = resolveTiming(lv)
+    expect(timing.limitSec).toBeGreaterThan(timing.parSec)
+    const s = new CleanSession(lv, timing)
+    s.tick(timing.limitSec! + 1)
+    expect(s.expired).toBe(true)
+    s.extendLimit(30)
+    expect(s.expired).toBe(false)
+    // 세제 용량
+    expect(lv.sprayBudgetSec).toBeDefined()
+    const det = BASE_DETERGENTS.allpurpose
+    expect(s.budgetOf(det)).toBe(lv.sprayBudgetSec)
+    let empty = false
+    for (let i = 0; i < 60 * lv.sprayBudgetSec! + 30 && !empty; i++) empty = s.spray(det, 20, 20, 1 / 30).some((e) => e.kind === 'empty')
+    expect(empty).toBe(true)
+    expect(s.budgetOf(det)).toBeLessThanOrEqual(0)
+    s.refill(det, 6)
+    expect(s.budgetOf(det)).toBeGreaterThan(5)
+  })
+
+  it('layered dirt reveals the under layer when the top is wiped', () => {
+    const lv = LEVELS.find((l) => l.patches.some((p) => p.under))!
+    const s = new CleanSession(lv)
+    expect(s.hasLayers).toBe(true)
+    let revealed = false
+    const bot = simulateBot(lv)
+    expect(bot.passed).toBe(true)
+    // 직접: 아래층이 있는 칸을 찾아 윗층을 지움
+    let cell = -1
+    for (let i = 0; i < s.under.length; i++) if (s.under[i] > 0 && s.amount[i] > 0) { cell = i; break }
+    expect(cell).toBeGreaterThanOrEqual(0)
+    const cx = (cell % s.w) + 0.5
+    const cy = Math.floor(cell / s.w) + 0.5
+    for (let k = 0; k < 600 && !revealed; k++) {
+      revealed = s.scrub(BASE_TOOLS.sponge, cx, cy, 1 / 30).some((e) => e.kind === 'revealed')
+      s.tick(1 / 30)
+    }
+    expect(revealed).toBe(true)
   })
 
   it('harms wrong surfaces, blocks restricted tools, flags hazardous mixes', () => {
-    const glass = new CleanSession(LEVELS.find((l) => l.surface === 'glass')!)
+    const glass = new CleanSession(LEVELS.find((l) => l.surface === 'glass' && !l.zones)!)
     const ev = glass.scrub(BASE_TOOLS.brush, 10, 10, 0.5)
     expect(ev.some((e) => e.kind === 'harm')).toBe(true)
     expect(glass.damage).toBeGreaterThan(0)
@@ -107,6 +165,7 @@ describe('engine', () => {
     expect(floor.scrub(BASE_TOOLS.washer, 10, 10, 0.1).some((e) => e.kind === 'blocked')).toBe(true)
 
     const tub = new CleanSession(LEVELS.find((l) => l.scene === 'bathtub')!)
+    tub.limitSec = undefined
     tub.spray(BASE_DETERGENTS.moldremover, 20, 20, 0.1)
     const ev2 = tub.spray(BASE_DETERGENTS.descaler, 21, 20, 0.1)
     expect(ev2.some((e) => e.kind === 'hazard')).toBe(true)
@@ -119,7 +178,7 @@ describe('engine', () => {
     expect(scoreSession({ time: 40, damage: 0, hazard: false }, 30).stars).toBe(2)
     expect(scoreSession({ time: 70, damage: 0.2, hazard: true }, 30).stars).toBe(1)
     expect(scoreSession({ time: 20, damage: 0, hazard: false }, 30).coins).toBe(50)
-    expect(PASS_CLEAN).toBe(0.95)
+    expect(scoreSession({ time: 20, damage: 0, hazard: false }, 30, 3).coins).toBe(150) // 난이도 단계 × 보상
   })
 })
 

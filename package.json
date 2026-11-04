@@ -2,7 +2,7 @@
   "name": "sparkle-clean",
   "private": true,
   "version": "0.1.0",
-  "description": "Sparkle Clean \u2014 casual cleaning game with performance-true sponsored tools",
+  "description": "Sparkle Clean — casual cleaning game with performance-true sponsored tools",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,6 +18,7 @@
     "@capacitor-community/admob": "^8.3.0",
     "@capacitor/android": "^8.6.0",
     "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
     "@capacitor/core": "^8.6.0",
     "@capacitor/haptics": "^8.0.2",
     "@capacitor/ios": "^8.6.0",

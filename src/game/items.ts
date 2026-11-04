@@ -1,15 +1,25 @@
 // 아이템 목록 — 기본(무브랜드) 아이템 + 검증을 통과한 스폰서 아이템
 import { BASE_DETERGENTS, BASE_ITEMS, BASE_TOOLS, DIRT_TYPES, type DirtType, type ItemSpec } from './catalog';
 import { SAMPLE_SPONSORS, toItemSpec, validateSponsor, type SponsorProduct } from './sponsor';
-import { LEVELS } from './levels';
+
+export { grantsUpTo } from './levels';
 
 export interface ItemEntry {
   spec: ItemSpec;
   sponsor?: SponsorProduct;
 }
 
+/** 스폰서 노출 여부 — 웹 포털(Poki/CrazyGames) 빌드는 기본 꺼짐 (포털 정책상 외부 광고·링크 제한) */
+export function sponsorsEnabled(): boolean {
+  const env = import.meta.env;
+  if (env.VITE_SPONSORS_ENABLED === 'false') return false;
+  if (env.VITE_SPONSORS_ENABLED === 'true') return true;
+  return env.VITE_AD_PROVIDER !== 'poki' && env.VITE_AD_PROVIDER !== 'crazygames';
+}
+
 /** 오늘 노출 가능한 스폰서 (원격 설정으로 교체 가능하도록 목록을 인자로 받음) */
 export function activeSponsors(list: SponsorProduct[] = SAMPLE_SPONSORS, today = new Date().toISOString().slice(0, 10)): SponsorProduct[] {
+  if (!sponsorsEnabled()) return [];
   return list.filter((p) => validateSponsor(p, today).length === 0);
 }
 
@@ -19,11 +29,6 @@ export function allItems(sponsors: SponsorProduct[] = activeSponsors()): ItemEnt
 
 export function findItem(id: string, entries: ItemEntry[] = allItems()): ItemEntry | undefined {
   return entries.find((e) => e.spec.id === id);
-}
-
-/** 스테이지 n 시작 시 보유해야 할 기본 아이템 (지급 누적) */
-export function grantsUpTo(levelId: number): string[] {
-  return LEVELS.filter((l) => l.id <= levelId).flatMap((l) => l.grants);
 }
 
 /** 아이템이 특히 잘 듣는 오염 (UI 표시용) */

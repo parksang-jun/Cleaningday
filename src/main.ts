@@ -1,14 +1,17 @@
-// 싹싹 클린 — 앱 셸: 홈(단계 선택) · 게임 · 결과 · 상점(도구·세제, 스폰서 근거) · 설정
+// 싹싹 클린 — 앱 셸: 홈(월드·구역) · 구역(스테이지) · 게임 · 결과 · 상점(게임 도구 / 실제 제품 몰) · 설정
 import './style.css';
 import { Capacitor } from '@capacitor/core';
 import { AdsController } from './ads';
 import { track } from './analytics';
 import { scrubSound, setSoundEnabled, sfx, stopScrub, unlockAudio } from './audio';
-import { CleanSession, scoreSession, type Result, type SessionEvent } from './game/engine';
+import { resolveTiming } from './game/bot';
+import type { DetergentId, ToolId } from './game/catalog';
+import { CleanSession, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
 import { allItems, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
-import { getLevel, LEVELS, type LevelDef } from './game/levels';
+import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type WorldInfo } from './game/levels';
 import { performanceRatios, REFERENCE_REMOVAL } from './game/sponsor';
-import { detectLang, setLang, t, type Lang } from './i18n';
+import { detectLang, getLang, setLang, t, type Lang } from './i18n';
+import { CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MALL_PRODUCTS, MARKET_LABEL, marketsFor, searchUrl, sponsorBuyUrl, type Market } from './mall';
 import { Renderer } from './render/renderer';
 import { getStore, loadStore, persist, resetStore } from './storage';
 import { iconFor } from './ui/icons';
@@ -16,6 +19,8 @@ import { iconFor } from './ui/icons';
 const app = document.getElementById('app')!;
 const ads = new AdsController();
 let items: ItemEntry[] = allItems();
+const EXTEND_SEC = 30;
+const REFILL_SEC = 6;
 
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -37,6 +42,16 @@ function owns(id: string): boolean {
   if (!e) return false;
   if (e.sponsor) return true; // 스폰서 아이템은 무료 사용 (광고 표시)
   return e.spec.cost === 0 || getStore().owned.includes(id);
+}
+
+/** 외부 링크 — 네이티브는 인앱 브라우저, 웹은 새 탭 */
+function openExternal(url: string) {
+  if (!isSafeUrl(url)) return;
+  if (Capacitor.isNativePlatform()) {
+    void import('@capacitor/browser').then(({ Browser }) => Browser.open({ url })).catch(() => window.open(url, '_blank', 'noopener'));
+    return;
+  }
+  window.open(url, '_blank', 'noopener');
 }
 
 // ---------- 모달 ----------
@@ -62,11 +77,42 @@ function toast(text: string, kind: 'info' | 'warn' = 'info') {
   setTimeout(() => el.remove(), 2400);
 }
 
-// ---------- 홈 ----------
+// ---------- 진행 ----------
+function areaUnlocked(a: AreaInfo): boolean {
+  return a.levelIds[0] <= getStore().progress.unlocked;
+}
+function areaStars(a: AreaInfo): number {
+  const st = getStore();
+  return a.levelIds.reduce((n, id) => n + (st.progress.stars[id] ?? 0), 0);
+}
+function nextLevelId(): number {
+  return Math.min(getStore().progress.unlocked, LEVELS.length);
+}
+
+// ---------- 홈: 월드·구역 ----------
 function renderHome() {
   stopGame();
   const st = getStore();
   const totalStars = Object.values(st.progress.stars).reduce((a, b) => a + b, 0);
+  const next = getLevel(nextLevelId())!;
+  const worldCard = (w: WorldInfo) => `
+    <section class="world" data-testid="world-${w.id}">
+      <h2 class="section-title">${esc(t(`world_${w.id}`))}</h2>
+      <div class="areas">
+        ${w.areas
+          .map((a) => {
+            const locked = !areaUnlocked(a);
+            const stars = areaStars(a);
+            const done = a.levelIds.filter((id) => (st.progress.stars[id] ?? 0) > 0).length;
+            return `<button class="area${locked ? ' is-locked' : ''}" data-area="${a.id}" ${locked ? 'disabled' : ''} data-testid="area-${a.id}">
+              <span class="area__icon">${AREA_ICON[a.id]}</span>
+              <span class="area__name">${esc(t(`area_${a.id}`))}</span>
+              <span class="area__meta">${locked ? '🔒' : `${done}/${a.levelIds.length} · ★${stars}`}</span>
+            </button>`;
+          })
+          .join('')}
+      </div>
+    </section>`;
   app.innerHTML = `
     <div class="home">
       <header class="home__top">
@@ -79,32 +125,64 @@ function renderHome() {
       <section class="hero">
         <h1 class="logo">${esc(t('appName'))}</h1>
         <p class="tagline">${esc(t('tagline'))}</p>
-        <button class="btn btn--primary btn--big" data-act="continue" data-testid="play">${t('play')} · ${t('stage', { n: Math.min(st.progress.unlocked, LEVELS.length) })}</button>
+        <button class="btn btn--primary btn--big" data-act="continue" data-testid="play">${t('play')} · ${t('stage', { n: next.id })} ${esc(t(`scene_${next.scene}`))}</button>
         <p class="muted small">★ ${totalStars} / ${LEVELS.length * 3}</p>
       </section>
-      <h2 class="section-title">${t('menu')}</h2>
-      <div class="stages">
-        ${LEVELS.map((l) => {
-          const locked = l.id > st.progress.unlocked;
-          const stars = st.progress.stars[l.id] ?? 0;
-          return `<button class="stage${locked ? ' is-locked' : ''}" data-level="${l.id}" ${locked ? 'disabled' : ''} data-testid="stage-${l.id}">
-            <span class="stage__n">${l.id}</span>
-            <span class="stage__name">${esc(t(`scene_${l.scene}`))}</span>
-            <span class="stage__stars">${locked ? '🔒' : '★'.repeat(stars) + '☆'.repeat(3 - stars)}</span>
-          </button>`;
-        }).join('')}
-      </div>
+      ${WORLDS.map(worldCard).join('')}
       <p class="muted small center">${t('adsFree')}</p>
     </div>`;
-  app.querySelector('[data-act="continue"]')!.addEventListener('click', () => startLevel(Math.min(st.progress.unlocked, LEVELS.length)));
+  app.querySelector('[data-act="continue"]')!.addEventListener('click', () => startLevel(nextLevelId()));
   app.querySelector('[data-act="shop"]')!.addEventListener('click', () => openShop());
   app.querySelector('[data-act="settings"]')!.addEventListener('click', openSettings);
+  app.querySelectorAll<HTMLButtonElement>('.area').forEach((b) => b.addEventListener('click', () => renderArea(b.dataset.area!)));
+}
+
+const AREA_ICON: Record<string, string> = {
+  living: '🛋️',
+  room: '🛏️',
+  kitchen: '🍳',
+  bathroom: '🛁',
+  garden: '🌿',
+  exterior: '🚗',
+  interior: '💺',
+};
+
+// ---------- 구역: 스테이지 목록 ----------
+function renderArea(areaId: string) {
+  stopGame();
+  const st = getStore();
+  const area = WORLDS.flatMap((w) => w.areas).find((a) => a.id === areaId);
+  if (!area) return renderHome();
+  app.innerHTML = `
+    <div class="home">
+      <header class="home__top">
+        <button class="icon-btn" data-act="back" aria-label="${t('back')}" data-testid="back-home">‹</button>
+        <div class="coins">● ${st.coins}</div>
+      </header>
+      <h2 class="section-title">${AREA_ICON[area.id]} ${esc(t(`world_${area.world}`))} · ${esc(t(`area_${area.id}`))}</h2>
+      <div class="stages">
+        ${area.levelIds
+          .map((id) => {
+            const l = getLevel(id)!;
+            const locked = l.id > st.progress.unlocked;
+            const stars = st.progress.stars[l.id] ?? 0;
+            return `<button class="stage${locked ? ' is-locked' : ''}" data-level="${l.id}" ${locked ? 'disabled' : ''} data-testid="stage-${l.id}">
+              <span class="stage__n">${l.id} <small class="stage__tier">T${l.tier}</small></span>
+              <span class="stage__name">${esc(t(`scene_${l.scene}`))}</span>
+              <span class="stage__stars">${locked ? '🔒' : '★'.repeat(stars) + '☆'.repeat(3 - stars)}</span>
+            </button>`;
+          })
+          .join('')}
+      </div>
+    </div>`;
+  app.querySelector('[data-act="back"]')!.addEventListener('click', renderHome);
   app.querySelectorAll<HTMLButtonElement>('.stage').forEach((b) => b.addEventListener('click', () => startLevel(Number(b.dataset.level))));
 }
 
 // ---------- 게임 ----------
 interface GameState {
   level: LevelDef;
+  timing: Timing;
   session: CleanSession;
   renderer: Renderer;
   selected: string;
@@ -112,12 +190,15 @@ interface GameState {
   queue: { x: number; y: number }[];
   started: boolean;
   finished: boolean;
+  failed: boolean;
   raf: number;
   last: number;
   sprayCooldown: number;
   sparkleCooldown: number;
   trials: Set<string>;
   cleanedCells: number;
+  revealToastShown: boolean;
+  emptyAt: Map<string, number>;
 }
 
 let game: GameState | null = null;
@@ -136,6 +217,11 @@ function onResize() {
   game?.renderer.resize();
 }
 
+function fmtTime(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  return s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : `${s}s`;
+}
+
 function startLevel(id: number) {
   const level = getLevel(id);
   if (!level) return;
@@ -147,27 +233,36 @@ function startLevel(id: number) {
     st.owned.push(...newOnes);
     persist();
   }
+  const timing = resolveTiming(level); // 봇 플레이 기준 목표·제한시간 (결정적, 캐시)
   app.innerHTML = `
     <div class="game">
       <header class="hud">
         <button class="icon-btn" data-act="back" aria-label="${t('back')}" data-testid="back">‹</button>
         <div class="hud__mid">
-          <div class="hud__title">${t('stage', { n: id })} · ${esc(t(`scene_${level.scene}`))}</div>
-          <div class="bar"><div class="bar__fill" data-el="bar"></div></div>
+          <div class="hud__title">${t('stage', { n: id })} · ${esc(t(`scene_${level.scene}`))} <small class="hud__tier">T${level.tier}</small></div>
+          <div class="bar"><div class="bar__fill" data-el="bar"></div><div class="bar__mark" style="left:${level.passClean * 100}%"></div></div>
         </div>
-        <div class="hud__right"><div class="hud__pct" data-el="pct" data-testid="pct">0%</div><div class="hud__time" data-el="time">0s / ${level.parSec}s</div></div>
+        <div class="hud__right">
+          <div class="hud__pct" data-el="pct" data-testid="pct">0%</div>
+          <div class="hud__time" data-el="time">0s / ${fmtTime(timing.parSec)}</div>
+          ${timing.limitSec ? `<div class="hud__limit" data-el="limit" data-testid="limit">⏱ ${fmtTime(timing.limitSec)}</div>` : ''}
+        </div>
       </header>
-      <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : t('scrubHint'))}</div>
+      <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : t('passReq', { pct: Math.round(level.passClean * 100) }))}</div>
       <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas></div>
       <nav class="toolbar" data-el="toolbar"></nav>
     </div>`;
   const canvas = app.querySelector<HTMLCanvasElement>('[data-el="canvas"]')!;
-  const session = new CleanSession(level);
+  const session = new CleanSession(level, timing);
   const renderer = new Renderer(canvas);
-  // 기본 선택: 이 표면에서 쓸 수 있는 첫 도구
-  const firstTool = items.find((e) => e.spec.kind === 'tool' && owns(e.spec.id) && session.canUse(e.spec) && !e.spec.harms.includes(level.surface))!;
+  // 기본 선택: 이 판의 표면에서 쓸 수 있고 해롭지 않은 첫 도구
+  const surfaces = session.surfaces;
+  const firstTool =
+    items.find((e) => e.spec.kind === 'tool' && e.spec.base !== 'rinse' && owns(e.spec.id) && session.canUse(e.spec) && !e.spec.harms.some((h) => surfaces.includes(h))) ??
+    items.find((e) => e.spec.kind === 'tool' && owns(e.spec.id))!;
   game = {
     level,
+    timing,
     session,
     renderer,
     selected: firstTool.spec.id,
@@ -175,12 +270,15 @@ function startLevel(id: number) {
     queue: [],
     started: false,
     finished: false,
+    failed: false,
     raf: 0,
     last: performance.now(),
     sprayCooldown: 0,
     sparkleCooldown: 0,
     trials: new Set(),
     cleanedCells: 0,
+    revealToastShown: false,
+    emptyAt: new Map(),
   };
   renderToolbar();
   renderer.setSession(session);
@@ -188,10 +286,10 @@ function startLevel(id: number) {
   bindInput(canvas);
   app.querySelector('[data-act="back"]')!.addEventListener('click', () => {
     track('level_quit', { level: id, clean: Math.round(session.cleanliness * 100) });
-    renderHome();
+    renderArea(level.area);
   });
   if (newOnes.length) toast(t('newItem', { item: newOnes.map((n) => itemName(findItem(n, items))).join(', ') }));
-  track('level_start', { level: id });
+  track('level_start', { level: id, tier: level.tier, area: level.area });
   ads.gameplayStart();
   const loop = (now: number) => {
     if (!game) return;
@@ -203,29 +301,45 @@ function startLevel(id: number) {
   };
   game.raf = requestAnimationFrame(loop);
   exposeDebug();
+  // 새 난이도 단계의 첫 스테이지: 규칙 안내
+  const tier = tierFor(id);
+  if (tier.fromId === id && tier.id > 1 && !st.progress.stars[id]) {
+    modal(`<h2>${esc(t('tierLabel', { n: tier.id }))}</h2><p>${esc(t(`tierRule_${tier.id}`))}</p><button class="btn btn--primary btn--block" data-act="ok">${t('ok')}</button>`, (root, close) =>
+      root.querySelector('[data-act="ok"]')!.addEventListener('click', close),
+    );
+  }
 }
 
 function renderToolbar() {
   if (!game) return;
   const bar = app.querySelector<HTMLElement>('[data-el="toolbar"]')!;
   const g = game;
-  // 이 표면에서 못 쓰는 스폰서 도구는 툴바에서 숨김 (상점에는 노출)
+  const surfaces = g.session.surfaces;
+  // 이 판에서 못 쓰는 스폰서 도구는 툴바에서 숨김 (상점에는 노출)
   const usable = items.filter((e) => (owns(e.spec.id) || g.trials.has(e.spec.id)) && !(e.sponsor && !g.session.canUse(e.spec)));
   const tools = usable.filter((e) => e.spec.kind === 'tool');
   const dets = usable.filter((e) => e.spec.kind === 'detergent');
+  const budgeted = g.level.sprayBudgetSec !== undefined;
   const btn = (e: ItemEntry) => {
     const blocked = !g.session.canUse(e.spec);
-    const risky = e.spec.harms.includes(g.level.surface);
+    const risky = e.spec.harms.some((h) => surfaces.includes(h));
+    let budget = '';
+    if (budgeted && e.spec.kind === 'detergent') {
+      const left = g.session.budgetOf(e.spec);
+      const frac = Math.max(0, Math.min(1, left / g.level.sprayBudgetSec!));
+      budget = `<span class="tool__budget" data-budget="${esc(e.spec.id)}"><i style="width:${Math.round(frac * 100)}%"></i></span>`;
+    }
     return `<button class="tool${g.selected === e.spec.id ? ' is-on' : ''}${blocked ? ' is-blocked' : ''}" data-item="${esc(e.spec.id)}" data-testid="item-${esc(e.spec.id)}" title="${esc(itemName(e))}">
       ${iconFor(e.spec.base)}
       <span class="tool__name">${esc(e.sponsor ? e.sponsor.brand : t(`item_${e.spec.base}`))}</span>
+      ${budget}
       ${e.sponsor ? `<span class="tool__ad">${t('sponsored')}</span>` : ''}
       ${risky ? '<span class="tool__warn" aria-hidden="true">!</span>' : ''}
     </button>`;
   };
   bar.innerHTML = `
     <div class="toolbar__group"><span class="toolbar__label">${t('tools')}</span><div class="toolbar__row">${tools.map(btn).join('')}</div></div>
-    <div class="toolbar__group"><span class="toolbar__label">${t('cleaners')}</span><div class="toolbar__row">${dets.map(btn).join('')}<button class="tool tool--more" data-act="shop" data-testid="toolbar-shop">＋</button></div></div>`;
+    <div class="toolbar__group"><span class="toolbar__label">${t('cleaners')}${budgeted ? ` · ${t('budget')}` : ''}</span><div class="toolbar__row">${dets.map(btn).join('')}<button class="tool tool--more" data-act="shop" data-testid="toolbar-shop">＋</button></div></div>`;
   bar.querySelectorAll<HTMLButtonElement>('[data-item]').forEach((b) =>
     b.addEventListener('click', () => {
       if (!game) return;
@@ -236,10 +350,19 @@ function renderToolbar() {
         openEvidence(entry);
         return;
       }
+      if (game.selected === id && entry.spec.kind === 'detergent' && budgeted && game.session.budgetOf(entry.spec) <= 0) {
+        offerRefill(entry);
+        return;
+      }
       game.selected = id;
       if (entry.sponsor) track('sponsor_item_select', { sponsor: entry.sponsor.id, level: game.level.id });
       const hint = app.querySelector<HTMLElement>('[data-el="hint"]')!;
-      hint.textContent = entry.spec.kind === 'detergent' ? t('sprayHint') : `${itemName(entry)} · ${t('goodFor', { list: strengths(entry.spec).map((d) => t(`dirt_${d}`)).join(', ') })}`;
+      hint.textContent =
+        entry.spec.kind === 'detergent'
+          ? t('sprayHint')
+          : entry.spec.base === 'rinse'
+            ? t('hintRinse')
+            : `${itemName(entry)} · ${t('goodFor', { list: strengths(entry.spec).map((d) => t(`dirt_${d}`)).join(', ') })}`;
       renderToolbar();
     }),
   );
@@ -247,9 +370,21 @@ function renderToolbar() {
   requestAnimationFrame(() => game?.renderer.resize());
 }
 
+function updateBudgets() {
+  const g = game;
+  if (!g || g.level.sprayBudgetSec === undefined) return;
+  app.querySelectorAll<HTMLElement>('[data-budget]').forEach((el) => {
+    const e = findItem(el.dataset.budget!, items);
+    if (!e || e.spec.kind !== 'detergent') return;
+    const frac = Math.max(0, Math.min(1, g.session.budgetOf(e.spec) / g.level.sprayBudgetSec!));
+    (el.firstElementChild as HTMLElement).style.width = `${Math.round(frac * 100)}%`;
+    el.classList.toggle('is-empty', frac <= 0);
+  });
+}
+
 function bindInput(canvas: HTMLCanvasElement) {
   const down = (e: PointerEvent) => {
-    if (!game || game.finished) return;
+    if (!game || game.finished || game.failed) return;
     unlockAudio();
     canvas.setPointerCapture(e.pointerId);
     const p = game.renderer.toGrid(e.clientX, e.clientY);
@@ -296,6 +431,19 @@ function handleEvents(events: SessionEvent[]) {
         sfx.sparkle();
         game.sparkleCooldown = 0.12;
       }
+    } else if (ev.kind === 'revealed') {
+      if (!game.revealToastShown) {
+        game.revealToastShown = true;
+        toast(t('revealed'));
+      }
+    } else if (ev.kind === 'empty') {
+      const last = game.emptyAt.get(ev.item) ?? -10;
+      if (game.session.time - last > 3) {
+        game.emptyAt.set(ev.item, game.session.time);
+        sfx.warn();
+        toast(t('empty', { item: itemName(findItem(ev.item, items)) }), 'warn');
+        updateBudgets();
+      }
     } else if (ev.kind === 'harm') {
       sfx.warn();
       toast(t('harm', { item: itemName(findItem(ev.item, items)), surface: t(`surf_${ev.surface}`) }), 'warn');
@@ -317,7 +465,7 @@ function handleEvents(events: SessionEvent[]) {
 
 function step(dt: number) {
   const g = game;
-  if (!g || g.finished) return;
+  if (!g || g.finished || g.failed) return;
   g.sparkleCooldown -= dt;
   g.sprayCooldown -= dt;
   if (g.started) g.session.tick(dt);
@@ -335,20 +483,28 @@ function step(dt: number) {
       if (g.sprayCooldown <= 0) {
         sfx.spray();
         g.sprayCooldown = 0.35;
+        updateBudgets();
       }
     } else {
       const gain = g.session.cleanliness - before;
-      scrubSound(0.35 + Math.min(1, gain * 400), spec.base === 'vacuum' ? 600 : spec.base === 'washer' ? 3000 : spec.base === 'brush' ? 2600 : 1500);
+      scrubSound(0.35 + Math.min(1, gain * 400), spec.base === 'vacuum' ? 600 : spec.base === 'washer' ? 3000 : spec.base === 'brush' ? 2600 : spec.base === 'rinse' ? 900 : 1500);
     }
   }
   // HUD
   const pct = Math.floor(g.session.cleanliness * 100);
-  (app.querySelector('[data-el="bar"]') as HTMLElement).style.width = `${Math.min(100, (g.session.cleanliness / 0.95) * 100)}%`;
+  (app.querySelector('[data-el="bar"]') as HTMLElement).style.width = `${Math.min(100, g.session.cleanliness * 100)}%`;
   (app.querySelector('[data-el="pct"]') as HTMLElement).textContent = `${pct}%`;
   const timeEl = app.querySelector('[data-el="time"]') as HTMLElement;
-  timeEl.textContent = `${Math.floor(g.session.time)}s / ${g.level.parSec}s`;
-  timeEl.classList.toggle('is-over', g.session.time > g.level.parSec);
+  timeEl.textContent = `${fmtTime(g.session.time)} / ${fmtTime(g.timing.parSec)}`;
+  timeEl.classList.toggle('is-over', g.session.time > g.timing.parSec);
+  const limitEl = app.querySelector<HTMLElement>('[data-el="limit"]');
+  if (limitEl && g.session.limitSec !== undefined) {
+    const left = g.session.limitSec - g.session.time;
+    limitEl.textContent = `⏱ ${fmtTime(left)}`;
+    limitEl.classList.toggle('is-urgent', left <= 10);
+  }
   if (g.session.passed) finishLevel();
+  else if (g.session.expired) failLevel();
 }
 
 function finishLevel() {
@@ -367,7 +523,7 @@ function finishLevel() {
   g.session.amount.fill(0);
   sfx.complete();
   haptic();
-  const result = scoreSession(g.session, g.level.parSec);
+  const result = scoreSession(g.session, g.timing.parSec, g.level.tier);
   const st = getStore();
   const id = g.level.id;
   st.progress.stars[id] = Math.max(st.progress.stars[id] ?? 0, result.stars);
@@ -377,28 +533,108 @@ function finishLevel() {
   st.stats.gamesPlayed++;
   st.stats.totalCleanedCells += g.cleanedCells;
   persist();
-  track('level_complete', { level: id, stars: result.stars, time: result.timeSec, damage: Math.round(result.damage * 100), hazard: result.hazard });
-  setTimeout(() => showResult(g.level, result), 700);
+  track('level_complete', { level: id, tier: g.level.tier, stars: result.stars, time: result.timeSec, damage: Math.round(result.damage * 100), hazard: result.hazard });
+  setTimeout(() => showResult(g.level, g.timing, result), 700);
 }
 
-function showResult(level: LevelDef, r: Result) {
+/** 제한시간 초과 — 광고로 연장하거나 다시 시작 */
+function failLevel() {
+  const g = game;
+  if (!g || g.failed || g.finished) return;
+  g.failed = true;
+  g.pointer = null;
+  stopScrub();
+  sfx.warn();
+  track('level_fail', { level: g.level.id, clean: Math.round(g.session.cleanliness * 100) });
+  modal(
+    `<div class="result" data-testid="fail">
+      <h2>⏱ ${t('failTitle')}</h2>
+      <p class="muted">${esc(t('failText'))} · ${Math.floor(g.session.cleanliness * 100)}% / ${Math.round(g.level.passClean * 100)}%</p>
+      <button class="btn btn--ad btn--block" data-act="extend" data-testid="extend">${t('extendAd')}</button>
+      <div class="btn-row"><button class="btn" data-act="retry" data-testid="fail-retry">${t('retry')}</button><button class="btn" data-act="menu">${t('menu')}</button></div>
+    </div>`,
+    (root, close) => {
+      root.parentElement!.dataset.dismiss = 'no';
+      root.querySelector('[data-act="extend"]')!.addEventListener('click', async (e) => {
+        const b = e.currentTarget as HTMLButtonElement;
+        b.disabled = true;
+        if (await ads.showRewarded('extend_time')) {
+          if (game) {
+            game.session.extendLimit(EXTEND_SEC);
+            game.failed = false;
+            track('level_extend', { level: game.level.id });
+          }
+          close();
+        } else b.disabled = false;
+      });
+      root.querySelector('[data-act="retry"]')!.addEventListener('click', async () => {
+        close();
+        const id = g.level.id;
+        await ads.maybeShowInterstitial();
+        startLevel(id);
+      });
+      root.querySelector('[data-act="menu"]')!.addEventListener('click', () => {
+        close();
+        renderArea(g.level.area);
+      });
+    },
+  );
+}
+
+/** 세제 소진 — 광고로 리필 */
+function offerRefill(entry: ItemEntry) {
+  if (!game || entry.spec.kind !== 'detergent') return;
+  const spec = entry.spec;
+  modal(
+    `<h2>${esc(t('empty', { item: itemName(entry) }))}</h2>
+    <button class="btn btn--ad btn--block" data-act="refill" data-testid="refill">${esc(t('refillAd', { item: itemName(entry) }))}</button>
+    <button class="btn btn--block" data-act="close">${t('close')}</button>`,
+    (root, close) => {
+      root.querySelector('[data-act="refill"]')!.addEventListener('click', async (e) => {
+        const b = e.currentTarget as HTMLButtonElement;
+        b.disabled = true;
+        if (await ads.showRewarded('refill')) {
+          game?.session.refill(spec, REFILL_SEC);
+          track('refill', { item: spec.id, level: game?.level.id ?? 0 });
+          toast(t('refilled'));
+          renderToolbar();
+          close();
+        } else b.disabled = false;
+      });
+      root.querySelector('[data-act="close"]')!.addEventListener('click', close);
+    },
+  );
+}
+
+function showResult(level: LevelDef, timing: Timing, r: Result) {
   const penalties = [
-    level.parSec < r.timeSec ? t('slowPenalty') : '',
+    timing.parSec < r.timeSec ? t('slowPenalty') : '',
     r.damage >= 0.15 ? t('damagePenalty') : '',
     r.hazard ? t('hazardPenalty') : '',
   ].filter(Boolean);
   let coinsShown = r.coins;
   const hasNext = level.id < LEVELS.length;
-  const close = modal(
+  const mainDirt = level.patches[0]?.type;
+  const recBase = mainDirt ? DIRT_TO_ITEM[mainDirt][0] : undefined;
+  const market = defaultMarket(getLang());
+  const mallCard =
+    mallEnabled() && recBase
+      ? `<a class="rec" data-testid="rec" href="${esc(searchUrl(recBase, market))}" data-mall="${recBase}" rel="noopener sponsored">
+          <span class="rec__icon">${iconFor(recBase)}</span>
+          <span class="rec__body"><b>${esc(t('mallRecommend'))}</b><span class="small">${esc(t(`item_${recBase}`))} · ${esc(MARKET_LABEL[market])} <span class="tag-ad">${t('sponsored')}</span></span></span>
+        </a>`
+      : '';
+  modal(
     `<div class="result" data-testid="result">
       <h2>${t('done')}</h2>
       <div class="result__stars">${[0, 1, 2].map((i) => `<span class="${i < r.stars ? 'on' : ''}">★</span>`).join('')}</div>
-      <p class="muted">${t('time')} ${r.timeSec}s · ${t('par', { s: level.parSec })}</p>
+      <p class="muted">${t('time')} ${r.timeSec}s · ${t('par', { s: timing.parSec })}</p>
       ${penalties.length ? `<ul class="penalties">${penalties.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
       <p class="result__coins" data-el="coins">${t('reward', { c: coinsShown })}</p>
       <button class="btn btn--ad btn--block" data-act="double" data-testid="double">${t('doubleAd')}</button>
       ${hasNext ? `<button class="btn btn--primary btn--block" data-act="next" data-testid="next">${t('next')}</button>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry">${t('retry')}</button><button class="btn" data-act="menu" data-testid="to-menu">${t('menu')}</button></div>
+      ${mallCard}
     </div>`,
     (root, closeFn) => {
       root.parentElement!.dataset.dismiss = 'no';
@@ -420,15 +656,21 @@ function showResult(level: LevelDef, r: Result) {
       };
       root.querySelector('[data-act="next"]')?.addEventListener('click', () => after(() => startLevel(level.id + 1)));
       root.querySelector('[data-act="retry"]')!.addEventListener('click', () => after(() => startLevel(level.id)));
-      root.querySelector('[data-act="menu"]')!.addEventListener('click', () => after(renderHome));
+      root.querySelector('[data-act="menu"]')!.addEventListener('click', () => after(() => renderArea(level.area)));
+      root.querySelector<HTMLAnchorElement>('[data-mall]')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        track('mall_click', { from: 'result', base: recBase!, market });
+        openExternal(searchUrl(recBase!, market));
+      });
+      if (mallCard) track('mall_impression', { from: 'result', base: recBase!, market });
     },
   );
-  void close;
 }
 
-// ---------- 상점 ----------
-function openShop(inGame = false) {
+// ---------- 상점: 게임 도구 / 실제 제품 ----------
+function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
   const st = getStore();
+  const showMall = mallEnabled();
   const row = (e: ItemEntry) => {
     const own = owns(e.spec.id);
     const trial = game?.trials.has(e.spec.id);
@@ -451,11 +693,12 @@ function openShop(inGame = false) {
   };
   const sponsors = items.filter((e) => e.sponsor);
   const base = items.filter((e) => !e.sponsor);
+  const gameTab = `${sponsors.length ? `<ul class="shop__list">${sponsors.map(row).join('')}</ul>` : ''}<ul class="shop__list">${base.map(row).join('')}</ul>`;
   modal(
     `<div class="shop" data-testid="shop">
       <div class="row"><h2>${t('shop')}</h2><span class="coins">● ${st.coins}</span></div>
-      ${sponsors.length ? `<ul class="shop__list">${sponsors.map(row).join('')}</ul>` : ''}
-      <ul class="shop__list">${base.map(row).join('')}</ul>
+      ${showMall ? `<div class="tabs" role="tablist"><button class="tab${tab === 'game' ? ' is-on' : ''}" data-tab="game" data-testid="tab-game">${t('gameTab')}</button><button class="tab${tab === 'mall' ? ' is-on' : ''}" data-tab="mall" data-testid="tab-mall">${t('mallTab')}</button></div>` : ''}
+      <div data-el="panel">${tab === 'mall' && showMall ? mallPanel(defaultMarket(getLang())) : gameTab}</div>
       <button class="btn btn--block" data-act="close">${t('close')}</button>
     </div>`,
     (root, close) => {
@@ -463,6 +706,17 @@ function openShop(inGame = false) {
         close();
         if (!game) renderHome();
       });
+      root.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) =>
+        b.addEventListener('click', () => {
+          close();
+          openShop(inGame, b.dataset.tab as 'game' | 'mall');
+        }),
+      );
+      if (tab === 'mall' && showMall) {
+        track('mall_open', { inGame });
+        bindMall(root, inGame);
+        return;
+      }
       root.querySelectorAll<HTMLButtonElement>('[data-buy]').forEach((b) =>
         b.addEventListener('click', () => {
           const e = findItem(b.dataset.buy!, items)!;
@@ -493,7 +747,69 @@ function openShop(inGame = false) {
   );
 }
 
-/** 스폰서 성능 근거 — 시험기관·성적서·방법 + 오염별 일반 제품 대비 % */
+/** 실제 제품 몰 패널 — 마켓 선택 → 종류별 검색 링크 + 운영자 추천 제품 + 스폰서 제품 */
+function mallPanel(market: Market): string {
+  const lang = getLang();
+  const markets = marketsFor(lang);
+  const cats = Object.keys(CATEGORY_QUERY) as (ToolId | DetergentId)[];
+  const picks = [
+    ...MALL_PRODUCTS.filter((p) => isSafeUrl(p.links[market])).map((p) => ({ id: p.id, base: p.base, brand: p.brand, name: p.name, note: p.note, url: p.links[market]!, sample: p.sample, sponsor: false })),
+    // 운영자 추천에 이미 있는 브랜드·계열의 스폰서 제품은 중복 표시하지 않음
+    ...items
+      .filter((e) => e.sponsor && isSafeUrl(sponsorBuyUrl(e.sponsor, market)) && !MALL_PRODUCTS.some((p) => p.brand === e.sponsor!.brand && p.base === e.spec.base && isSafeUrl(p.links[market])))
+      .map((e) => ({ id: e.sponsor!.id, base: e.spec.base, brand: e.sponsor!.brand, name: e.sponsor!.name, note: e.sponsor!.tagline, url: sponsorBuyUrl(e.sponsor!, market)!, sample: e.sponsor!.sample, sponsor: true })),
+  ];
+  return `
+    <div class="mall" data-testid="mall">
+      <p class="small muted">${esc(t('mallIntro'))}</p>
+      <div class="chips">${markets.map((m) => `<button class="chip${m === market ? ' is-on' : ''}" data-market="${m}" data-testid="market-${m}">${esc(MARKET_LABEL[m])}</button>`).join('')}</div>
+      ${
+        picks.length
+          ? `<h3>${t('mallPicks')}</h3><ul class="shop__list">${picks
+              .map(
+                (p) => `<li class="shop__item${p.sponsor ? ' is-sponsor' : ''}" data-testid="mall-${esc(p.id)}">
+          <div class="shop__icon">${iconFor(p.base)}</div>
+          <div class="shop__body"><div class="shop__name">${esc(p.brand)} ${esc(p.name)} <span class="tag-ad">${t('sponsored')}</span>${p.sample ? `<span class="tag-sample">${t('sample')}</span>` : ''}</div>${p.note ? `<div class="small">${esc(p.note)}</div>` : ''}</div>
+          <div class="shop__act"><button class="btn btn--sm btn--primary" data-mall-url="${esc(p.url)}" data-mall-id="${esc(p.id)}">${t('mallBuy')}</button></div>
+        </li>`,
+              )
+              .join('')}</ul>`
+          : ''
+      }
+      <h3>${t('mallCategories')}</h3>
+      <ul class="shop__list">${cats
+        .map(
+          (c) => `<li class="shop__item" data-testid="mallcat-${c}">
+        <div class="shop__icon">${iconFor(c)}</div>
+        <div class="shop__body"><div class="shop__name">${esc(t(`item_${c}`))}</div><div class="small muted">${esc(CATEGORY_QUERY[c][lang])} · ${esc(MARKET_LABEL[market])}</div></div>
+        <div class="shop__act"><button class="btn btn--sm" data-mall-url="${esc(searchUrl(c, market))}" data-mall-id="cat:${c}">${t('mallBrowse')}</button></div>
+      </li>`,
+        )
+        .join('')}</ul>
+      <p class="small muted">${esc(market === 'coupang' ? t('coupangDisclosure') : t('mallDisclosure'))}</p>
+    </div>`;
+}
+
+function bindMall(root: HTMLElement, inGame: boolean) {
+  root.querySelectorAll<HTMLButtonElement>('[data-market]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const m = b.dataset.market as Market;
+      const panel = root.querySelector<HTMLElement>('[data-el="panel"]')!;
+      panel.innerHTML = mallPanel(m);
+      track('mall_market', { market: m });
+      bindMall(root, inGame);
+    }),
+  );
+  root.querySelectorAll<HTMLButtonElement>('[data-mall-url]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const url = b.dataset.mallUrl!;
+      track('mall_click', { from: inGame ? 'game' : 'home', id: b.dataset.mallId ?? '', url });
+      openExternal(url);
+    }),
+  );
+}
+
+/** 스폰서 성능 근거 — 시험기관·성적서·방법 + 오염별 일반 제품 대비 % (+ 구매 링크) */
 function openEvidence(e: ItemEntry) {
   const p = e.sponsor;
   if (!p) return;
@@ -508,6 +824,8 @@ function openEvidence(e: ItemEntry) {
     })
     .join('');
   const ev = p.evidence!;
+  const market = defaultMarket(getLang());
+  const buy = mallEnabled() ? sponsorBuyUrl(p, market) : undefined;
   modal(
     `<div class="evidence" data-testid="evidence">
       <div class="row"><h2>${esc(p.brand)} ${esc(p.name)}</h2><span class="tag-ad">${t('sponsored')}</span></div>
@@ -522,9 +840,16 @@ function openEvidence(e: ItemEntry) {
       </dl>
       ${p.cautions.length ? `<p class="small warn">${esc(t('cautionOn', { list: p.cautions.map((s) => t(`surf_${s}`)).join(', ') }))}</p>` : ''}
       <p class="small muted">${esc(t('evidenceNote'))}</p>
+      ${isSafeUrl(buy) ? `<button class="btn btn--primary btn--block" data-act="buy" data-testid="evidence-buy">${t('mallBuy')} · ${esc(MARKET_LABEL[market])}</button>` : ''}
       <button class="btn btn--block" data-act="close">${t('close')}</button>
     </div>`,
-    (root, close) => root.querySelector('[data-act="close"]')!.addEventListener('click', close),
+    (root, close) => {
+      root.querySelector('[data-act="close"]')!.addEventListener('click', close);
+      root.querySelector('[data-act="buy"]')?.addEventListener('click', () => {
+        track('mall_click', { from: 'evidence', id: p.id, market });
+        openExternal(buy!);
+      });
+    },
   );
 }
 
@@ -572,7 +897,14 @@ function openSettings() {
 // ---------- 테스트용 훅 ----------
 declare global {
   interface Window {
-    __sparkle?: { session: () => CleanSession | null; select: (id: string) => void; items: () => string[] };
+    __sparkle?: {
+      session: () => CleanSession | null;
+      select: (id: string) => void;
+      items: () => string[];
+      timing: () => Timing | null;
+      forceExpire: () => void;
+      level: () => number;
+    };
   }
 }
 function exposeDebug() {
@@ -585,6 +917,14 @@ function exposeDebug() {
       }
     },
     items: () => items.map((e) => e.spec.id),
+    timing: () => game?.timing ?? null,
+    forceExpire: () => {
+      if (game && game.session.limitSec !== undefined) {
+        game.started = true;
+        game.session.tick(game.session.limitSec - game.session.time + 0.01);
+      }
+    },
+    level: () => game?.level.id ?? 0,
   };
 }
 

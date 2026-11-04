@@ -1,7 +1,7 @@
 // 렌더러 — 깨끗한 장면 위에 오염층(저해상도 격자를 부드럽게 확대), 세제 거품, 반짝임, 도구 커서
 import { DIRT_COLOR, DIRT_TYPES, type ItemSpec } from '../game/catalog';
 import type { CleanSession } from '../game/engine';
-import { paintScene } from './scene';
+import { paintLevel } from './scene';
 
 interface Sparkle {
   x: number;
@@ -70,7 +70,7 @@ export class Renderer {
     this.canvas.height = Math.floor(this.cssH * this.dpr);
     this.base.width = this.canvas.width;
     this.base.height = this.canvas.height;
-    paintScene(this.base.getContext('2d')!, s.level.scene, this.base.width, this.base.height);
+    paintLevel(this.base.getContext('2d')!, s.level, this.base.width, this.base.height);
   }
 
   /** 화면 좌표 → 격자 좌표 */
