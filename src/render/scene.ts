@@ -127,8 +127,278 @@ export function paintScene(ctx: Ctx, scene: SceneId, w: number, h: number): void
     case 'floorMat':
       floorMat(ctx, w, h);
       break;
+    case 'rug':
+      rug(ctx, w, h, r.next);
+      break;
+    case 'shelf':
+      shelf(ctx, w, h, r.next);
+      break;
+    case 'closet':
+      closet(ctx, w, h);
+      break;
+    case 'fridge':
+      fridge(ctx, w, h);
+      break;
+    case 'toilet':
+      toilet(ctx, w, h);
+      break;
+    case 'showerglass':
+      showerglass(ctx, w, h, r.next);
+      break;
+    case 'grill':
+      grill(ctx, w, h);
+      break;
+    case 'headlight':
+      headlight(ctx, w, h);
+      break;
+    case 'trunk':
+      trunk(ctx, w, h);
+      break;
   }
   ctx.restore();
+}
+
+/** 러그 — 무늬 있는 직물 */
+function rug(ctx: Ctx, w: number, h: number, rnd: () => number) {
+  wood(ctx, w, h, rnd, '#c89a64');
+  ctx.fillStyle = '#b6475a';
+  ctx.fillRect(w * 0.06, h * 0.06, w * 0.88, h * 0.88);
+  ctx.fillStyle = '#e8d8c0';
+  ctx.fillRect(w * 0.1, h * 0.1, w * 0.8, h * 0.8);
+  ctx.fillStyle = '#b6475a';
+  ctx.fillRect(w * 0.14, h * 0.14, w * 0.72, h * 0.72);
+  // 다이아몬드 무늬
+  ctx.fillStyle = 'rgba(232,216,192,0.9)';
+  for (let y = 0.2; y < 0.8; y += 0.15) {
+    for (let x = 0.2; x < 0.8; x += 0.2) {
+      ctx.beginPath();
+      ctx.moveTo(w * x, h * (y - 0.05));
+      ctx.lineTo(w * (x + 0.06), h * y);
+      ctx.lineTo(w * x, h * (y + 0.05));
+      ctx.lineTo(w * (x - 0.06), h * y);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  // 직물 결
+  ctx.fillStyle = 'rgba(0,0,0,0.06)';
+  for (let y = h * 0.06; y < h * 0.94; y += 3) ctx.fillRect(w * 0.06, y, w * 0.88, 1);
+  // 술
+  ctx.strokeStyle = '#e8d8c0';
+  ctx.lineWidth = 2;
+  for (let x = w * 0.08; x < w * 0.94; x += 6) {
+    ctx.beginPath();
+    ctx.moveTo(x, h * 0.06);
+    ctx.lineTo(x, h * 0.02);
+    ctx.moveTo(x, h * 0.94);
+    ctx.lineTo(x, h * 0.98);
+    ctx.stroke();
+  }
+}
+
+/** 책장 — 원목 선반 + 책 */
+function shelf(ctx: Ctx, w: number, h: number, rnd: () => number) {
+  wood(ctx, w, h, rnd, '#9a6a40');
+  const rows = 4;
+  for (let k = 0; k < rows; k++) {
+    const y = (h * (k + 1)) / rows;
+    ctx.fillStyle = 'rgba(60,35,15,0.5)';
+    ctx.fillRect(0, y - 6, w, 6);
+    // 책 몇 권
+    let x = w * 0.06;
+    const cols = ['#c0392b', '#2980b9', '#27ae60', '#f39c12', '#8e44ad', '#16a085'];
+    while (x < w * 0.6) {
+      const bw = 10 + rnd() * 12;
+      const bh = h / rows - 30 - rnd() * 20;
+      ctx.fillStyle = cols[Math.floor(rnd() * cols.length)];
+      ctx.fillRect(x, y - 6 - bh, bw, bh);
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillRect(x + 2, y - 6 - bh + 4, bw - 4, 2);
+      x += bw + 2;
+    }
+  }
+}
+
+/** 옷장 문 — 흰 페인트 패널 + 손잡이 */
+function closet(ctx: Ctx, w: number, h: number) {
+  ctx.fillStyle = '#eceae4';
+  ctx.fillRect(0, 0, w, h);
+  for (const px of [0, 0.5]) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(w * (px + 0.04), h * 0.04, w * 0.42, h * 0.92);
+    ctx.strokeRect(w * (px + 0.08), h * 0.08, w * 0.34, h * 0.38);
+    ctx.strokeRect(w * (px + 0.08), h * 0.52, w * 0.34, h * 0.4);
+    ctx.fillStyle = '#9a9a96';
+    ctx.beginPath();
+    ctx.roundRect(w * (px === 0 ? 0.4 : 0.56), h * 0.47, w * 0.04, h * 0.08, 4);
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.08)';
+  ctx.fillRect(w * 0.495, 0, w * 0.01, h);
+}
+
+/** 냉장고 문 — 스테인리스 + 손잡이·자석 */
+function fridge(ctx: Ctx, w: number, h: number) {
+  steel(ctx, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.1)';
+  ctx.fillRect(0, h * 0.38, w, h * 0.012);
+  ctx.fillStyle = '#d9dee3';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.08, h * 0.08, w * 0.05, h * 0.26, 6);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(w * 0.08, h * 0.44, w * 0.05, h * 0.46, 6);
+  ctx.fill();
+  // 자석 메모
+  ctx.fillStyle = '#fff8c4';
+  ctx.save();
+  ctx.translate(w * 0.55, h * 0.16);
+  ctx.rotate(0.05);
+  ctx.fillRect(0, 0, w * 0.26, h * 0.14);
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  for (let k = 1; k < 4; k++) {
+    ctx.beginPath();
+    ctx.moveTo(w * 0.03, (h * 0.14 * k) / 4);
+    ctx.lineTo(w * 0.23, (h * 0.14 * k) / 4);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.fillStyle = '#e74c3c';
+  ctx.beginPath();
+  ctx.arc(w * 0.68, h * 0.17, w * 0.025, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** 변기 — 도기 + 뚜껑·물탱크 */
+function toilet(ctx: Ctx, w: number, h: number) {
+  tiles(ctx, w, h, 5, '#e3eef2', '#b6c8ce', 0.03, () => 0.5);
+  ctx.fillStyle = '#fbfcfc';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.18, h * 0.04, w * 0.64, h * 0.3, 14);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(150,170,180,0.6)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = '#c9d3d8';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.26, h * 0.1, w * 0.12, h * 0.05, 4);
+  ctx.fill();
+  const g = ctx.createRadialGradient(w * 0.5, h * 0.64, w * 0.08, w * 0.5, h * 0.64, w * 0.5);
+  g.addColorStop(0, '#f4f7f8');
+  g.addColorStop(1, '#ffffff');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(w * 0.5, h * 0.64, w * 0.36, h * 0.3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(170,200,215,0.5)';
+  ctx.beginPath();
+  ctx.ellipse(w * 0.5, h * 0.66, w * 0.24, h * 0.19, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** 샤워부스 유리 — 물방울·프레임 */
+function showerglass(ctx: Ctx, w: number, h: number, rnd: () => number) {
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, '#d8e8ee');
+  g.addColorStop(0.5, '#eef5f8');
+  g.addColorStop(1, '#c8dbe3');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  ctx.globalAlpha = 0.2;
+  tiles(ctx, w, h, 6, '#cfe4ea', '#9fb6bd', 0.02, rnd);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath();
+  ctx.moveTo(w * 0.2, 0);
+  ctx.lineTo(w * 0.34, 0);
+  ctx.lineTo(w * 0.1, h);
+  ctx.lineTo(-w * 0.04, h);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  for (let k = 0; k < 40; k++) {
+    ctx.beginPath();
+    ctx.arc(rnd() * w, rnd() * h, 1 + rnd() * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = '#b9c2c9';
+  ctx.lineWidth = w * 0.05;
+  ctx.strokeRect(0, 0, w, h);
+  ctx.fillStyle = '#9aa4ab';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.86, h * 0.45, w * 0.05, h * 0.12, 4);
+  ctx.fill();
+}
+
+/** 바비큐 그릴 — 금속 석쇠 */
+function grill(ctx: Ctx, w: number, h: number) {
+  ctx.fillStyle = '#2b2f33';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = '#8f979e';
+  ctx.lineWidth = Math.max(3, w * 0.018);
+  for (let y = h * 0.06; y < h; y += h * 0.07) {
+    ctx.beginPath();
+    ctx.moveTo(w * 0.04, y);
+    ctx.lineTo(w * 0.96, y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#6d757c';
+  ctx.lineWidth = Math.max(4, w * 0.025);
+  for (const px of [0.1, 0.5, 0.9]) {
+    ctx.beginPath();
+    ctx.moveTo(w * px, h * 0.03);
+    ctx.lineTo(w * px, h * 0.97);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,120,40,0.15)';
+  ctx.fillRect(0, h * 0.3, w, h * 0.4);
+}
+
+/** 헤드라이트 — 플라스틱 렌즈 */
+function headlight(ctx: Ctx, w: number, h: number) {
+  carPaint(ctx, w, h);
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, '#f2f7fa');
+  g.addColorStop(0.5, '#c9d8e2');
+  g.addColorStop(1, '#8fa5b5');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(w * 0.5, h * 0.5, w * 0.44, h * 0.3, -0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#2c3338';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.beginPath();
+  ctx.ellipse(w * 0.42, h * 0.44, w * 0.12, h * 0.1, -0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(40,50,60,0.35)';
+  ctx.lineWidth = 2;
+  for (let k = 0; k < 6; k++) {
+    ctx.beginPath();
+    ctx.ellipse(w * 0.5, h * 0.5, w * (0.1 + k * 0.06), h * (0.07 + k * 0.04), -0.25, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+/** 트렁크 — 카펫 바닥 + 턱 */
+function trunk(ctx: Ctx, w: number, h: number) {
+  ctx.fillStyle = '#3a3f47';
+  ctx.fillRect(0, 0, w, h);
+  for (let y = 0; y < h; y += 3) {
+    ctx.fillStyle = y % 6 ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.08)';
+    ctx.fillRect(0, y, w, 1.5);
+  }
+  ctx.fillStyle = '#23272c';
+  ctx.fillRect(0, h * 0.9, w, h * 0.1);
+  ctx.fillStyle = '#1a1d21';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.1, h * 0.06, w * 0.16, h * 0.12, 6);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(w * 0.05, h * 0.03, w * 0.9, h * 0.84);
 }
 
 /** 침대 — 이불·베개 */

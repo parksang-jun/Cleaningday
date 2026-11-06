@@ -40,28 +40,57 @@ export function marketConfigured(m: Market): boolean {
   return false; // 라쿠텐은 생성된 링크만 사용
 }
 
-/** 게임 아이템 계열 → 각 마켓에서 검색할 말 */
+/** 게임 아이템 계열 → 각 마켓에서 검색할 말 (실제 판매 제품군) */
 export const CATEGORY_QUERY: Record<ToolId | DetergentId, { ko: string; en: string; ja: string }> = {
   cloth: { ko: '극세사 청소 걸레', en: 'microfiber cleaning cloth', ja: 'マイクロファイバー クロス 掃除' },
-  sponge: { ko: '청소 스펀지 수세미', en: 'cleaning sponge scrubber', ja: '掃除 スポンジ' },
-  brush: { ko: '욕실 청소솔', en: 'scrub brush bathroom', ja: '掃除 ブラシ 浴室' },
-  vacuum: { ko: '무선 청소기', en: 'cordless vacuum cleaner', ja: 'コードレス掃除機' },
+  vacuum: { ko: '청소기', en: 'vacuum cleaner', ja: '掃除機' },
+  lintroller: { ko: '돌돌이 테이프 클리너', en: 'lint roller', ja: '粘着クリーナー コロコロ' },
+  sponge: { ko: '청소 스펀지', en: 'cleaning sponge', ja: '掃除 スポンジ' },
+  scrubpad: { ko: '수세미 스카치브라이트', en: 'scouring pad', ja: 'スコッチブライト たわし' },
+  tilebrush: { ko: '욕실 타일 청소솔', en: 'tile grout brush', ja: 'タイル ブラシ 浴室' },
+  squeegee: { ko: '유리창 스퀴지', en: 'window squeegee', ja: 'スクイジー 窓' },
+  deckbrush: { ko: '데크 브러시 긴 자루', en: 'deck scrub brush', ja: 'デッキブラシ' },
+  hose: { ko: '정원 호스 릴', en: 'garden hose', ja: '散水ホース' },
   washer: { ko: '고압세척기', en: 'pressure washer', ja: '高圧洗浄機' },
-  rinse: { ko: '분무기 청소용', en: 'spray bottle cleaning', ja: 'スプレーボトル 掃除用' },
+  mitt: { ko: '세차 워시미트', en: 'car wash mitt', ja: '洗車 ミット' },
+  wheelbrush: { ko: '휠 브러시 세차', en: 'wheel brush', ja: 'ホイールブラシ' },
+  rinse: { ko: '욕실 샤워기 헤드', en: 'spray bottle for cleaning', ja: 'スプレーボトル 掃除用' },
+  cordlessvac: { ko: '무선 스틱 청소기', en: 'cordless stick vacuum', ja: 'コードレス スティック掃除機' },
+  scrubber: { ko: '전동 청소솔 욕실', en: 'electric spin scrubber', ja: '電動 お風呂 ブラシ' },
+  drillbrush: { ko: '드릴 브러시 세트', en: 'drill brush attachment set', ja: 'ドリル ブラシ 掃除' },
+  steamer: { ko: '스팀 청소기', en: 'steam cleaner', ja: 'スチームクリーナー' },
+  magiceraser: { ko: '매직 스펀지 멜라민', en: 'melamine magic eraser sponge', ja: 'メラミンスポンジ' },
   allpurpose: { ko: '다목적 세정제', en: 'all purpose cleaner', ja: 'マルチクリーナー' },
+  glass: { ko: '유리세정제', en: 'glass cleaner', ja: 'ガラスクリーナー' },
   degreaser: { ko: '주방 기름때 제거제', en: 'kitchen degreaser', ja: 'キッチン 油汚れ 洗剤' },
-  descaler: { ko: '물때 제거제', en: 'limescale remover', ja: '水垢 洗剤' },
+  descaler: { ko: '물때 제거제 구연산', en: 'limescale remover', ja: '水垢 洗剤 クエン酸' },
+  bathroom: { ko: '욕실 세정제', en: 'bathroom cleaner', ja: '浴室 洗剤' },
   moldremover: { ko: '곰팡이 제거제', en: 'mold remover', ja: 'カビ取り剤' },
+  fabric: { ko: '패브릭 클리너 소파', en: 'fabric upholstery cleaner', ja: 'ファブリック クリーナー' },
+  deckcleaner: { ko: '데크 클리너 산소계', en: 'deck cleaner', ja: 'ウッドデッキ クリーナー' },
+  mossremover: { ko: '이끼 제거제', en: 'moss remover', ja: 'コケ 除去剤' },
+  carshampoo: { ko: '카샴푸', en: 'car wash shampoo', ja: 'カーシャンプー' },
+  wheelcleaner: { ko: '휠 클리너 철분제거제', en: 'wheel cleaner iron remover', ja: 'ホイールクリーナー 鉄粉' },
+  tarremover: { ko: '타르 제거제 벌레', en: 'bug and tar remover', ja: 'タール 虫 除去剤' },
+  interior: { ko: '자동차 실내 클리너', en: 'car interior cleaner', ja: '車 内装 クリーナー' },
+  heavydegreaser: { ko: '강력 기름때 제거제', en: 'heavy duty degreaser', ja: '強力 油汚れ 洗剤' },
+  limescalegel: { ko: '물때 젤 세정제', en: 'limescale gel cleaner', ja: '水垢 ジェル 洗剤' },
 };
 
 /** 오염 → 그 오염에 맞는 아이템 계열 (결과 화면 추천용) */
 export const DIRT_TO_ITEM: Record<DirtType, (ToolId | DetergentId)[]> = {
-  dust: ['vacuum', 'cloth'],
+  dust: ['cordlessvac', 'cloth'],
+  hair: ['lintroller', 'cordlessvac'],
   mud: ['sponge', 'washer'],
-  grease: ['degreaser', 'sponge'],
-  stain: ['allpurpose', 'sponge'],
-  scale: ['descaler', 'brush'],
-  mold: ['moldremover', 'brush'],
+  grease: ['degreaser', 'scrubpad'],
+  stain: ['allpurpose', 'fabric'],
+  scale: ['descaler', 'scrubber'],
+  soap: ['bathroom', 'scrubber'],
+  mold: ['moldremover', 'tilebrush'],
+  moss: ['mossremover', 'washer'],
+  iron: ['wheelcleaner', 'wheelbrush'],
+  tar: ['tarremover', 'mitt'],
+  film: ['glass', 'squeegee'],
 };
 
 function queryFor(base: ToolId | DetergentId, m: Market): string {

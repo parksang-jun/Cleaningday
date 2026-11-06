@@ -82,8 +82,38 @@ export const sfx = {
     src.start(t0);
     src.stop(t0 + 0.3);
   },
-  sparkle(): void {
-    tone(1568 + Math.random() * 400, 0.12, 'sine', 0.035);
+  /** 반짝임 — 콤보가 오를수록 높은 음 */
+  sparkle(combo = 0): void {
+    tone((1568 + Math.random() * 400) * Math.pow(1.06, Math.min(12, combo)), 0.12, 'sine', 0.035 + Math.min(0.03, combo * 0.003));
+  },
+  /** 발견 — 짧은 상승 아르페지오 */
+  discover(): void {
+    [659, 880, 1175].forEach((f, i) => tone(f, 0.14, 'triangle', 0.07, i * 0.07));
+  },
+  /** 오염 종류 완료 — "싹!" */
+  swoosh(): void {
+    if (!enabled || !ctx || !noiseBuf) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.setValueAtTime(600, ctx.currentTime);
+    f.frequency.exponentialRampToValueAtTime(4000, ctx.currentTime + 0.35);
+    f.Q.value = 1.2;
+    const g = ctx.createGain();
+    const t0 = ctx.currentTime;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
+    src.connect(f).connect(g).connect(ctx.destination);
+    src.start(t0);
+    src.stop(t0 + 0.45);
+    tone(1046, 0.2, 'triangle', 0.07, 0.25);
+    tone(1318, 0.25, 'triangle', 0.07, 0.33);
+  },
+  /** 틀린 도구 — 둔탁한 소리 */
+  thud(): void {
+    tone(140, 0.08, 'square', 0.04);
   },
   warn(): void {
     tone(220, 0.12, 'square', 0.05);

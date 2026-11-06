@@ -54,22 +54,37 @@ export interface SponsorProduct {
   links?: Partial<Record<'coupang' | 'amazon_us' | 'amazon_jp' | 'rakuten', string>>
 }
 
-/** 일반 기준 제품의 같은 시험 기준 제거율(%) — 운영사가 자체 시험으로 갱신 */
-export const REFERENCE_REMOVAL: Record<ToolId | DetergentId, Partial<Record<DirtType, number>>> = {
-  cloth: { dust: 85, mud: 40, stain: 25 },
-  sponge: { dust: 60, mud: 80, grease: 35, stain: 55 },
-  brush: { mud: 85, stain: 60, scale: 45, mold: 55 },
-  vacuum: { dust: 95 },
-  washer: { mud: 92, dust: 80, mold: 45 },
-  rinse: { dust: 50, mud: 60 },
-  allpurpose: { grease: 55, stain: 60, mud: 70 },
+/** 일반 기준 제품의 같은 시험 기준 제거율(%) — 운영사가 자체 시험으로 갱신. 레시피상 그 제품이 닦는 오염만 기재 */
+export const REFERENCE_REMOVAL: Partial<Record<ToolId | DetergentId, Partial<Record<DirtType, number>>>> = {
+  cloth: { dust: 85, stain: 60, film: 70, tar: 60 },
+  vacuum: { dust: 95, hair: 90, mud: 50 },
+  lintroller: { hair: 92, dust: 60 },
+  sponge: { mud: 80, stain: 65, grease: 70, scale: 60, soap: 70 },
+  scrubpad: { grease: 85, scale: 65 },
+  tilebrush: { scale: 75, soap: 75, mold: 70, moss: 60 },
+  squeegee: { film: 90, stain: 60, scale: 55, soap: 65 },
+  deckbrush: { mud: 85, moss: 75, mold: 55 },
+  hose: { mud: 85, dust: 80 },
+  washer: { mud: 92, dust: 85, moss: 80, stain: 50 },
+  mitt: { mud: 85, dust: 85, film: 70, stain: 60 },
+  wheelbrush: { iron: 80, scale: 60, moss: 55 },
+  allpurpose: { stain: 65, film: 60, grease: 35 },
+  glass: { film: 85, stain: 60 },
   degreaser: { grease: 80, stain: 55 },
-  descaler: { scale: 75, stain: 40 },
-  moldremover: { mold: 80, stain: 65 },
+  descaler: { scale: 75, soap: 50 },
+  bathroom: { soap: 75, scale: 45 },
+  moldremover: { mold: 80 },
+  fabric: { stain: 70, mud: 60, grease: 45 },
+  deckcleaner: { mold: 65, moss: 55 },
+  mossremover: { moss: 80 },
+  carshampoo: { mud: 80, dust: 85, film: 60, stain: 55 },
+  wheelcleaner: { iron: 85, scale: 50 },
+  tarremover: { tar: 85 },
+  interior: { film: 75, stain: 65, grease: 55 },
 }
 
 /** 기준 제품의 1분당 닦는 면적(m²) */
-export const REFERENCE_COVERAGE: Partial<Record<ToolId, number>> = { cloth: 1.2, sponge: 0.9, brush: 0.5, vacuum: 3.0, washer: 6.0, rinse: 2.0 }
+export const REFERENCE_COVERAGE: Partial<Record<ToolId, number>> = { cloth: 1.2, sponge: 0.9, scrubpad: 0.7, tilebrush: 0.5, vacuum: 3.0, lintroller: 0.8, squeegee: 1.5, deckbrush: 2.0, hose: 5.0, washer: 6.0, mitt: 1.5, wheelbrush: 0.4, rinse: 2.0 }
 
 export const RATIO_MIN = 0.5
 export const RATIO_MAX = 1.8
@@ -101,6 +116,7 @@ export function validateSponsor(p: SponsorProduct, today: string): SponsorIssue[
   if (p.lab.some((l) => !(l.removalPct >= 0 && l.removalPct <= 100))) issues.push('bad_lab_value')
   const isTool = p.base in BASE_TOOLS
   if ((p.kind === 'tool') !== isTool) issues.push('kind_mismatch')
+  if ((isTool && BASE_TOOLS[p.base as ToolId]?.premium) || (!isTool && BASE_DETERGENTS[p.base as DetergentId]?.premium)) issues.push('kind_mismatch') // 프리미엄 계열은 스폰서 기준이 될 수 없음
   return issues
 }
 
@@ -125,8 +141,8 @@ export function toItemSpec(p: SponsorProduct): ToolSpec | DetergentSpec {
   }
   const base = BASE_DETERGENTS[p.base as DetergentId]
   const mult = { ...base.mult }
-  // 세제 배율은 (배율-1) 부분이 세제 효과 → 그 부분에 비율 적용
-  for (const d of DIRT_TYPES) mult[d] = round2(1 + (base.mult[d] - 1) * ratio[d])
+  // 세정제 속도 배율 = 기준 배율 × 시험 비율 (레시피가 맞는 오염에만 적용됨)
+  for (const d of DIRT_TYPES) mult[d] = round2(base.mult[d] * ratio[d])
   return {
     ...base,
     id: `sp:${p.id}`,

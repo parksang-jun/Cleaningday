@@ -1,5 +1,23 @@
-// 청소 세션 — 격자 오염 상태(겹친 층 포함), 구역별 표면, 도구 문지르기·세제 분사·헹굼, 세제 용량, 제한시간, 손상·위험 혼합, 별점
-import { DIRT_RESIST, DIRT_TYPES, isHazardMix, SURFACES, type Chemistry, type DetergentSpec, type DirtType, type ItemSpec, type SurfaceType, type ToolSpec } from './catalog'
+// 청소 세션 — 격자 오염 상태(겹친 층 포함), 구역별 표면, 레시피 기반 문지르기·세정제 분사·헹굼,
+// 무효과 진단(틀린 도구·세정제 필요·틀린 세정제·틀린 표면), 발견, 세정제 용량, 제한시간, 손상·위험 혼합, 별점
+import {
+  diagnose,
+  DIRT_RESIST,
+  DIRT_SURFACES,
+  DIRT_TYPES,
+  isHazardMix,
+  matchRecipe,
+  SURFACES,
+  type Chemistry,
+  type CleanerFamily,
+  type DetergentSpec,
+  type DirtType,
+  type ItemSpec,
+  type NoEffectReason,
+  type SurfaceType,
+  type ToolFamily,
+  type ToolSpec,
+} from './catalog'
 import { GRID_H, GRID_W, type LevelDef } from './levels'
 import { mulberry32 } from './rng'
 
@@ -13,12 +31,20 @@ export type SessionEvent =
   | { kind: 'hazard'; a: Chemistry; b: Chemistry }
   | { kind: 'blocked'; item: string; surface: SurfaceType }
   | { kind: 'empty'; item: string }
+  | { kind: 'noeffect'; reason: NoEffectReason; dirt: DirtType; surface: SurfaceType; item: string }
+  | { kind: 'discovered'; dirt: DirtType; tool: ToolFamily; cleaner: CleanerFamily | null }
+  | { kind: 'typecleared'; dirt: DirtType }
   | { kind: 'revealed'; cells: number[] } // 윗층이 벗겨져 아래층이 드러남
   | { kind: 'cleared'; cells: number[] }
 
 export interface Timing {
   parSec: number
   limitSec?: number
+}
+
+/** 발견한 조합 키: "grease|scrubpad|degreaser" */
+export function recipeKey(dirt: DirtType, tool: ToolFamily, cleaner: CleanerFamily | null): string {
+  return `${dirt}|${tool}|${cleaner ?? '-'}`
 }
 
 export class CleanSession {
@@ -34,14 +60,24 @@ export class CleanSession {
   readonly initialTotal: number
   readonly sprayLeft: Map<string, number> // 세제 id → 남은 분사 시간(초)
   readonly hasLayers: boolean
+  /** 이 판에 있는(있었던) 오염 종류 */
+  readonly dirtKinds: DirtType[]
+  /** 이 세션에서 발견한 조합 */
+  readonly discovered = new Set<string>()
+  /** 오염별 시도해 본 도구(실패 포함) — 힌트 조건 */
+  readonly tried = new Map<DirtType, Set<string>>()
   time = 0
   damage = 0 // 0~1
   hazard = false
   limitSec: number | undefined
+  /** 첫 효과(분사 또는 실제 제거)가 난 뒤 true — 이때부터 시계가 간다 */
+  engaged = false
   private lastHarmAt = -10
   private lastBlockedAt = -10
   private lastEmptyAt = -10
+  private lastNoEffectAt = new Map<string, number>()
   private remaining: number
+  private perType: Float32Array // 종류별 남은 양 (윗층+아래층)
 
   constructor(
     readonly level: LevelDef,
@@ -57,6 +93,7 @@ export class CleanSession {
     this.surfaceIdx = new Uint8Array(n)
     this.soak = new Array(n).fill(null)
     this.sprayLeft = new Map()
+    this.perType = new Float32Array(DIRT_TYPES.length)
     this.limitSec = timing?.limitSec
 
     // 표면 지도
@@ -78,20 +115,36 @@ export class CleanSession {
     const fine = smoothNoise(this.w, this.h, 2.5, rng)
     for (let i = 0; i < n; i++) this.grain[i] = 0.8 + fine[i] * 0.4
     let layers = false
+    const kinds = new Set<DirtType>()
     for (const p of level.patches) {
       const t = DIRT_TYPES.indexOf(p.type)
       const ut = p.under ? DIRT_TYPES.indexOf(p.under) : -1
+      const allowed = DIRT_SURFACES[p.type]
+      const underAllowed = p.under ? DIRT_SURFACES[p.under] : null
       if (p.coverage) {
-        // 부드러운 노이즈 기반 얇은 막 (격자 무늬가 보이지 않게)
+        // 부드러운 노이즈 기반 얇은 막 (격자 무늬가 보이지 않게) — 가능한 표면 위에만
         const thr = 1 - p.coverage
         for (let i = 0; i < n; i++) {
+          if (!allowed.includes(SURFACES[this.surfaceIdx[i]])) continue
           const v = noise[i] * 0.75 + fine[i] * 0.25
-          if (v > thr) this.put(i, t, p.amount[0] * Math.min(1, (v - thr) / 0.25 + 0.3))
+          if (v > thr) {
+            this.put(i, t, p.amount[0] * Math.min(1, (v - thr) / 0.25 + 0.3))
+            kinds.add(p.type)
+          }
         }
       }
       for (let b = 0; b < p.blobs; b++) {
-        const cx = 3 + rng.next() * (this.w - 6)
-        const cy = 3 + rng.next() * (this.h - 6)
+        // 중심이 가능한 표면 위에 오도록 (최대 24회 재시도)
+        let cx = 0
+        let cy = 0
+        let ok = false
+        for (let tries = 0; tries < 24 && !ok; tries++) {
+          cx = 3 + rng.next() * (this.w - 6)
+          cy = 3 + rng.next() * (this.h - 6)
+          const s = SURFACES[this.surfaceIdx[Math.floor(cy) * this.w + Math.floor(cx)]]
+          ok = allowed.includes(s) && (!underAllowed || underAllowed.includes(s))
+        }
+        if (!ok) continue
         const r = p.size[0] + rng.next() * (p.size[1] - p.size[0])
         const amt = p.amount[0] + rng.next() * (p.amount[1] - p.amount[0])
         const hasUnder = p.underAmount !== undefined && rng.next() < (p.underChance ?? 1)
@@ -105,15 +158,19 @@ export class CleanSession {
             const rr = r * (0.75 + 0.25 * Math.sin(ang * 3 + wobble[0] * 6) * wobble[1] + 0.15 * Math.sin(ang * 5 + wobble[2] * 6))
             const d = Math.sqrt(dx * dx + dy * dy)
             if (d < rr) {
-              const falloff = 1 - Math.pow(d / rr, 2.2) * 0.6
               const idx = y * this.w + x
+              const surf = SURFACES[this.surfaceIdx[idx]]
+              if (!allowed.includes(surf)) continue
+              const falloff = 1 - Math.pow(d / rr, 2.2) * 0.6
               this.put(idx, t, amt * falloff * (0.7 + 0.3 * fine[idx]))
-              if (ut >= 0 && uamt > 0 && d < rr * 0.8) {
+              kinds.add(p.type)
+              if (ut >= 0 && uamt > 0 && d < rr * 0.8 && underAllowed!.includes(surf)) {
                 const ua = uamt * (0.8 + 0.2 * fine[idx])
                 if (ua > this.under[idx]) {
                   this.under[idx] = Math.min(1, ua)
                   this.underType[idx] = ut
                   layers = true
+                  kinds.add(p.under!)
                 }
               }
             }
@@ -122,8 +179,13 @@ export class CleanSession {
       }
     }
     this.hasLayers = layers
+    this.dirtKinds = DIRT_TYPES.filter((d) => kinds.has(d))
     let total = 0
-    for (let i = 0; i < n; i++) total += this.amount[i] + this.under[i]
+    for (let i = 0; i < n; i++) {
+      total += this.amount[i] + this.under[i]
+      if (this.amount[i] > 0) this.perType[this.type[i]] += this.amount[i]
+      if (this.under[i] > 0) this.perType[this.underType[i]] += this.under[i]
+    }
     this.initialTotal = Math.max(total, 1e-6)
     this.remaining = total
   }
@@ -163,6 +225,11 @@ export class CleanSession {
     return SURFACES[this.surfaceIdx[i]]
   }
 
+  /** 종류별 남은 양 */
+  remainingOf(d: DirtType): number {
+    return Math.max(0, this.perType[DIRT_TYPES.indexOf(d)])
+  }
+
   /** 이 판에 있는 표면 종류 */
   get surfaces(): SurfaceType[] {
     const seen = new Set<number>()
@@ -170,8 +237,26 @@ export class CleanSession {
     return [...seen].map((k) => SURFACES[k])
   }
 
-  tick(dt: number) {
+  /** 시간 진행 + 세정제 용해(뿌려 두면 저절로 녹는 오염) */
+  tick(dt: number): SessionEvent[] {
     this.time += dt
+    const events: SessionEvent[] = []
+    const cleared: number[] = []
+    for (let i = 0; i < this.soak.length; i++) {
+      const s = this.soak[i]
+      if (!s || s.until <= this.time || !s.det.dissolves) continue
+      const a = this.amount[i]
+      if (a <= 0) continue
+      const dirt = DIRT_TYPES[this.type[i]]
+      const rate = s.det.dissolves[dirt]
+      if (!rate) continue
+      const next = Math.max(0, a - (rate * dt) / this.level.resistMul)
+      this.take(i, a - next)
+      this.amount[i] = next
+      if (next < 0.02) this.finishCell(i, cleared, null, events)
+    }
+    if (cleared.length) events.push({ kind: 'cleared', cells: cleared })
+    return events
   }
 
   /** 남은 분사 시간 (무제한이면 Infinity) */
@@ -202,7 +287,7 @@ export class CleanSession {
     let cells = 0
     let harmed = 0
     let harmedSurface: SurfaceType | null = null
-    this.forEachInRadius(cx, cy, item.kind === 'tool' ? item.radius : item.radius, (i) => {
+    this.forEachInRadius(cx, cy, item.radius, (i) => {
       cells++
       const s = this.surfaceAt(i)
       if (item.harms.includes(s)) {
@@ -221,13 +306,48 @@ export class CleanSession {
     }
   }
 
-  /** 이 판에서 아예 못 쓰는 도구인지 (실외 전용 도구를 실내에서) */
+  /** 이 판에서 아예 못 쓰는 도구인지 (실외 전용 도구를 실내에서, 또는 허용 표면이 하나도 없음) */
   canUse(item: ItemSpec): boolean {
-    if (item.kind !== 'tool' || !item.onlyOn) return true
+    if (item.kind !== 'tool') return true
+    if (item.outdoorOnly && !this.level.outdoor) return false
+    if (!item.onlyOn) return true
     return this.surfaces.some((s) => item.onlyOn!.includes(s))
   }
 
-  /** 도구로 (cx,cy) 지점을 dt 초 동안 문지름 */
+  private take(i: number, delta: number) {
+    this.remaining -= delta
+    this.perType[this.type[i]] -= delta
+  }
+
+  /** 칸이 다 지워짐 — 아래층이 있으면 드러내고, 없으면 비움. 종류가 다 사라지면 typecleared */
+  private finishCell(i: number, cleared: number[], revealed: number[] | null, events: SessionEvent[]) {
+    const t = this.type[i]
+    this.take(i, this.amount[i])
+    if (this.under[i] > 0) {
+      this.amount[i] = this.under[i]
+      this.type[i] = this.underType[i]
+      this.under[i] = 0
+      if (revealed) revealed.push(i)
+      else cleared.push(i)
+    } else {
+      this.amount[i] = 0
+      cleared.push(i)
+    }
+    if (this.perType[t] < 0.05 && this.perType[t] > -1) {
+      this.perType[t] = -1 // 한 번만 알림
+      events.push({ kind: 'typecleared', dirt: DIRT_TYPES[t] })
+    }
+  }
+
+  private noEffect(reason: NoEffectReason, dirt: DirtType, surface: SurfaceType, item: string, events: SessionEvent[]) {
+    const key = `${reason}|${dirt}`
+    const last = this.lastNoEffectAt.get(key) ?? -10
+    if (this.time - last < 2.5) return
+    this.lastNoEffectAt.set(key, this.time)
+    events.push({ kind: 'noeffect', reason, dirt, surface, item })
+  }
+
+  /** 도구로 (cx,cy) 지점을 dt 초 동안 문지름 — 레시피가 맞는 칸만 지워진다 */
   scrub(tool: ToolSpec, cx: number, cy: number, dt: number): SessionEvent[] {
     const events: SessionEvent[] = []
     if (!this.canUse(tool)) {
@@ -241,39 +361,66 @@ export class CleanSession {
     const cleared: number[] = []
     const revealed: number[] = []
     const resistMul = this.level.resistMul
-    const isRinse = tool.base === 'rinse'
+    const isRinse = tool.families.includes('rinse')
+    // 무효과 통계: 오염 칸 수 vs 효과 난 칸 수, 가장 흔한 이유
+    let dirtyCells = 0
+    let effective = 0
+    const reasons = new Map<string, { n: number; reason: NoEffectReason; dirt: DirtType; surface: SurfaceType }>()
     this.forEachInRadius(cx, cy, tool.radius, (i, w) => {
-      if (isRinse) this.soak[i] = null // 헹굼: 세제를 씻어냄
+      if (isRinse) this.soak[i] = null // 헹굼: 세제를 씻어냄 (효과 판정은 헹굼 전 세제로)
       const a = this.amount[i]
       if (a <= 0) return
+      const surface = this.surfaceAt(i)
       // 실외 전용 도구는 허용 표면 밖에서는 효과 없음
-      if (tool.onlyOn && !tool.onlyOn.includes(this.surfaceAt(i))) return
+      if (tool.onlyOn && !tool.onlyOn.includes(surface)) return
+      dirtyCells++
       const dirt = DIRT_TYPES[this.type[i]]
-      const s = this.soak[i]
-      const mult = s && s.until > this.time ? s.det.mult[dirt] : 1
-      const rate = (tool.power * tool.effect[dirt] * mult * w) / (DIRT_RESIST[dirt] * resistMul)
+      const s = isRinse ? null : this.soak[i]
+      const det = s && s.until > this.time ? s.det : null
+      const fam = det ? det.family : null
+      const recipe = matchRecipe(dirt, surface, tool, fam)
+      if (!recipe) {
+        // 이유는 "양"으로 가중 — 얇게 깔린 먼지보다 플레이어가 노리는 진한 얼룩의 이유를 말해 준다
+        const reason = diagnose(dirt, surface, tool, fam)
+        const key = `${reason}|${dirt}`
+        const r = reasons.get(key)
+        if (r) r.n += a
+        else reasons.set(key, { n: a, reason, dirt, surface })
+        return
+      }
+      effective++
+      const toolFam = recipe.tools.find((f) => tool.families.includes(f))!
+      const rk = recipeKey(dirt, toolFam, recipe.cleaner ?? null)
+      if (!this.discovered.has(rk)) {
+        this.discovered.add(rk)
+        events.push({ kind: 'discovered', dirt, tool: toolFam, cleaner: recipe.cleaner ?? null })
+      }
+      const mult = det ? det.mult[dirt] : 1
+      const rate = (tool.power * tool.effect[dirt] * recipe.speed * mult * w) / (DIRT_RESIST[dirt] * resistMul)
       const next = Math.max(0, a - rate * dt)
-      this.remaining -= a - next
-      if (next < 0.02) {
-        this.remaining -= next
-        if (this.under[i] > 0) {
-          // 윗층 제거 → 아래층이 드러남
-          this.amount[i] = this.under[i]
-          this.type[i] = this.underType[i]
-          this.under[i] = 0
-          revealed.push(i)
-        } else {
-          this.amount[i] = 0
-          cleared.push(i)
-        }
-      } else this.amount[i] = next
+      this.take(i, a - next)
+      this.amount[i] = next
+      this.engaged = true
+      if (next < 0.02) this.finishCell(i, cleared, revealed, events)
     })
+    if (dirtyCells > 0) {
+      if (effective === 0 && reasons.size) {
+        let top: { n: number; reason: NoEffectReason; dirt: DirtType; surface: SurfaceType } | null = null
+        for (const r of reasons.values()) if (!top || r.n > top.n) top = r
+        if (top) {
+          const set = this.tried.get(top.dirt) ?? new Set<string>()
+          set.add(tool.id)
+          this.tried.set(top.dirt, set)
+          this.noEffect(top.reason, top.dirt, top.surface, tool.id, events)
+        }
+      }
+    }
     if (revealed.length) events.push({ kind: 'revealed', cells: revealed })
     if (cleared.length) events.push({ kind: 'cleared', cells: cleared })
     return events
   }
 
-  /** 세제 분사 — 칸을 불림. 용량이 남아야 하고, 염소계↔산성이 같은 칸에서 겹치면 위험 혼합 */
+  /** 세정제 분사 — 칸을 불림. 용량이 남아야 하고, 염소계↔산성이 같은 칸에서 겹치면 위험 혼합 */
   spray(det: DetergentSpec, cx: number, cy: number, dt: number): SessionEvent[] {
     const events: SessionEvent[] = []
     const left = this.budgetOf(det)
@@ -285,12 +432,18 @@ export class CleanSession {
       return events
     }
     if (left !== Infinity) this.sprayLeft.set(det.id, Math.max(0, left - dt))
+    this.engaged = true
     this.applyHarm(det, cx, cy, dt, events)
     let mixed: Chemistry | null = null
     this.forEachInRadius(cx, cy, det.radius, (i) => {
       const prev = this.soak[i]
       if (prev && prev.until > this.time && isHazardMix(prev.det.chemistry, det.chemistry)) mixed = prev.det.chemistry
       this.soak[i] = { det, until: this.time + det.soakSec }
+      if (this.amount[i] > 0) {
+        const set = this.tried.get(this.dirtAt(i)) ?? new Set<string>()
+        set.add(det.id)
+        this.tried.set(this.dirtAt(i), set)
+      }
     })
     if (mixed && !this.hazard) {
       this.hazard = true
@@ -312,6 +465,11 @@ export class CleanSession {
     const s = this.soak[i]
     return s && s.until > this.time ? s.det : null
   }
+
+  /** 오염 종류별 시도 횟수(실패 포함) — 힌트 조건 */
+  triesOn(d: DirtType): number {
+    return this.tried.get(d)?.size ?? 0
+  }
 }
 
 export interface Result {
@@ -323,14 +481,14 @@ export interface Result {
 }
 
 /** 별점: 기본 3, 목표시간 초과 -1(2배 초과 -2), 손상 15% 이상 -1, 위험 혼합 -1, 최소 1 */
-export function scoreSession(s: Pick<CleanSession, 'time' | 'damage' | 'hazard'>, parSec: number, chapter = 1): Result {
+export function scoreSession(s: Pick<CleanSession, 'time' | 'damage' | 'hazard'>, parSec: number, tier = 1): Result {
   let stars = 3
   if (s.time > parSec) stars--
   if (s.time > parSec * 2) stars--
   if (s.damage >= 0.15) stars--
   if (s.hazard) stars--
   stars = Math.max(1, stars)
-  return { stars, coins: (20 + stars * 10) * chapter, timeSec: Math.round(s.time), damage: s.damage, hazard: s.hazard }
+  return { stars, coins: (20 + stars * 10) * tier, timeSec: Math.round(s.time), damage: s.damage, hazard: s.hazard }
 }
 
 /** 값 노이즈(격자 난수 + 부드러운 보간), 0~1 */

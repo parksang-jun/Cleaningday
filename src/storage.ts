@@ -31,6 +31,7 @@ export interface Store {
   progress: Progress;
   coins: number;
   owned: string[]; // 보유 아이템 id
+  journal: string[]; // 발견한 조합 키 "dirt|tool|cleaner" (recipeKey)
 }
 
 const KEY = 'sparkle-clean-v1';
@@ -42,6 +43,7 @@ const DEFAULTS: Store = {
   progress: { unlocked: 1, stars: {}, bestTime: {} },
   coins: 0,
   owned: [],
+  journal: [],
 };
 
 let cache: Store = structuredClone(DEFAULTS);
@@ -80,6 +82,7 @@ export async function loadStore(): Promise<Store> {
         progress: { ...DEFAULTS.progress, ...p.progress, stars: { ...(p.progress?.stars ?? {}) }, bestTime: { ...(p.progress?.bestTime ?? {}) } },
         coins: typeof p.coins === 'number' ? p.coins : 0,
         owned: Array.isArray(p.owned) ? p.owned : [],
+        journal: Array.isArray(p.journal) ? p.journal : [],
       };
     } catch {
       cache = structuredClone(DEFAULTS);
