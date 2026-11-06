@@ -5,10 +5,10 @@ import { AdsController } from './ads';
 import { track } from './analytics';
 import { scrubSound, setSoundEnabled, sfx, stopScrub, unlockAudio } from './audio';
 import { resolveTiming } from './game/bot';
-import { BASE_TOOLS, DIRT_COLOR, familyItem, recipesFor, type CleanerFamily, type DetergentId, type DirtType, type ToolFamily, type ToolId, type ToolSpec } from './game/catalog';
+import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES, recipesFor, type CleanerFamily, type DetergentId, type DetergentSpec, type DirtType, type SurfaceType, type ToolFamily, type ToolId, type ToolSpec } from './game/catalog';
 import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
 import { allItems, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
-import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type WorldInfo } from './game/levels';
+import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type StageMode, type WorldInfo } from './game/levels';
 import { performanceRatios, REFERENCE_REMOVAL } from './game/sponsor';
 import { detectLang, getLang, setLang, t, type Lang } from './i18n';
 import { CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MALL_PRODUCTS, MARKET_LABEL, marketsFor, searchUrl, sponsorBuyUrl, type Market } from './mall';
@@ -52,7 +52,7 @@ function owns(id: string): boolean {
   const e = findItem(id, items);
   if (!e) return false;
   if (e.sponsor) return true; // 스폰서 아이템은 무료 사용 (광고 표시)
-  return e.spec.cost === 0 || getStore().owned.includes(id);
+  return getStore().owned.includes(id); // 기본 도구도 지급(grants)받아야 보유
 }
 
 /** 외부 링크 — 네이티브는 인앱 브라우저, 웹은 새 탭 */
@@ -167,6 +167,73 @@ const AREA_ICON: Record<string, string> = {
   exterior: '🚗',
   interior: '💺',
 };
+const MODE_ICON: Record<StageMode, string> = { clean: '', spots: '🎯', rush: '🐾', spread: '🦠', fragile: '⚠️', dark: '🔦' };
+const SPAWN_ICON: Partial<Record<DirtType, string>> = { hair: '🐈', mud: '🐾', stain: '🧃', grease: '🍳', tar: '🪰', dust: '🌼' };
+
+function levelTitle(l: LevelDef): string {
+  return `${t(`theme_${l.theme}`)} · ${t(`scene_${l.scene}`)}`;
+}
+
+function goalText(l: LevelDef, session?: CleanSession): string {
+  const pct = Math.round(l.passClean * 100);
+  switch (l.mode) {
+    case 'spots':
+      return t('goal_spots', { n: session?.spots.length ?? '' });
+    case 'rush':
+      return t('goal_rush', { n: session?.pendingSpawns ?? l.spawn?.count ?? 0, pct });
+    case 'spread':
+      return t('goal_spread', { dirt: t(`dirt_${l.growth?.type ?? 'mold'}`), pct });
+    case 'fragile':
+      return t('goal_fragile', { pct });
+    case 'dark':
+      return t('goal_dark', { pct });
+    default:
+      return t('goal_clean', { pct });
+  }
+}
+
+/**
+ * 이 판에 필요한 아이템만 — 판에 있는(그리고 생길) 오염 × 표면의 레시피에 쓰이는 도구군·세정제군에 해당하는 보유 아이템.
+ * 느린 대안(speed < 0.85)은 빠른 조합이 없을 때만 포함. 염소계·산성이 같이 있으면 헹굼도 포함.
+ */
+function stageKit(session: CleanSession): Set<string> {
+  const pairs = new Map<DirtType, Set<SurfaceType>>();
+  const add = (d: DirtType, sf: SurfaceType) => {
+    const set = pairs.get(d) ?? new Set<SurfaceType>();
+    set.add(sf);
+    pairs.set(d, set);
+  };
+  for (let i = 0; i < session.amount.length; i++) {
+    const sf = session.surfaceAt(i);
+    if (session.amount[i] > 0) add(session.dirtAt(i), sf);
+    if (session.under[i] > 0) add(DIRT_TYPES[session.underType[i]], sf);
+  }
+  if (session.level.spawn) for (const sf of session.surfaces) if (DIRT_SURFACES[session.level.spawn.type].includes(sf)) add(session.level.spawn.type, sf);
+  if (session.level.growth) for (const sf of session.surfaces) if (DIRT_SURFACES[session.level.growth.type].includes(sf)) add(session.level.growth.type, sf);
+  const ownedTools = items.filter((e): e is ItemEntry & { spec: ToolSpec } => e.spec.kind === 'tool' && (owns(e.spec.id) || Boolean(game?.trials.has(e.spec.id))) && session.canUse(e.spec));
+  const ownedDets = items.filter((e): e is ItemEntry & { spec: DetergentSpec } => e.spec.kind === 'detergent' && (owns(e.spec.id) || Boolean(game?.trials.has(e.spec.id))));
+  const toolFams = new Set<ToolFamily>();
+  const cleanerFams = new Set<CleanerFamily>();
+  // 정밀(fragile) 모드: 다른 표면에서라면 통했을 "솔깃한" 도구·세정제도 함께 — 표면에 안전한 것을 골라야 한다
+  const fragile = session.level.mode === 'fragile';
+  for (const [d, surfaces] of pairs) {
+    for (const sf of surfaces) {
+      const rs = (fragile ? RECIPES[d] : recipesFor(d, sf)).filter((r) => ownedTools.some((e) => r.tools.some((f) => e.spec.families.includes(f))) && (!r.cleaner || ownedDets.some((e) => e.spec.family === r.cleaner)));
+      const fast = rs.filter((r) => r.speed >= 0.85);
+      for (const r of fast.length ? fast : rs) {
+        r.tools.forEach((f) => toolFams.add(f));
+        if (r.cleaner) cleanerFams.add(r.cleaner);
+      }
+    }
+  }
+  const kit = new Set<string>();
+  for (const e of ownedTools) if (e.spec.families.some((f) => toolFams.has(f))) kit.add(e.spec.id);
+  for (const e of ownedDets) if (cleanerFams.has(e.spec.family)) kit.add(e.spec.id);
+  // 염소계 + 산성 → 헹굼 필수
+  const chems = new Set(ownedDets.filter((e) => kit.has(e.spec.id)).map((e) => e.spec.chemistry));
+  if (chems.has('chlorine') && chems.has('acid')) for (const e of ownedTools) if (e.spec.families.includes('rinse') && !e.spec.outdoorOnly) kit.add(e.spec.id);
+  return kit;
+}
 
 // ---------- 구역: 스테이지 목록 ----------
 function renderArea(areaId: string) {
@@ -188,8 +255,8 @@ function renderArea(areaId: string) {
             const locked = l.id > st.progress.unlocked;
             const stars = st.progress.stars[l.id] ?? 0;
             return `<button class="stage${locked ? ' is-locked' : ''}" data-level="${l.id}" ${locked ? 'disabled' : ''} data-testid="stage-${l.id}">
-              <span class="stage__n">${l.id} <small class="stage__tier">T${l.tier}</small></span>
-              <span class="stage__name">${esc(t(`scene_${l.scene}`))}</span>
+              <span class="stage__n">${l.id} <small class="stage__tier">T${l.tier}</small> ${MODE_ICON[l.mode]}</span>
+              <span class="stage__name">${esc(t(`theme_${l.theme}`))}<br><small class="muted">${esc(t(`scene_${l.scene}`))}</small></span>
               <span class="stage__dirts">${l.patches.map((p) => dirtSwatch(p.type)).join('')}</span>
               <span class="stage__stars">${locked ? '🔒' : '★'.repeat(stars) + '☆'.repeat(3 - stars)}</span>
             </button>`;
@@ -230,6 +297,8 @@ interface GameState {
   hints: Map<DirtType, number>;
   hintNudged: Set<DirtType>;
   noEffects: number;
+  kit: Set<string>;
+  spawnToastAt: number;
 }
 
 let game: GameState | null = null;
@@ -285,17 +354,18 @@ function startLevel(id: number) {
       <header class="hud">
         <button class="icon-btn" data-act="back" aria-label="${t('back')}" data-testid="back">‹</button>
         <div class="hud__mid">
-          <div class="hud__title">${t('stage', { n: id })} · ${esc(t(`scene_${level.scene}`))} <small class="hud__tier">T${level.tier}</small></div>
+          <div class="hud__title">${MODE_ICON[level.mode]} ${esc(levelTitle(level))} <small class="hud__tier">${t('stage', { n: id })} · T${level.tier}</small></div>
           <div class="bar"><div class="bar__fill" data-el="bar"></div><div class="bar__mark" style="left:${level.passClean * 100}%"></div></div>
         </div>
         <div class="hud__right">
           <div class="hud__pct" data-el="pct" data-testid="pct">0%</div>
           <div class="hud__time" data-el="time">0s / ${fmtTime(timing.parSec)}</div>
           ${timing.limitSec ? `<div class="hud__limit" data-el="limit" data-testid="limit">⏱ ${fmtTime(timing.limitSec)}</div>` : ''}
+          ${level.mode !== 'clean' ? `<div class="hud__mode" data-el="mode" data-testid="mode"></div>` : ''}
         </div>
         <button class="icon-btn hud__journal" data-act="journal" aria-label="${t('journal')}" data-testid="journal">📖<span class="badge" data-el="unknown"></span></button>
       </header>
-      <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : t('passReq', { pct: Math.round(level.passClean * 100) }))}</div>
+      <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : goalText(level))}</div>
       <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><div class="combo" data-el="combo" hidden></div></div>
       <nav class="toolbar" data-el="toolbar"></nav>
     </div>`;
@@ -333,10 +403,14 @@ function startLevel(id: number) {
     hints: new Map(),
     hintNudged: new Set(),
     noEffects: 0,
+    kit: new Set(),
+    spawnToastAt: -10,
   };
+  game.kit = stageKit(session);
   renderToolbar();
   renderer.setSession(session);
   updateUnknownBadge();
+  updateModeHud();
   window.addEventListener('resize', onResize);
   bindInput(canvas);
   app.querySelector('[data-act="back"]')!.addEventListener('click', () => {
@@ -358,13 +432,32 @@ function startLevel(id: number) {
   };
   game.raf = requestAnimationFrame(loop);
   exposeDebug();
-  // 새 난이도 단계의 첫 스테이지: 규칙 안내
+  // 인트로 카드: 테마·목표·이 판의 도구 (+ 새 난이도 단계면 규칙)
   const tier = tierFor(id);
-  if (tier.fromId === id && tier.id > 1 && !st.progress.stars[id]) {
-    modal(`<h2>${esc(t('tierLabel', { n: tier.id }))}</h2><p>${esc(t(`tierRule_${tier.id}`))}</p><button class="btn btn--primary btn--block" data-act="ok">${t('ok')}</button>`, (root, close) =>
-      root.querySelector('[data-act="ok"]')!.addEventListener('click', close),
-    );
-  }
+  const showRule = tier.fromId === id && tier.id > 1 && !st.progress.stars[id];
+  const kitIcons = [...game.kit]
+    .map((kid) => findItem(kid, items))
+    .filter((e): e is ItemEntry => Boolean(e))
+    .map((e) => `<span class="kit__item${e.spec.premium ? ' is-premium' : ''}">${iconFor(e.spec.base)}<span>${esc(e.sponsor ? e.sponsor.brand : t(`item_${e.spec.base}`))}</span></span>`)
+    .join('');
+  modal(
+    `<div class="intro" data-testid="intro">
+      <div class="intro__mode">${MODE_ICON[level.mode]} ${esc(t(`mode_${level.mode}`))} · <span class="muted">${t('stage', { n: id })} · T${level.tier}</span></div>
+      <h2>${esc(levelTitle(level))}</h2>
+      <p class="intro__goal">${esc(goalText(level, session))}</p>
+      ${showRule ? `<p class="intro__rule">📌 ${esc(t(`tierRule_${tier.id}`))}</p>` : ''}
+      ${level.hint ? `<p class="small muted">${esc(t(level.hint))}</p>` : ''}
+      <div class="kit"><span class="small muted">${t('kitNote')}</span><div class="kit__row">${kitIcons}</div></div>
+      <button class="btn btn--primary btn--block" data-act="ok" data-testid="start">${t('start')}</button>
+    </div>`,
+    (root, close) => {
+      root.parentElement!.dataset.dismiss = 'no';
+      root.querySelector('[data-act="ok"]')!.addEventListener('click', () => {
+        close();
+        unlockAudio();
+      });
+    },
+  );
 }
 
 function updateUnknownBadge() {
@@ -380,8 +473,9 @@ function renderToolbar() {
   const bar = app.querySelector<HTMLElement>('[data-el="toolbar"]')!;
   const g = game;
   const surfaces = g.session.surfaces;
-  // 이 판에서 못 쓰는 스폰서 도구는 툴바에서 숨김 (상점에는 노출)
-  const usable = items.filter((e) => (owns(e.spec.id) || g.trials.has(e.spec.id)) && !(e.sponsor && !g.session.canUse(e.spec)));
+  // 이 판에 필요한 아이템만 (상점에서 산 프리미엄·체험 아이템은 계열이 맞으면 포함)
+  if (g.trials.size) g.kit = stageKit(g.session);
+  const usable = items.filter((e) => g.kit.has(e.spec.id));
   const tools = usable.filter((e) => e.spec.kind === 'tool');
   const dets = usable.filter((e) => e.spec.kind === 'detergent');
   const budgeted = g.level.sprayBudgetSec !== undefined;
@@ -443,6 +537,31 @@ function knownFor(e: ItemEntry): string {
     }),
   );
   return list.length ? list.map((d) => t(`dirt_${d}`)).join(', ') : t('journalUnknown');
+}
+
+function updateModeHud() {
+  const g = game;
+  const el = app.querySelector<HTMLElement>('[data-el="mode"]');
+  if (!g || !el) return;
+  const l = g.level;
+  switch (l.mode) {
+    case 'spots':
+      el.textContent = t('spotsHud', { done: g.session.spotsDone, total: g.session.spots.length });
+      break;
+    case 'rush':
+      el.textContent = g.session.pendingSpawns > 0 ? t('rushHud', { icon: SPAWN_ICON[l.spawn!.type] ?? '🐾', n: g.session.pendingSpawns }) : '✓';
+      break;
+    case 'spread':
+      el.textContent = t('spreadHud');
+      break;
+    case 'fragile':
+      el.textContent = t('fragileHud', { pct: Math.round(g.session.damage * 100) });
+      el.classList.toggle('is-urgent', g.session.damage >= 0.06);
+      break;
+    case 'dark':
+      el.textContent = t('darkHud');
+      break;
+  }
 }
 
 function updateBudgets() {
@@ -519,6 +638,18 @@ function handleEvents(events: SessionEvent[]) {
       }
     } else if (ev.kind === 'discovered') {
       onDiscovered(ev.dirt, ev.tool, ev.cleaner);
+    } else if (ev.kind === 'spotdone') {
+      pop(t('spotDone', { done: ev.done, total: ev.total }), 'pop--big');
+      g.renderer.celebrate(30);
+      sfx.swoosh();
+      haptic('medium');
+      updateModeHud();
+    } else if (ev.kind === 'spawned') {
+      updateModeHud();
+      if (g.session.time - g.spawnToastAt > 6) {
+        g.spawnToastAt = g.session.time;
+        toast(`${SPAWN_ICON[ev.dirt] ?? ''} ${esc(t('spawned', { dirt: t(`dirt_${ev.dirt}`) }))}`, 'warn');
+      }
     } else if (ev.kind === 'typecleared') {
       pop(t('typeCleared', { dirt: t(`dirt_${ev.dirt}`) }), 'pop--big');
       g.renderer.celebrate(40);
@@ -661,7 +792,9 @@ function step(dt: number) {
     limitEl.textContent = g.session.engaged ? `⏱ ${fmtTime(left)}` : `⏱ ${fmtTime(left)} ⏸`;
     limitEl.classList.toggle('is-urgent', g.session.engaged && left <= 10);
   }
+  if (g.level.mode === 'fragile' || g.level.mode === 'rush') updateModeHud();
   if (g.session.passed) finishLevel();
+  else if (g.session.ruined) failLevel('ruined');
   else if (g.session.expired) failLevel();
 }
 
@@ -700,25 +833,25 @@ function finishLevel() {
   setTimeout(() => game?.renderer.startReveal(() => setTimeout(() => showResult(level, timing, result, discoveries), 350)), 300);
 }
 
-/** 제한시간 초과 — 광고로 연장하거나 다시 시작 */
-function failLevel() {
+/** 실패 — 제한시간 초과(광고로 연장 가능) 또는 표면 손상(정밀 모드) */
+function failLevel(reason: 'time' | 'ruined' = 'time') {
   const g = game;
   if (!g || g.failed || g.finished) return;
   g.failed = true;
   g.pointer = null;
   stopScrub();
   sfx.warn();
-  track('level_fail', { level: g.level.id, clean: Math.round(g.session.cleanliness * 100) });
+  track('level_fail', { level: g.level.id, clean: Math.round(g.session.cleanliness * 100), reason });
   modal(
     `<div class="result" data-testid="fail">
-      <h2>⏱ ${t('failTitle')}</h2>
-      <p class="muted">${esc(t('failText'))} · ${Math.floor(g.session.cleanliness * 100)}% / ${Math.round(g.level.passClean * 100)}%</p>
-      <button class="btn btn--ad btn--block" data-act="extend" data-testid="extend">${t('extendAd')}</button>
+      <h2>${reason === 'ruined' ? `💔 ${t('ruinedTitle')}` : `⏱ ${t('failTitle')}`}</h2>
+      <p class="muted">${esc(reason === 'ruined' ? t('ruinedText') : t('failText'))} · ${Math.floor(g.session.cleanliness * 100)}% / ${Math.round(g.level.passClean * 100)}%</p>
+      ${reason === 'ruined' ? '' : `<button class="btn btn--ad btn--block" data-act="extend" data-testid="extend">${t('extendAd')}</button>`}
       <div class="btn-row"><button class="btn" data-act="retry" data-testid="fail-retry">${t('retry')}</button><button class="btn" data-act="menu">${t('menu')}</button></div>
     </div>`,
     (root, close) => {
       root.parentElement!.dataset.dismiss = 'no';
-      root.querySelector('[data-act="extend"]')!.addEventListener('click', async (e) => {
+      root.querySelector('[data-act="extend"]')?.addEventListener('click', async (e) => {
         const b = e.currentTarget as HTMLButtonElement;
         b.disabled = true;
         if (await ads.showRewarded('extend_time')) {
@@ -1204,6 +1337,7 @@ declare global {
       journal: () => string[];
       tries: (d: string) => number;
       noEffects: () => number;
+      kit: () => string[];
     };
   }
 }
@@ -1228,6 +1362,7 @@ function exposeDebug() {
     journal: () => [...getStore().journal],
     tries: (d: string) => game?.session.triesOn(d as DirtType) ?? 0,
     noEffects: () => game?.noEffects ?? 0,
+    kit: () => [...(game?.kit ?? [])],
   };
 }
 

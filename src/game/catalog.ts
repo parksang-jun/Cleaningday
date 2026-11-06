@@ -15,7 +15,7 @@ export const SURFACES: SurfaceType[] = ['wood', 'tile', 'steel', 'glass', 'ceram
 /** 오염이 생길 수 있는 표면 (스테이지 생성 시 이 표면 위에만 놓음) */
 export const DIRT_SURFACES: Record<DirtType, SurfaceType[]> = {
   dust: SURFACES,
-  hair: ['fabric', 'wood', 'tile', 'vinyl', 'plastic', 'stone'],
+  hair: ['fabric', 'wood', 'tile', 'vinyl', 'plastic', 'stone', 'ceramic'],
   mud: SURFACES,
   grease: ['steel', 'tile', 'wood', 'vinyl', 'glass', 'metal', 'stone', 'plastic', 'fabric'],
   stain: SURFACES,

@@ -34,6 +34,8 @@ export type SessionEvent =
   | { kind: 'noeffect'; reason: NoEffectReason; dirt: DirtType; surface: SurfaceType; item: string }
   | { kind: 'discovered'; dirt: DirtType; tool: ToolFamily; cleaner: CleanerFamily | null }
   | { kind: 'typecleared'; dirt: DirtType }
+  | { kind: 'spotdone'; done: number; total: number }
+  | { kind: 'spawned'; dirt: DirtType; left: number }
   | { kind: 'revealed'; cells: number[] } // 윗층이 벗겨져 아래층이 드러남
   | { kind: 'cleared'; cells: number[] }
 
@@ -66,6 +68,15 @@ export class CleanSession {
   readonly discovered = new Set<string>()
   /** 오염별 시도해 본 도구(실패 포함) — 힌트 조건 */
   readonly tried = new Map<DirtType, Set<string>>()
+  /** 스팟 모드 표적 (중심·반경·완료) */
+  readonly spots: { x: number; y: number; r: number; done: boolean }[] = []
+  /** 러시 모드: 아직 생길 오염 수 */
+  spawnLeft = 0
+  private nextSpawnAt = 0
+  private readonly spawnRng: { next(): number }
+  private growthAcc = 0
+  private growthBudget = 0 // 번짐으로 더 생길 수 있는 양 (cap)
+  private readonly fine: Float32Array
   time = 0
   damage = 0 // 0~1
   hazard = false
@@ -111,8 +122,10 @@ export class CleanSession {
     }
 
     const rng = mulberry32(seed)
+    this.spawnRng = mulberry32(seed + 101)
     const noise = smoothNoise(this.w, this.h, 6, rng)
     const fine = smoothNoise(this.w, this.h, 2.5, rng)
+    this.fine = fine
     for (let i = 0; i < n; i++) this.grain[i] = 0.8 + fine[i] * 0.4
     let layers = false
     const kinds = new Set<DirtType>()
@@ -150,6 +163,11 @@ export class CleanSession {
         const hasUnder = p.underAmount !== undefined && rng.next() < (p.underChance ?? 1)
         const uamt = hasUnder && p.underAmount ? p.underAmount[0] + rng.next() * (p.underAmount[1] - p.underAmount[0]) : 0
         const wobble = [rng.next(), rng.next(), rng.next()]
+        if (p.spot) {
+          // 표적끼리 겹치지 않게: 기존 표적과 너무 가까우면 건너뜀
+          if (this.spots.some((sp) => Math.hypot(sp.x - cx, sp.y - cy) < sp.r + r + 1)) continue
+          this.spots.push({ x: cx, y: cy, r: r + 1, done: false })
+        }
         for (let y = Math.max(0, Math.floor(cy - r - 2)); y < Math.min(this.h, cy + r + 2); y++) {
           for (let x = Math.max(0, Math.floor(cx - r - 2)); x < Math.min(this.w, cx + r + 2); x++) {
             const dx = x - cx
@@ -178,6 +196,11 @@ export class CleanSession {
         }
       }
     }
+    if (level.spawn) {
+      this.spawnLeft = level.spawn.count
+      this.nextSpawnAt = level.spawn.every
+      kinds.add(level.spawn.type)
+    }
     this.hasLayers = layers
     this.dirtKinds = DIRT_TYPES.filter((d) => kinds.has(d))
     let total = 0
@@ -188,6 +211,124 @@ export class CleanSession {
     }
     this.initialTotal = Math.max(total, 1e-6)
     this.remaining = total
+    if (level.growth) this.growthBudget = this.remainingOf(level.growth.type) * (level.growth.cap - 1)
+  }
+
+  /** 생성 중 호출: 더 많은 오염이 생기면 총량도 늘어 진행률이 내려간다 */
+  private addDirt(i: number, t: number, a: number) {
+    const before = this.amount[i]
+    const tBefore = this.type[i]
+    this.put(i, t, a)
+    const delta = this.amount[i] - before
+    if (delta <= 0) return
+    if (this.type[i] !== tBefore && before > 0) {
+      // 종류가 바뀌면 이전 종류 양을 옮김
+      this.perType[tBefore] -= before
+      this.perType[this.type[i]] += before
+    }
+    this.perType[this.type[i]] += delta
+    this.remaining += delta
+    ;(this as { initialTotal: number }).initialTotal += delta
+  }
+
+  /** 러시 모드: 작은 얼룩(발자국·털·튄 자국)을 하나 떨어뜨림 */
+  private spawnOne() {
+    const sp = this.level.spawn!
+    const t = DIRT_TYPES.indexOf(sp.type)
+    const allowed = DIRT_SURFACES[sp.type]
+    for (let tries = 0; tries < 20; tries++) {
+      const cx = 3 + this.spawnRng.next() * (this.w - 6)
+      const cy = 3 + this.spawnRng.next() * (this.h - 6)
+      const idx0 = Math.floor(cy) * this.w + Math.floor(cx)
+      if (!allowed.includes(SURFACES[this.surfaceIdx[idx0]]) || this.amount[idx0] > 0.3) continue
+      const r = sp.size[0] + this.spawnRng.next() * (sp.size[1] - sp.size[0])
+      const amt = sp.amount[0] + this.spawnRng.next() * (sp.amount[1] - sp.amount[0])
+      for (let y = Math.max(0, Math.floor(cy - r - 1)); y < Math.min(this.h, cy + r + 1); y++) {
+        for (let x = Math.max(0, Math.floor(cx - r - 1)); x < Math.min(this.w, cx + r + 1); x++) {
+          const d = Math.hypot(x - cx, y - cy)
+          if (d >= r) continue
+          const i = y * this.w + x
+          if (!allowed.includes(SURFACES[this.surfaceIdx[i]])) continue
+          this.addDirt(i, t, amt * (1 - Math.pow(d / r, 2) * 0.5) * (0.75 + 0.25 * this.fine[i]))
+        }
+      }
+      return true
+    }
+    return false
+  }
+
+  /** 번짐 모드: 세정제가 안 닿은 곰팡이·이끼 칸이 가장자리 이웃을 감염 (rate = 초당 감염 칸 수) */
+  private grow(dt: number) {
+    const g = this.level.growth!
+    if (this.growthBudget <= 0) return
+    this.growthAcc += g.rate * dt
+    let n = Math.floor(this.growthAcc)
+    if (n <= 0) return
+    this.growthAcc -= n
+    const t = DIRT_TYPES.indexOf(g.type)
+    const allowed = DIRT_SURFACES[g.type]
+    const dirs = [1, -1, this.w, -this.w]
+    while (n > 0 && this.growthBudget > 0) {
+      let infected = false
+      for (let tries = 0; tries < 40 && !infected; tries++) {
+        const i = Math.floor(this.spawnRng.next() * this.amount.length)
+        if (this.type[i] !== t || this.amount[i] < 0.3) continue
+        const so = this.soak[i]
+        if (so && so.until > this.time) continue
+        const j = i + dirs[Math.floor(this.spawnRng.next() * 4)]
+        if (j < 0 || j >= this.amount.length || Math.abs((j % this.w) - (i % this.w)) > 1) continue
+        if (!allowed.includes(SURFACES[this.surfaceIdx[j]])) continue
+        const before = this.amount[j]
+        const same = this.type[j] === t
+        if (before > 0.2 && !same) continue // 다른 오염 위로는 안 번짐
+        if (same && before >= 0.55) continue // 이미 진한 곳
+        const target = same ? Math.min(0.6, before + 0.3) : 0.35
+        if (!same) {
+          if (before > 0) {
+            this.perType[this.type[j]] -= before
+            this.perType[t] += before
+          }
+          this.type[j] = t
+        }
+        const delta = target - before
+        this.amount[j] = target
+        this.perType[t] += delta
+        this.remaining += delta
+        ;(this as { initialTotal: number }).initialTotal += delta
+        this.growthBudget -= delta
+        infected = true
+      }
+      n--
+    }
+  }
+
+  /** 아직 생길 오염이 있는지 (러시) */
+  get pendingSpawns(): number {
+    return this.spawnLeft
+  }
+
+  /** 스팟 완료 수 */
+  get spotsDone(): number {
+    return this.spots.filter((sp) => sp.done).length
+  }
+
+  private checkSpots(events: SessionEvent[]) {
+    for (const sp of this.spots) {
+      if (sp.done) continue
+      let left = 0
+      const r = sp.r
+      for (let y = Math.max(0, Math.floor(sp.y - r)); y <= Math.min(this.h - 1, Math.ceil(sp.y + r)); y++) {
+        for (let x = Math.max(0, Math.floor(sp.x - r)); x <= Math.min(this.w - 1, Math.ceil(sp.x + r)); x++) {
+          if (Math.hypot(x + 0.5 - sp.x, y + 0.5 - sp.y) > r) continue
+          const i = y * this.w + x
+          left += this.amount[i] + this.under[i]
+        }
+      }
+      if (left < 0.6) {
+        sp.done = true
+        events.push({ kind: 'spotdone', done: this.spotsDone, total: this.spots.length })
+      }
+    }
   }
 
   /** 더 진한 오염이 칸을 차지 */
@@ -205,12 +346,19 @@ export class CleanSession {
   }
 
   get passed(): boolean {
+    if (this.level.mode === 'spots') return this.spots.length > 0 && this.spots.every((sp) => sp.done)
+    if (this.level.spawn && this.spawnLeft > 0) return false // 러시: 다 생길 때까지 통과 없음
     return this.cleanliness >= this.level.passClean
   }
 
   /** 제한시간을 넘겼고 아직 통과 못 함 */
   get expired(): boolean {
     return this.limitSec !== undefined && this.time >= this.limitSec && !this.passed
+  }
+
+  /** 정밀 모드: 표면을 너무 망쳤음 */
+  get ruined(): boolean {
+    return this.level.failDamage !== undefined && this.damage >= this.level.failDamage && !this.passed
   }
 
   extendLimit(sec: number) {
@@ -242,6 +390,13 @@ export class CleanSession {
     this.time += dt
     const events: SessionEvent[] = []
     const cleared: number[] = []
+    if (this.level.spawn && this.spawnLeft > 0 && this.time >= this.nextSpawnAt) {
+      const ok = this.spawnOne()
+      this.spawnLeft-- // 자리가 없어도 횟수는 소진 (끝없이 기다리지 않게)
+      if (ok) events.push({ kind: 'spawned', dirt: this.level.spawn.type, left: this.spawnLeft })
+      this.nextSpawnAt = this.time + this.level.spawn.every
+    }
+    if (this.level.growth) this.grow(dt)
     for (let i = 0; i < this.soak.length; i++) {
       const s = this.soak[i]
       if (!s || s.until <= this.time || !s.det.dissolves) continue
@@ -255,7 +410,10 @@ export class CleanSession {
       this.amount[i] = next
       if (next < 0.02) this.finishCell(i, cleared, null, events)
     }
-    if (cleared.length) events.push({ kind: 'cleared', cells: cleared })
+    if (cleared.length) {
+      events.push({ kind: 'cleared', cells: cleared })
+      if (this.spots.length) this.checkSpots(events)
+    }
     return events
   }
 
@@ -416,7 +574,10 @@ export class CleanSession {
       }
     }
     if (revealed.length) events.push({ kind: 'revealed', cells: revealed })
-    if (cleared.length) events.push({ kind: 'cleared', cells: cleared })
+    if (cleared.length) {
+      events.push({ kind: 'cleared', cells: cleared })
+      if (this.spots.length) this.checkSpots(events)
+    }
     return events
   }
 

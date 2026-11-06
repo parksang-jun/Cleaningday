@@ -106,6 +106,46 @@ describe('engine', () => {
     for (const id of [1, 3, 4, 25, 26, 37, 40, 49, 51, 73, 75, 76, 85]) expect(LEVELS[id - 1].grants.length, `level ${id} grants`).toBeGreaterThan(0)
   })
 
+  it('stage modes: spots complete per target, rush keeps spawning until done, spread grows until treated, fragile ruins', () => {
+    // 스팟: 표적이 있고, 표적 안을 다 지우면 spotdone → 전부 지우면 통과
+    const spots = LEVELS.find((l) => l.mode === 'spots')!
+    const sp = new CleanSession(spots)
+    expect(sp.spots.length).toBeGreaterThanOrEqual(3)
+    expect(sp.passed).toBe(false)
+    const bot = simulateBot(spots)
+    expect(bot.passed).toBe(true)
+    // 러시: 시간이 지나면 오염이 생기고 총량이 늘어난다. 다 생기기 전엔 통과 불가
+    const rush = LEVELS.find((l) => l.mode === 'rush')!
+    const ru = new CleanSession(rush)
+    const total0 = ru.initialTotal
+    expect(ru.pendingSpawns).toBe(rush.spawn!.count)
+    let spawned = 0
+    for (let k = 0; k < 30 * (rush.spawn!.every * 3 + 1); k++) spawned += ru.tick(1 / 30).filter((e) => e.kind === 'spawned').length
+    expect(spawned).toBeGreaterThanOrEqual(2)
+    expect(ru.initialTotal).toBeGreaterThan(total0)
+    expect(ru.pendingSpawns).toBeLessThan(rush.spawn!.count)
+    ru.amount.fill(0)
+    ru.under.fill(0)
+    expect(ru.passed).toBe(false) // 아직 생길 오염이 남음
+    // 번짐: 세정제 없이 두면 곰팡이가 는다
+    const spread = LEVELS.find((l) => l.mode === 'spread')!
+    const sr = new CleanSession(spread)
+    const mold0 = sr.remainingOf(spread.growth!.type)
+    for (let k = 0; k < 30 * 20; k++) sr.tick(1 / 30)
+    expect(sr.remainingOf(spread.growth!.type)).toBeGreaterThan(mold0 * 1.05)
+    expect(sr.remainingOf(spread.growth!.type)).toBeLessThanOrEqual(mold0 * spread.growth!.cap + 1)
+    // 정밀: 손상 10% 면 ruined
+    const fragile = LEVELS.find((l) => l.mode === 'fragile' && l.surface === 'wood')!
+    const fr = new CleanSession(fragile)
+    for (let k = 0; k < 60; k++) fr.scrub(BASE_TOOLS.scrubpad, 20, 20, 1 / 30)
+    expect(fr.damage).toBeGreaterThanOrEqual(0.1)
+    expect(fr.ruined).toBe(true)
+    // 모든 모드가 섞여 있다
+    const modes = new Set(LEVELS.map((l) => l.mode))
+    expect([...modes].sort()).toEqual(['clean', 'dark', 'fragile', 'rush', 'spots', 'spread'])
+    expect(new Set(LEVELS.map((l) => l.theme)).size).toBeGreaterThanOrEqual(25)
+  })
+
   it('time limit expires and can be extended; spray budget runs out and refills', () => {
     const lv = LEVELS.find((l) => l.tier === 3)!
     const timing = resolveTiming(lv)

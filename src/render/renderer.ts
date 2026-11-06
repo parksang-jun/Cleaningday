@@ -38,6 +38,9 @@ export class Renderer {
   cursor: { x: number; y: number; item: ItemSpec; active: boolean } | null = null;
   /** 콤보 단계(0~) — 반짝임 양과 색에 반영 */
   combo = 0;
+  /** 정전 모드: 손전등 반경(칸) 밖은 어둡게 */
+  dark = false;
+  private flashlight: { x: number; y: number } | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -55,6 +58,8 @@ export class Renderer {
     this.reveal = null;
     this.hasSnap = false;
     this.combo = 0;
+    this.dark = s.level.mode === 'dark';
+    this.flashlight = null;
     this.resize();
   }
 
@@ -240,13 +245,64 @@ export class Renderer {
     ctx.globalAlpha = 0.85;
     ctx.drawImage(this.foam, 0, 0, W, H);
     ctx.globalAlpha = 1;
+    const cw = W / s.w;
+
+    // 스팟 모드: 표적 링 (완료되면 체크)
+    if (s.spots.length) {
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 300);
+      for (const sp of s.spots) {
+        ctx.save();
+        ctx.lineWidth = 2.5 * this.dpr;
+        ctx.setLineDash(sp.done ? [] : [6 * this.dpr, 5 * this.dpr]);
+        ctx.strokeStyle = sp.done ? 'rgba(40,200,120,0.95)' : `rgba(255,255,255,${0.55 + pulse * 0.4})`;
+        ctx.beginPath();
+        ctx.arc(sp.x * cw, sp.y * cw, (sp.r + 0.6) * cw, 0, Math.PI * 2);
+        ctx.stroke();
+        if (sp.done) {
+          ctx.setLineDash([]);
+          ctx.lineWidth = 3 * this.dpr;
+          ctx.beginPath();
+          ctx.moveTo(sp.x * cw - 7 * this.dpr, sp.y * cw);
+          ctx.lineTo(sp.x * cw - 2 * this.dpr, sp.y * cw + 6 * this.dpr);
+          ctx.lineTo(sp.x * cw + 8 * this.dpr, sp.y * cw - 6 * this.dpr);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+
+    // 정전 모드: 손전등 밖은 어둡게
+    if (this.dark) {
+      if (this.cursor) this.flashlight = { x: this.cursor.x, y: this.cursor.y };
+      const f = this.flashlight;
+      ctx.save();
+      if (f) {
+        const r = 11 * cw;
+        const g = ctx.createRadialGradient(f.x * cw, f.y * cw, r * 0.35, f.x * cw, f.y * cw, r);
+        g.addColorStop(0, 'rgba(6,8,14,0)');
+        g.addColorStop(0.75, 'rgba(6,8,14,0.55)');
+        g.addColorStop(1, 'rgba(6,8,14,0.93)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+        // 손전등 바깥 전체를 더 어둡게
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.beginPath();
+        ctx.rect(0, 0, W, H);
+        ctx.arc(f.x * cw, f.y * cw, r, 0, Math.PI * 2, true);
+        ctx.fillStyle = 'rgba(6,8,14,0.93)';
+        ctx.fill('evenodd');
+      } else {
+        ctx.fillStyle = 'rgba(6,8,14,0.9)';
+        ctx.fillRect(0, 0, W, H);
+      }
+      ctx.restore();
+    }
 
     this.drawSparkles(dt, W);
 
     // 커서
     if (this.cursor) {
       const { x, y, item, active } = this.cursor;
-      const cw = W / s.w;
       const r = item.radius * cw;
       const shaking = performance.now() < this.shakeUntil;
       const jx = shaking ? (Math.random() - 0.5) * 6 * this.dpr : 0;

@@ -73,7 +73,15 @@ export function simulateBot(level: LevelDef, maxSec = 900): BotResult {
         bestScore = s.amount[i]
         best = i
       }
-      if (best < 0) break
+      if (best < 0) {
+        // 러시: 아직 생길 오염이 있으면 기다림
+        if (s.pendingSpawns > 0) {
+          s.tick(0.5)
+          stats.waitSec += 0.5
+          continue
+        }
+        break
+      }
     }
     const cx = (best % s.w) + 0.5
     const cy = Math.floor(best / s.w) + 0.5

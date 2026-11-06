@@ -958,3 +958,69 @@ button {
   margin: 14px 0 4px;
   font-size: 14px;
 }
+
+/* ---------- 인트로 카드 · 이 판의 도구 · 모드 HUD ---------- */
+.intro__mode {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+.intro h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+.intro__goal {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+.intro__rule {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff3c4;
+  margin: 0 0 8px;
+}
+.kit {
+  margin: 8px 0 12px;
+}
+.kit__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.kit__item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 64px;
+  padding: 6px 2px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #f6fbfb;
+  font-size: 10px;
+  text-align: center;
+}
+.kit__item.is-premium {
+  border-color: #ffb300;
+  background: #fff8e1;
+}
+.kit__item svg {
+  width: 28px;
+  height: 28px;
+}
+.hud__mode {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+.hud__mode.is-urgent {
+  color: var(--warn);
+}
+.stage__name small {
+  font-weight: 600;
+}

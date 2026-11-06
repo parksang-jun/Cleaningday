@@ -76,8 +76,12 @@ try {
 
   // 1단계(거실 바닥 먼지): 걸레로 드래그 → 발견 토스트 → 완료 → 전후 리빌 → 결과
   await page.click('[data-testid="play"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  assert((await page.locator('[data-testid="intro"] .kit__item').count()) === 2, 'intro shows only the 2 tools this job needs (cloth, vacuum)');
+  await page.click('[data-testid="start"]');
   await page.waitForSelector('[data-testid="canvas"]');
   await page.waitForTimeout(300);
+  assert((await page.locator('.toolbar [data-item]').count()) === 2, 'toolbar lists only the needed items');
   assert((await page.locator('[data-testid="limit"]').count()) === 0, 'tier 1 has no time limit');
   assert((await page.locator('[data-el="unknown"]').innerText()) === '1', 'notebook badge shows 1 unknown mess');
   await page.screenshot({ path: resolve(shots, '02-stage1-dirty.png') });
@@ -120,8 +124,11 @@ try {
   // 25단계(가스레인지 기름때): 틀린 도구는 아무 효과 없음 → 세정제+수세미로만 지워짐 → 발견
   await page.click('[data-testid="area-kitchen"]');
   await page.click('[data-testid="stage-25"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  await page.click('[data-testid="start"]');
   await page.waitForSelector('[data-testid="item-degreaser"]');
-  await page.click('.modal [data-act="ok"]').catch(() => {});
+  const kit25 = await page.evaluate(() => window.__sparkle.kit());
+  assert(kit25.includes('degreaser') && kit25.includes('scrubpad') && !kit25.includes('descaler') && !kit25.includes('moldremover'), `stove kit has what grease/dust need and nothing else (${kit25.join(',')})`);
   assert((await page.locator('[data-testid="limit"]').count()) === 1, 'tier 3 stage shows a time limit');
   assert((await page.locator('[data-testid="limit"]').innerText()).includes('⏸'), 'clock is paused until cleaning actually starts');
   const grease0 = await page.evaluate(() => window.__sparkle.session().remainingOf('grease'));
@@ -168,9 +175,10 @@ try {
   await page.click('[data-testid="back-home"]');
   await page.click('[data-testid="area-bathroom"]');
   await page.click('[data-testid="stage-37"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  await page.click('[data-testid="start"]');
   await page.waitForSelector('[data-testid="item-bathroom"]');
-  await page.click('.modal [data-act="ok"]').catch(() => {});
-  await page.click('[data-testid="item-cloth"]');
+  await page.click('[data-testid="item-tilebrush"]');
   await sweep(page, 1, 8, 4);
   await page.click('[data-testid="item-sponge"]');
   await sweep(page, 1, 8, 4);
@@ -187,22 +195,58 @@ try {
   // 15단계(책상·원목): 수세미 → 원목 손상 경고
   await page.click('[data-testid="back"]');
   await page.click('[data-testid="back-home"]');
-  await page.click('[data-testid="area-room"]');
-  await page.click('[data-testid="stage-15"]');
-  await page.waitForSelector('[data-testid="item-scrubpad"]');
-  await page.click('.modal [data-act="ok"]').catch(() => {});
-  assert(await page.locator('[data-testid="item-scrubpad"] .tool__warn').count(), 'toolbar flags the scouring pad as risky on wood');
-  await page.click('[data-testid="item-scrubpad"]');
-  await sweep(page, 1, 6, 6);
-  assert((await page.evaluate(() => window.__sparkle.session().damage)) > 0, 'scouring pad on wood causes damage (warning toast)');
+  // 27단계(원목 식탁, 정밀 모드): 기름때 제거제를 쓰면 손상 → 10% 에서 실패
+  await page.click('[data-testid="area-kitchen"]');
+  await page.click('[data-testid="stage-27"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  assert((await page.locator('[data-testid="intro"] .intro__mode').innerText()).includes('Fragile'), 'stage 27 is a fragile-surface stage');
+  await page.click('[data-testid="start"]');
+  await page.waitForSelector('[data-testid="item-degreaser"]');
+  assert(await page.locator('[data-testid="item-degreaser"] .tool__warn').count(), 'toolbar flags degreaser as risky on wood');
+  await page.click('[data-testid="item-degreaser"]');
+  await sweep(page, 2, 10, 6);
+  await page.waitForTimeout(300);
+  assert((await page.evaluate(() => window.__sparkle.session().damage)) > 0.05, 'degreaser on the wooden table causes damage');
+  await page.waitForSelector('[data-testid="fail"]', { timeout: 8000 });
+  assert((await page.locator('[data-testid="fail"]').innerText()).includes('Surface ruined'), 'fragile stage fails when damage reaches 10%');
+  await page.screenshot({ path: resolve(shots, '09b-ruined.png') });
+  await page.click('[data-testid="fail"] [data-act="menu"]');
+  await page.waitForSelector('[data-testid="stage-25"]');
+
+  // 3단계(소파, 러시 모드): 플레이 중 고양이 털이 계속 생김
+  await page.click('[data-testid="back-home"]');
+  await page.click('[data-testid="area-living"]');
+  await page.click('[data-testid="stage-3"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  assert((await page.locator('[data-testid="intro"] .intro__mode').innerText()).includes('Keeps coming'), 'stage 3 is a rush stage');
+  await page.click('[data-testid="start"]');
+  await page.waitForSelector('[data-testid="mode"]');
+  const pending0 = await page.evaluate(() => window.__sparkle.session().pendingSpawns);
+  await page.click('[data-testid="item-vacuum"]');
+  await sweep(page, 3, 12, 6);
+  const pending1 = await page.evaluate(() => window.__sparkle.session().pendingSpawns);
+  assert(pending0 > 0 && pending1 < pending0, `hair keeps appearing while cleaning (${pending0} → ${pending1} left)`);
+  await page.screenshot({ path: resolve(shots, '09c-rush.png') });
+
+  // 6단계(책장, 스팟 모드): 표적 링
+  await page.click('[data-testid="back"]');
+  await page.click('[data-testid="stage-6"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  await page.click('[data-testid="start"]');
+  await page.waitForSelector('[data-testid="mode"]');
+  const spots = await page.evaluate(() => window.__sparkle.session().spots.length);
+  assert(spots >= 3, `spots stage marks ${spots} stubborn spots`);
+  assert((await page.locator('[data-testid="mode"]').innerText()).includes(`0/${spots}`), 'HUD shows spot progress');
+  await page.screenshot({ path: resolve(shots, '09d-spots.png') });
 
   // 33단계(주방 전체, T3): 복합 구역 + 세정제 용량 바
   await page.click('[data-testid="back"]');
   await page.click('[data-testid="back-home"]');
   await page.click('[data-testid="area-kitchen"]');
   await page.click('[data-testid="stage-33"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  await page.click('[data-testid="start"]');
   await page.waitForSelector('[data-testid="canvas"]');
-  await page.click('.modal [data-act="ok"]').catch(() => {});
   assert((await page.locator('.tool__budget').count()) >= 2, 'tier 3 shows cleaner budget bars');
   const zones = await page.evaluate(() => window.__sparkle.session().surfaces.length);
   assert(zones >= 3, `mixed kitchen has ${zones} surfaces`);
@@ -212,9 +256,11 @@ try {
   await page.click('[data-testid="back"]');
   await page.click('[data-testid="back-home"]');
   await page.click('[data-testid="area-bathroom"]');
-  await page.click('[data-testid="stage-40"]');
+  await page.click('[data-testid="stage-43"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  await page.click('[data-testid="start"]');
   await page.waitForSelector('[data-testid="item-moldremover"]');
-  await page.click('.modal [data-act="ok"]').catch(() => {});
+  await page.waitForSelector('[data-testid="item-descaler"]');
   await page.click('[data-testid="item-moldremover"]');
   await sweep(page, 1, 4, 4);
   await page.click('[data-testid="item-descaler"]');
@@ -250,7 +296,7 @@ try {
   assert((await page.locator('[data-testid="mall"]').innerText()).includes('쿠팡 파트너스'), 'Coupang market shows the Partners disclosure');
   await page.screenshot({ path: resolve(shots, '13-mall.png'), fullPage: true });
   await page.click('[data-testid="shop"] [data-act="close"]');
-  assert((await page.locator('[data-testid="item-cordlessvac"].is-premium').count()) === 1, 'bought premium vacuum shows in the toolbar');
+  assert((await page.locator('[data-testid="item-cordlessvac"]').count()) === 0, 'premium vacuum stays hidden where it is not needed (bathtub)');
 
   // 새 장면 렌더 확인 + 한국어 화면
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
@@ -263,7 +309,9 @@ try {
   await page.screenshot({ path: resolve(shots, '14-home-ko.png'), fullPage: true });
   const scenes = [
     ['living', 5, '15-rug-ko.png'],
+    ['living', 9, '15b-dark-ko.png'],
     ['bathroom', 41, '16-toilet-ko.png'],
+    ['bathroom', 40, '16b-spread-ko.png'],
     ['garden', 63, '17-garden-ko.png'],
     ['garden', 56, '18-grill-ko.png'],
     ['exterior', 82, '19-car-ko.png'],
@@ -272,8 +320,12 @@ try {
   for (const [area, id, file] of scenes) {
     await page.click(`[data-testid="area-${area}"]`);
     await page.click(`[data-testid="stage-${id}"]`);
+    await page.waitForSelector('[data-testid="intro"]');
+    await page.click('[data-testid="start"]');
     await page.waitForSelector('[data-testid="canvas"]');
-    await page.click('.modal [data-act="ok"]').catch(() => {});
+    if (id === 5) assert((await page.locator('[data-testid="item-cordlessvac"].is-premium').count()) === 1, 'bought premium vacuum shows up on the rug stage where it is needed');
+    const cb = await page.locator('[data-testid="canvas"]').boundingBox();
+    await page.mouse.move(cb.x + cb.width * 0.55, cb.y + cb.height * 0.45); // 정전 모드 손전등
     await page.waitForTimeout(300);
     await page.screenshot({ path: resolve(shots, file) });
     await page.click('[data-testid="back"]');

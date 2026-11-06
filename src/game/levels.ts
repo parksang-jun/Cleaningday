@@ -28,6 +28,8 @@ export interface DirtPatch {
   underAmount?: [number, number]
   /** 얼룩마다 아래층이 깔릴 확률 (기본 1) */
   underChance?: number
+  /** 스팟 모드의 표적 얼룩 — 중심이 표적 링이 된다 */
+  spot?: boolean
 }
 
 /** 복합 표면 구역 — 격자 비율(0~1) 좌표. 뒤에 오는 구역이 앞 구역을 덮는다 */
@@ -95,6 +97,36 @@ export type SceneId =
 export type WorldId = 'apartment' | 'house' | 'car'
 export type AreaId = 'living' | 'room' | 'kitchen' | 'bathroom' | 'garden' | 'exterior' | 'interior'
 
+/**
+ * 스테이지 모드 — 같은 "닦기"라도 목표와 긴장이 다르다
+ *  clean   기준 % 이상 닦기 (기본)
+ *  spots   끈질긴 얼룩 몇 곳을 완전히 지우기 (표적 링, N/N)
+ *  rush    닦는 동안 오염이 계속 생김(발자국·털·튀는 기름) — 다 생길 때까지 버티고 기준 달성
+ *  spread  곰팡이·이끼가 번짐 — 세정제로 눌러야 멈춤
+ *  fragile 민감한 표면 — 손상 10% 이면 실패 (유리·원목·비닐·플라스틱)
+ *  dark    정전/밤 — 손전등 반경 안만 보임
+ */
+export type StageMode = 'clean' | 'spots' | 'rush' | 'spread' | 'fragile' | 'dark'
+export type ThemeId =
+  | 'morning' | 'party' | 'rain' | 'pet' | 'cat' | 'guests' | 'blackout' | 'monsoon' | 'movein' | 'kids' | 'cooking' | 'holiday' | 'spring'
+  | 'weekend' | 'roadtrip' | 'bugs' | 'winter' | 'garden' | 'pollen' | 'storm' | 'bbq' | 'rental' | 'birthday' | 'sick' | 'latenight' | 'precision'
+  | 'marathon' | 'newcar' | 'kidsCar' | 'beach'
+
+/** 러시 모드: 플레이 중 생기는 오염 */
+export interface SpawnDef {
+  type: DirtType
+  every: number // 초
+  count: number
+  size: [number, number]
+  amount: [number, number]
+}
+/** 번짐 모드: 자라는 오염 */
+export interface GrowthDef {
+  type: DirtType
+  rate: number // 초당 새로 감염되는 칸 수(대략)
+  cap: number // 처음 양 대비 최대 배수
+}
+
 export interface TierDef {
   id: number
   passClean: number
@@ -126,6 +158,11 @@ export interface LevelDef {
   area: AreaId
   tier: number
   scene: SceneId
+  mode: StageMode
+  theme: ThemeId
+  spawn?: SpawnDef
+  growth?: GrowthDef
+  failDamage?: number // fragile: 이 손상 비율이면 실패
   outdoor: boolean // 실외(정원·자동차 실외) — 호스·고압세척기 사용 가능
   surface: SurfaceType // 대표 표면 (구역이 없으면 전체)
   zones?: Zone[]
@@ -244,6 +281,10 @@ interface StageSeed {
   layered?: boolean
   grants?: ItemId[]
   hint?: string
+  mode?: StageMode
+  theme?: ThemeId
+  /** rush: 생기는 오염 종류 (기본 = 주 오염) */
+  spawnType?: DirtType
 }
 
 interface AreaSeed {
@@ -266,72 +307,72 @@ const WORLD_SEEDS: WorldSeed[] = [
         id: 'living',
         scale: 1.0,
         stages: [
-          { scene: 'floor', dirt: ['dust'], grants: ['cloth', 'vacuum', 'sponge', 'allpurpose'], hint: 'hintDust' },
-          { scene: 'floor', dirt: ['stain', 'dust'], hint: 'hintTry' },
-          { scene: 'sofa', dirt: ['hair', 'dust'], grants: ['lintroller'], hint: 'hintHair' },
-          { scene: 'window', dirt: ['film', 'dust'], grants: ['glass', 'squeegee'], hint: 'hintFilm' },
-          { scene: 'rug', dirt: ['mud', 'hair', 'dust'], hint: 'hintRug' },
-          { scene: 'shelf', dirt: ['film', 'dust', 'stain'], hint: 'hintJournal' },
-          { scene: 'floor', dirt: ['mud', 'stain', 'dust'], hint: 'hintMud' },
-          { scene: 'sofa', dirt: ['stain', 'hair'], grants: ['fabric'], hint: 'hintFabricStain' },
-          { scene: 'window', dirt: ['stain', 'film', 'dust'] },
-          { scene: 'livingMix', dirt: ['dust', 'hair', 'stain'], hint: 'hintZones' },
-          { scene: 'livingMix', dirt: ['mud', 'film', 'hair', 'stain'] },
-          { scene: 'livingMix', dirt: ['stain', 'mud', 'hair', 'film', 'dust'], hint: 'hintBig' },
+          { scene: 'floor', dirt: ['dust'], grants: ['cloth', 'vacuum', 'sponge', 'allpurpose'], hint: 'hintDust', theme: 'morning' },
+          { scene: 'floor', dirt: ['stain', 'dust'], hint: 'hintTry', theme: 'kids' },
+          { scene: 'sofa', dirt: ['hair', 'dust'], grants: ['lintroller'], hint: 'hintHair', mode: 'rush', spawnType: 'hair', theme: 'cat' },
+          { scene: 'window', dirt: ['film', 'dust'], grants: ['glass', 'squeegee'], hint: 'hintFilm', theme: 'pollen' },
+          { scene: 'rug', dirt: ['mud', 'hair', 'dust'], hint: 'hintRug', mode: 'rush', spawnType: 'mud', theme: 'pet' },
+          { scene: 'shelf', dirt: ['film', 'stain'], hint: 'hintJournal', mode: 'spots', theme: 'movein' },
+          { scene: 'floor', dirt: ['mud', 'stain', 'dust'], hint: 'hintMud', theme: 'rain' },
+          { scene: 'sofa', dirt: ['stain', 'hair'], grants: ['fabric'], hint: 'hintFabricStain', mode: 'spots', theme: 'party' },
+          { scene: 'window', dirt: ['stain', 'film', 'dust'], mode: 'dark', theme: 'blackout' },
+          { scene: 'livingMix', dirt: ['dust', 'hair', 'stain'], hint: 'hintZones', theme: 'guests' },
+          { scene: 'livingMix', dirt: ['stain', 'mud', 'hair', 'film'], mode: 'rush', spawnType: 'stain', theme: 'birthday' },
+          { scene: 'livingMix', dirt: ['stain', 'mud', 'hair', 'film', 'dust'], hint: 'hintBig', theme: 'marathon' },
         ],
       },
       {
         id: 'room',
         scale: 1.1,
         stages: [
-          { scene: 'desk', dirt: ['film', 'dust'], hint: 'hintLimit' },
-          { scene: 'bed', dirt: ['hair', 'dust'] },
-          { scene: 'desk', dirt: ['stain', 'dust'], layered: true, hint: 'hintLayered' },
-          { scene: 'closet', dirt: ['film', 'stain', 'dust'] },
-          { scene: 'bed', dirt: ['stain', 'hair'], layered: true },
-          { scene: 'floor', dirt: ['mud', 'dust'], layered: true },
-          { scene: 'mirror', dirt: ['film', 'dust'] },
-          { scene: 'roomMix', dirt: ['dust', 'hair', 'stain'], layered: true },
-          { scene: 'desk', dirt: ['film', 'stain', 'dust'], layered: true },
-          { scene: 'closet', dirt: ['stain', 'film', 'mud'], layered: true },
-          { scene: 'roomMix', dirt: ['mud', 'hair', 'stain', 'film'], layered: true },
-          { scene: 'roomMix', dirt: ['stain', 'mud', 'hair', 'film', 'dust'], layered: true, hint: 'hintBig' },
+          { scene: 'desk', dirt: ['film', 'dust'], hint: 'hintLimit', theme: 'latenight' },
+          { scene: 'bed', dirt: ['hair', 'dust'], mode: 'rush', spawnType: 'hair', theme: 'cat' },
+          { scene: 'desk', dirt: ['stain', 'dust'], layered: true, hint: 'hintLayered', mode: 'spots', theme: 'kids' },
+          { scene: 'closet', dirt: ['film', 'stain', 'dust'], theme: 'movein' },
+          { scene: 'bed', dirt: ['stain', 'hair'], layered: true, theme: 'morning' },
+          { scene: 'floor', dirt: ['mud', 'dust'], layered: true, mode: 'rush', spawnType: 'mud', theme: 'rain' },
+          { scene: 'mirror', dirt: ['film', 'dust'], mode: 'fragile', theme: 'precision' },
+          { scene: 'roomMix', dirt: ['dust', 'hair', 'stain'], layered: true, mode: 'dark', theme: 'blackout' },
+          { scene: 'desk', dirt: ['film', 'stain', 'dust'], layered: true, mode: 'spots', theme: 'latenight' },
+          { scene: 'closet', dirt: ['stain', 'film', 'mud'], layered: true, theme: 'rental' },
+          { scene: 'roomMix', dirt: ['mud', 'hair', 'stain', 'film'], layered: true, mode: 'rush', spawnType: 'hair', theme: 'pet' },
+          { scene: 'roomMix', dirt: ['stain', 'mud', 'hair', 'film', 'dust'], layered: true, hint: 'hintBig', theme: 'marathon' },
         ],
       },
       {
         id: 'kitchen',
         scale: 1.2,
         stages: [
-          { scene: 'stove', dirt: ['grease', 'dust'], grants: ['degreaser', 'scrubpad'], hint: 'hintGrease' },
-          { scene: 'sink', dirt: ['scale', 'grease'], grants: ['descaler'], hint: 'hintScale' },
-          { scene: 'table', dirt: ['stain', 'grease'], hint: 'hintWoodGrease' },
-          { scene: 'fridge', dirt: ['film', 'stain', 'dust'], hint: 'hintBudget' },
-          { scene: 'kitchenTile', dirt: ['grease', 'stain', 'dust'], layered: true },
-          { scene: 'stove', dirt: ['grease', 'stain'], layered: true },
-          { scene: 'sink', dirt: ['scale', 'grease', 'film'] },
-          { scene: 'fridge', dirt: ['stain', 'grease', 'film'], layered: true },
-          { scene: 'kitchenMix', dirt: ['grease', 'stain', 'dust'] },
-          { scene: 'kitchenMix', dirt: ['grease', 'scale', 'stain'], layered: true },
-          { scene: 'table', dirt: ['stain', 'film', 'dust'], layered: true },
-          { scene: 'kitchenMix', dirt: ['grease', 'scale', 'stain', 'film', 'dust'], layered: true, hint: 'hintBig' },
+          { scene: 'stove', dirt: ['grease', 'dust'], grants: ['degreaser', 'scrubpad'], hint: 'hintGrease', theme: 'cooking' },
+          { scene: 'sink', dirt: ['scale', 'grease'], grants: ['descaler'], hint: 'hintScale', theme: 'morning' },
+          { scene: 'table', dirt: ['stain', 'grease'], hint: 'hintWoodGrease', mode: 'fragile', theme: 'precision' },
+          { scene: 'fridge', dirt: ['film', 'stain'], hint: 'hintBudget', mode: 'spots', theme: 'kids' },
+          { scene: 'kitchenTile', dirt: ['grease', 'stain', 'dust'], layered: true, mode: 'rush', spawnType: 'grease', theme: 'cooking' },
+          { scene: 'stove', dirt: ['grease', 'stain'], layered: true, mode: 'spots', theme: 'bbq' },
+          { scene: 'sink', dirt: ['scale', 'grease', 'film'], mode: 'dark', theme: 'blackout' },
+          { scene: 'fridge', dirt: ['stain', 'grease', 'film'], layered: true, theme: 'party' },
+          { scene: 'kitchenMix', dirt: ['grease', 'stain', 'dust'], theme: 'guests' },
+          { scene: 'kitchenMix', dirt: ['grease', 'scale', 'stain'], layered: true, mode: 'spots', theme: 'rental' },
+          { scene: 'table', dirt: ['stain', 'film', 'dust'], layered: true, theme: 'holiday' },
+          { scene: 'kitchenMix', dirt: ['grease', 'scale', 'stain', 'film', 'dust'], layered: true, hint: 'hintBig', theme: 'marathon' },
         ],
       },
       {
         id: 'bathroom',
         scale: 1.3,
         stages: [
-          { scene: 'bathTile', dirt: ['soap', 'scale'], grants: ['bathroom', 'tilebrush'], hint: 'hintSoap' },
-          { scene: 'basin', dirt: ['scale', 'soap', 'hair'] },
-          { scene: 'mirror', dirt: ['film', 'scale', 'dust'], hint: 'hintGlassScale' },
-          { scene: 'bathtub', dirt: ['mold', 'soap'], grants: ['moldremover'], hint: 'hintMold' },
-          { scene: 'toilet', dirt: ['scale', 'stain'], grants: ['rinse'], hint: 'hintRinse' },
-          { scene: 'showerglass', dirt: ['scale', 'soap', 'film'] },
-          { scene: 'bathtub', dirt: ['mold', 'scale'], layered: true, hint: 'hintHazard' },
-          { scene: 'bathTile', dirt: ['mold', 'soap', 'scale'], layered: true },
-          { scene: 'toilet', dirt: ['mold', 'scale', 'stain'] },
-          { scene: 'bathMix', dirt: ['mold', 'soap', 'scale'] },
-          { scene: 'bathMix', dirt: ['scale', 'mold', 'soap', 'film'], layered: true },
-          { scene: 'bathMix', dirt: ['mold', 'scale', 'soap', 'film', 'hair'], layered: true, hint: 'hintBig' },
+          { scene: 'bathTile', dirt: ['soap', 'scale'], grants: ['bathroom', 'tilebrush'], hint: 'hintSoap', theme: 'morning' },
+          { scene: 'basin', dirt: ['scale', 'soap', 'hair'], mode: 'rush', spawnType: 'hair', theme: 'sick' },
+          { scene: 'mirror', dirt: ['film', 'scale', 'dust'], hint: 'hintGlassScale', mode: 'fragile', theme: 'precision' },
+          { scene: 'bathtub', dirt: ['mold', 'soap'], grants: ['moldremover'], hint: 'hintMold', mode: 'spread', theme: 'monsoon' },
+          { scene: 'toilet', dirt: ['scale', 'stain'], grants: ['rinse'], hint: 'hintRinse', theme: 'guests' },
+          { scene: 'showerglass', dirt: ['scale', 'soap', 'film'], mode: 'fragile', theme: 'precision' },
+          { scene: 'bathtub', dirt: ['mold', 'scale'], layered: true, hint: 'hintHazard', mode: 'spread', theme: 'monsoon' },
+          { scene: 'bathTile', dirt: ['mold', 'soap', 'scale'], layered: true, mode: 'spots', theme: 'rental' },
+          { scene: 'toilet', dirt: ['mold', 'scale', 'stain'], mode: 'dark', theme: 'blackout' },
+          { scene: 'bathMix', dirt: ['mold', 'soap', 'scale'], mode: 'spread', theme: 'monsoon' },
+          { scene: 'bathMix', dirt: ['scale', 'mold', 'soap', 'film'], layered: true, theme: 'holiday' },
+          { scene: 'bathMix', dirt: ['mold', 'scale', 'soap', 'film', 'hair'], layered: true, hint: 'hintBig', theme: 'marathon' },
         ],
       },
     ],
@@ -343,30 +384,30 @@ const WORLD_SEEDS: WorldSeed[] = [
         id: 'garden',
         scale: 2.25,
         stages: [
-          { scene: 'patio', dirt: ['mud', 'dust'], grants: ['hose', 'deckbrush'], hint: 'hintHose' },
-          { scene: 'deck', dirt: ['mud', 'dust', 'stain'], hint: 'hintDeck' },
-          { scene: 'patio', dirt: ['moss', 'mud'], grants: ['washer'], hint: 'hintMoss' },
-          { scene: 'brickWall', dirt: ['dust', 'moss'] },
-          { scene: 'deck', dirt: ['moss', 'mud'], grants: ['mossremover'], hint: 'hintDeckMoss' },
-          { scene: 'gardenChair', dirt: ['mud', 'dust', 'stain'], hint: 'hintPlastic' },
-          { scene: 'fence', dirt: ['mud', 'moss', 'dust'] },
-          { scene: 'grill', dirt: ['grease', 'stain', 'dust'], hint: 'hintGrill' },
-          { scene: 'deck', dirt: ['mold', 'mud'], grants: ['deckcleaner'], layered: true, hint: 'hintDeckMold' },
-          { scene: 'brickWall', dirt: ['moss', 'mold', 'dust'], layered: true },
-          { scene: 'patio', dirt: ['mud', 'moss', 'stain'], layered: true },
-          { scene: 'gardenChair', dirt: ['mold', 'mud', 'film'], hint: 'hintPlasticMold' },
-          { scene: 'fence', dirt: ['moss', 'mud', 'stain'], layered: true },
-          { scene: 'grill', dirt: ['grease', 'stain', 'dust'], layered: true },
-          { scene: 'gardenMix', dirt: ['moss', 'mud', 'dust'] },
-          { scene: 'deckMix', dirt: ['mud', 'moss', 'mold'], layered: true },
-          { scene: 'yardMix', dirt: ['mud', 'moss', 'stain'], layered: true },
-          { scene: 'gardenMix', dirt: ['moss', 'mold', 'mud', 'stain'], layered: true },
-          { scene: 'deckMix', dirt: ['mud', 'moss', 'mold', 'dust'], layered: true },
-          { scene: 'brickWall', dirt: ['moss', 'mold', 'mud'], layered: true },
-          { scene: 'yardMix', dirt: ['mold', 'mud', 'moss', 'film'], layered: true },
-          { scene: 'gardenMix', dirt: ['moss', 'mold', 'mud', 'stain', 'dust'] },
-          { scene: 'deckMix', dirt: ['mud', 'moss', 'mold', 'stain', 'dust'], layered: true },
-          { scene: 'gardenMix', dirt: ['mold', 'moss', 'mud', 'stain', 'film', 'dust'], layered: true, hint: 'hintBig' },
+          { scene: 'patio', dirt: ['mud', 'dust'], grants: ['hose', 'deckbrush'], hint: 'hintHose', theme: 'rain' },
+          { scene: 'deck', dirt: ['mud', 'dust', 'stain'], hint: 'hintDeck', theme: 'garden' },
+          { scene: 'patio', dirt: ['moss', 'mud'], grants: ['washer'], hint: 'hintMoss', mode: 'spread', theme: 'monsoon' },
+          { scene: 'brickWall', dirt: ['dust', 'moss'], theme: 'spring' },
+          { scene: 'deck', dirt: ['moss', 'mud'], grants: ['mossremover'], hint: 'hintDeckMoss', mode: 'spread', theme: 'monsoon' },
+          { scene: 'gardenChair', dirt: ['mud', 'dust', 'stain'], hint: 'hintPlastic', mode: 'rush', spawnType: 'mud', theme: 'storm' },
+          { scene: 'fence', dirt: ['mud', 'moss', 'dust'], theme: 'storm' },
+          { scene: 'grill', dirt: ['grease', 'stain'], hint: 'hintGrill', mode: 'spots', theme: 'bbq' },
+          { scene: 'deck', dirt: ['mold', 'mud'], grants: ['deckcleaner'], layered: true, hint: 'hintDeckMold', mode: 'spread', theme: 'monsoon' },
+          { scene: 'brickWall', dirt: ['moss', 'mold', 'dust'], layered: true, mode: 'dark', theme: 'latenight' },
+          { scene: 'patio', dirt: ['mud', 'moss', 'stain'], layered: true, mode: 'rush', spawnType: 'mud', theme: 'rain' },
+          { scene: 'gardenChair', dirt: ['mold', 'mud', 'film'], hint: 'hintPlasticMold', mode: 'fragile', theme: 'precision' },
+          { scene: 'fence', dirt: ['moss', 'mud', 'stain'], layered: true, theme: 'spring' },
+          { scene: 'grill', dirt: ['grease', 'stain', 'dust'], layered: true, mode: 'spots', theme: 'bbq' },
+          { scene: 'gardenMix', dirt: ['moss', 'mud', 'dust'], theme: 'garden' },
+          { scene: 'deckMix', dirt: ['mud', 'moss', 'mold'], layered: true, mode: 'spread', theme: 'monsoon' },
+          { scene: 'yardMix', dirt: ['mud', 'moss', 'stain'], layered: true, mode: 'rush', spawnType: 'mud', theme: 'storm' },
+          { scene: 'gardenMix', dirt: ['moss', 'mold', 'mud', 'stain'], layered: true, theme: 'holiday' },
+          { scene: 'deckMix', dirt: ['mud', 'moss', 'mold', 'dust'], layered: true, mode: 'dark', theme: 'latenight' },
+          { scene: 'brickWall', dirt: ['moss', 'mold', 'mud'], layered: true, mode: 'spots', theme: 'rental' },
+          { scene: 'yardMix', dirt: ['mold', 'mud', 'moss', 'film'], layered: true, mode: 'spread', theme: 'monsoon' },
+          { scene: 'gardenMix', dirt: ['moss', 'mold', 'mud', 'stain', 'dust'], theme: 'spring' },
+          { scene: 'deckMix', dirt: ['mud', 'moss', 'mold', 'stain', 'dust'], layered: true, mode: 'rush', spawnType: 'dust', theme: 'pollen' },
+          { scene: 'gardenMix', dirt: ['mold', 'moss', 'mud', 'stain', 'film', 'dust'], layered: true, hint: 'hintBig', theme: 'marathon' },
         ],
       },
     ],
@@ -378,55 +419,81 @@ const WORLD_SEEDS: WorldSeed[] = [
         id: 'exterior',
         scale: 1.8,
         stages: [
-          { scene: 'car', dirt: ['mud', 'dust'], grants: ['carshampoo', 'mitt'], hint: 'hintCar' },
-          { scene: 'windshield', dirt: ['film', 'dust'] },
-          { scene: 'wheel', dirt: ['iron', 'mud'], grants: ['wheelcleaner', 'wheelbrush'], hint: 'hintWheel' },
-          { scene: 'car', dirt: ['tar', 'mud'], grants: ['tarremover'], hint: 'hintTar' },
-          { scene: 'headlight', dirt: ['film', 'tar', 'dust'], hint: 'hintHeadlight' },
-          { scene: 'windshield', dirt: ['film', 'tar', 'dust'], layered: true },
-          { scene: 'car', dirt: ['mud', 'tar', 'stain'], layered: true },
-          { scene: 'wheel', dirt: ['iron', 'mud', 'tar'], layered: true },
-          { scene: 'carExtMix', dirt: ['mud', 'film', 'tar'] },
-          { scene: 'carFullMix', dirt: ['mud', 'iron', 'film'], layered: true },
-          { scene: 'carExtMix', dirt: ['mud', 'tar', 'stain', 'film'], layered: true },
-          { scene: 'carFullMix', dirt: ['mud', 'iron', 'tar', 'film', 'stain'], layered: true, hint: 'hintBig' },
+          { scene: 'car', dirt: ['mud', 'dust'], grants: ['carshampoo', 'mitt'], hint: 'hintCar', theme: 'weekend' },
+          { scene: 'windshield', dirt: ['film', 'dust'], mode: 'fragile', theme: 'precision' },
+          { scene: 'wheel', dirt: ['iron', 'mud'], grants: ['wheelcleaner', 'wheelbrush'], hint: 'hintWheel', theme: 'weekend' },
+          { scene: 'car', dirt: ['tar', 'mud'], grants: ['tarremover'], hint: 'hintTar', mode: 'spots', theme: 'bugs' },
+          { scene: 'headlight', dirt: ['film', 'tar', 'dust'], hint: 'hintHeadlight', theme: 'roadtrip' },
+          { scene: 'windshield', dirt: ['film', 'tar', 'dust'], layered: true, mode: 'rush', spawnType: 'tar', theme: 'bugs' },
+          { scene: 'car', dirt: ['mud', 'tar', 'stain'], layered: true, mode: 'rush', spawnType: 'stain', theme: 'roadtrip' },
+          { scene: 'wheel', dirt: ['iron', 'mud', 'tar'], layered: true, mode: 'dark', theme: 'latenight' },
+          { scene: 'carExtMix', dirt: ['mud', 'film', 'tar'], theme: 'winter' },
+          { scene: 'carFullMix', dirt: ['mud', 'iron', 'film'], layered: true, mode: 'spots', theme: 'newcar' },
+          { scene: 'carExtMix', dirt: ['mud', 'tar', 'stain', 'film'], layered: true, mode: 'rush', spawnType: 'mud', theme: 'rain' },
+          { scene: 'carFullMix', dirt: ['mud', 'iron', 'tar', 'film', 'stain'], layered: true, hint: 'hintBig', theme: 'marathon' },
         ],
       },
       {
         id: 'interior',
-        scale: 1.85,
+        scale: 2.1,
         stages: [
-          { scene: 'seat', dirt: ['dust', 'hair'], grants: ['interior'], hint: 'hintSeat' },
-          { scene: 'dashboard', dirt: ['dust', 'film'], hint: 'hintVinyl' },
-          { scene: 'floorMat', dirt: ['mud', 'dust', 'hair'] },
-          { scene: 'seat', dirt: ['stain', 'hair'], hint: 'hintFabricStain' },
-          { scene: 'dashboard', dirt: ['film', 'grease', 'dust'], hint: 'hintVinylGrease' },
-          { scene: 'trunk', dirt: ['mud', 'dust', 'stain'], layered: true },
-          { scene: 'seat', dirt: ['stain', 'mud', 'hair'], layered: true },
-          { scene: 'floorMat', dirt: ['mud', 'stain', 'hair'], layered: true },
-          { scene: 'carIntMix', dirt: ['dust', 'film', 'stain'] },
-          { scene: 'carIntMix', dirt: ['stain', 'hair', 'grease', 'film'], layered: true },
-          { scene: 'trunk', dirt: ['mud', 'hair', 'stain', 'grease'], layered: true },
-          { scene: 'carIntMix', dirt: ['stain', 'mud', 'hair', 'grease', 'film', 'dust'], layered: true, hint: 'hintBig' },
+          { scene: 'seat', dirt: ['dust', 'hair'], grants: ['interior'], hint: 'hintSeat', theme: 'morning' },
+          { scene: 'dashboard', dirt: ['dust', 'film'], hint: 'hintVinyl', mode: 'fragile', theme: 'precision' },
+          { scene: 'floorMat', dirt: ['mud', 'dust', 'hair'], mode: 'rush', spawnType: 'mud', theme: 'rain' },
+          { scene: 'seat', dirt: ['stain', 'hair'], hint: 'hintFabricStain', mode: 'spots', theme: 'kidsCar' },
+          { scene: 'dashboard', dirt: ['film', 'grease', 'dust'], hint: 'hintVinylGrease', theme: 'roadtrip' },
+          { scene: 'trunk', dirt: ['mud', 'dust', 'stain'], layered: true, theme: 'beach' },
+          { scene: 'seat', dirt: ['stain', 'mud', 'hair'], layered: true, mode: 'rush', spawnType: 'hair', theme: 'pet' },
+          { scene: 'floorMat', dirt: ['mud', 'stain', 'hair'], layered: true, mode: 'dark', theme: 'latenight' },
+          { scene: 'carIntMix', dirt: ['dust', 'film', 'stain'], theme: 'weekend' },
+          { scene: 'carIntMix', dirt: ['stain', 'hair', 'grease', 'film'], layered: true, mode: 'spots', theme: 'kidsCar' },
+          { scene: 'trunk', dirt: ['mud', 'hair', 'stain', 'grease'], layered: true, mode: 'rush', spawnType: 'mud', theme: 'beach' },
+          { scene: 'carIntMix', dirt: ['stain', 'mud', 'hair', 'grease', 'film', 'dust'], layered: true, hint: 'hintBig', theme: 'marathon' },
         ],
       },
     ],
   },
 ]
 
-/** 난이도 t(0~1)·구역 배수에 따른 얼룩 생성 — 뒤로 갈수록 더 많고, 더 크고, 더 진하게 */
+/** 난이도 t(0~1)·구역 배수·모드에 따른 얼룩 생성 — 뒤로 갈수록 더 많고, 더 크고, 더 진하게 */
 function patchesFor(seed: StageSeed, t: number, scale: number): DirtPatch[] {
+  const mode = seed.mode ?? 'clean'
   const baseBlobs = [6, 4, 3, 2, 1, 1]
   const out: DirtPatch[] = []
   seed.dirt.forEach((type, k) => {
-    const blobs = Math.max(1, Math.round(baseBlobs[k] * (0.9 + 0.2 * t) * scale))
-    const sMin = (k === 0 ? 4.2 : 3.0) * (1 + 0.1 * t)
-    const sMax = (k === 0 ? 7.5 : 5.5) * (1 + 0.12 * t)
+    let blobs = Math.max(1, Math.round(baseBlobs[k] * (0.9 + 0.2 * t) * scale))
+    let sMin = (k === 0 ? 4.2 : 3.0) * (1 + 0.1 * t)
+    let sMax = (k === 0 ? 7.5 : 5.5) * (1 + 0.12 * t)
     const amount: [number, number] = [0.5 + 0.15 * t, 0.8 + 0.1 * t]
+    if (mode === 'spots') {
+      // 끈질긴 얼룩 몇 곳: 적고 크고 진하게. 주 오염은 표적, 나머지는 작게
+      if (k === 0) {
+        blobs = Math.min(6, 3 + Math.round(t * 3))
+        sMin = 5.5
+        sMax = 7.5
+        amount[0] = 0.85
+        amount[1] = 1
+      } else {
+        blobs = Math.max(1, Math.round(blobs * 0.5))
+      }
+    } else if (mode === 'rush') {
+      blobs = Math.max(1, Math.round(blobs * 0.6)) // 시작은 가볍게, 플레이 중 계속 생김
+    } else if (mode === 'spread') {
+      if (k === 0) blobs = Math.max(2, Math.round(blobs * 0.7)) // 번질 여지를 남김
+    } else if (mode === 'fragile') {
+      blobs = Math.max(1, Math.round(blobs * 0.8))
+    }
     const p: DirtPatch = { type, blobs, size: [round1(sMin), round1(sMax)], amount: [round2(amount[0]), round2(amount[1])] }
-    if (type === 'dust') p.coverage = round2(0.16 + 0.1 * t)
-    if (type === 'film') p.coverage = round2(0.1 + 0.08 * t)
-    if (seed.layered && k === 0 && seed.dirt[1]) {
+    if (type === 'dust' && mode !== 'spots') p.coverage = round2(0.16 + 0.1 * t)
+    if (type === 'film' && mode !== 'spots') p.coverage = round2(0.1 + 0.08 * t)
+    if (mode === 'spots' && k === 0) {
+      p.spot = true
+      if (seed.dirt[1]) {
+        p.under = seed.dirt[1]
+        p.underAmount = [0.5, 0.7]
+        p.underChance = 1
+      }
+    } else if (seed.layered && k === 0 && seed.dirt[1]) {
       p.under = seed.dirt[1]
       p.underAmount = [round2(0.25 + 0.1 * t), round2(0.35 + 0.15 * t)]
       p.underChance = 0.5
@@ -434,6 +501,25 @@ function patchesFor(seed: StageSeed, t: number, scale: number): DirtPatch[] {
     out.push(p)
   })
   return out
+}
+
+function spawnFor(seed: StageSeed, t: number, scale: number): SpawnDef | undefined {
+  if (seed.mode !== 'rush') return undefined
+  const type = seed.spawnType ?? seed.dirt[0]
+  const small = type === 'hair' || type === 'tar' || type === 'stain'
+  return {
+    type,
+    every: round1(Math.max(1.8, 3.4 - 1.2 * t)),
+    count: Math.round((6 + 8 * t) * Math.min(1.4, scale)),
+    size: small ? [1.4, 2.4] : [1.8, 3.0],
+    amount: [0.5, 0.8],
+  }
+}
+
+function growthFor(seed: StageSeed, t: number): GrowthDef | undefined {
+  if (seed.mode !== 'spread') return undefined
+  const type = seed.dirt.includes('mold') ? 'mold' : 'moss'
+  return { type, rate: round1(3 + 5 * t), cap: 1.6 }
 }
 
 function round1(n: number) {
@@ -466,12 +552,18 @@ function build(): { levels: LevelDef[]; worlds: WorldInfo[] } {
         id++
         const tier = tierFor(id)
         const t = (id - 1) / (total - 1)
+        const mode = seed.mode ?? 'clean'
         levels.push({
           id,
           world: w.id,
           area: a.id,
           tier: tier.id,
           scene: seed.scene,
+          mode,
+          theme: seed.theme ?? 'morning',
+          spawn: spawnFor(seed, t, a.scale),
+          growth: growthFor(seed, t),
+          failDamage: mode === 'fragile' ? 0.1 : undefined,
           outdoor: w.id === 'house' || a.id === 'exterior',
           surface: SCENE_SURFACE[seed.scene],
           zones: ZONE_LAYOUTS[seed.scene],
@@ -482,7 +574,8 @@ function build(): { levels: LevelDef[]; worlds: WorldInfo[] } {
           grants: seed.grants ?? [],
           hint: seed.hint,
           seed: id * 7919 + 17,
-          parFactor: tier.parFactor,
+          // 정전·번짐·러시는 사람이 봇보다 훨씬 느리므로 여유를 더 준다
+          parFactor: round2(tier.parFactor * (mode === 'dark' ? 1.3 : mode === 'spread' || mode === 'rush' ? 1.15 : 1)),
           limitFactor: tier.limitFactor,
         })
         area.levelIds.push(id)
