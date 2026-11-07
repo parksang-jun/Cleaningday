@@ -72,6 +72,8 @@ export class CleanSession {
   readonly tried = new Map<DirtType, Set<string>>()
   /** 스팟 모드 표적 (중심·반경·완료) */
   readonly spots: { x: number; y: number; r: number; done: boolean }[] = []
+  /** 오염 배열이 바뀔 때마다 증가 — 렌더러가 오염층을 다시 합성할지 판단 */
+  version = 0
   /** 광택 마감: 고성능 도구·세정제로 끝까지 지운 칸 (렌더링·결과 보너스) */
   readonly shine: Uint8Array
   shineCells = 0
@@ -232,6 +234,7 @@ export class CleanSession {
     this.put(i, t, a)
     const delta = this.amount[i] - before
     if (delta <= 0) return
+    this.version++
     if (before <= 0) {
       this.dirtyCellsSeen++
       if (this.shine[i]) {
@@ -314,6 +317,11 @@ export class CleanSession {
         this.remaining += delta
         ;(this as { initialTotal: number }).initialTotal += delta
         this.growthBudget -= delta
+        this.version++
+        if (before <= 0 && this.shine[j]) {
+          this.shine[j] = 0
+          this.shineCells--
+        }
         infected = true
       }
       n--
@@ -498,6 +506,22 @@ export class CleanSession {
   private take(i: number, delta: number) {
     this.remaining -= delta
     this.perType[this.type[i]] -= delta
+    this.version++
+  }
+
+  /** 남은 오염을 전부 지움 (클리어 연출용) */
+  clearAll() {
+    for (let i = 0; i < this.amount.length; i++) {
+      if (this.amount[i] > 0) this.take(i, this.amount[i])
+      this.amount[i] = 0
+      if (this.under[i] > 0) {
+        this.remaining -= this.under[i]
+        this.perType[this.underType[i]] -= this.under[i]
+        this.under[i] = 0
+      }
+    }
+    this.remaining = Math.max(0, this.remaining)
+    this.version++
   }
 
   /** 칸이 다 지워짐 — 아래층이 있으면 드러내고, 없으면 비움. 종류가 다 사라지면 typecleared */

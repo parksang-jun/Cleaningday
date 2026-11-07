@@ -301,6 +301,15 @@ export const sfx = {
     tone(1046, 0.22, 'triangle', 0.22, 0.25);
     tone(1318, 0.28, 'triangle', 0.22, 0.34);
   },
+  /** 25·50·75% 달성 — 빛이 쓸고 지나가는 "샤란~" (높을수록 한 음 위) */
+  shine(frac = 0.25): void {
+    const base = frac >= 0.75 ? 1046 : frac >= 0.5 ? 880 : 784;
+    noise(0.5, 0.22, { type: 'bandpass', from: 1500, to: 6000, q: 0.8 });
+    tone(base, 0.3, 'sine', 0.22, 0.02);
+    tone(base * 1.25, 0.3, 'sine', 0.2, 0.12);
+    tone(base * 1.5, 0.45, 'sine', 0.2, 0.22);
+    tone(base * 2, 0.6, 'triangle', 0.14, 0.3);
+  },
   /** 틀린 도구 — 둔탁한 "툭" */
   thud(): void {
     tone(150, 0.1, 'square', 0.16, 0, 90);

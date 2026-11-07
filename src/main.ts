@@ -563,6 +563,10 @@ function startLevel(id: number) {
   for (const id of pendingTrials) game.trials.delete(id);
   renderToolbar();
   renderer.setSession(session);
+  renderer.onMilestone = (m) => {
+    sfx.shine(m);
+    haptic('light');
+  };
   updateUnknownBadge();
   updateModeHud();
   window.addEventListener('resize', onResize);
@@ -827,6 +831,7 @@ function handleEvents(events: SessionEvent[]) {
     } else if (ev.kind === 'typecleared') {
       pop(t('typeCleared', { dirt: t(`dirt_${ev.dirt}`) }), 'pop--big');
       g.renderer.celebrate(40);
+      g.renderer.sweep();
       sfx.swoosh();
       haptic('medium');
       track('type_cleared', { level: g.level.id, dirt: ev.dirt });
@@ -1000,8 +1005,7 @@ function finishLevel() {
     if (a > 0) rest.push(i);
   });
   g.renderer.burst(rest);
-  g.session.amount.fill(0);
-  g.session.under.fill(0);
+  g.session.clearAll();
   sfx.complete();
   haptic('medium');
   const result = scoreSession(g.session, g.timing.parSec, g.level.tier);
