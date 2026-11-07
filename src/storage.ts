@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 
 export interface Settings {
   sound: boolean;
+  music: boolean;
   haptics: boolean;
   lang: 'auto' | 'ko' | 'en' | 'ja';
 }
@@ -37,7 +38,7 @@ export interface Store {
 const KEY = 'sparkle-clean-v1';
 
 const DEFAULTS: Store = {
-  settings: { sound: true, haptics: true, lang: 'auto' },
+  settings: { sound: true, music: true, haptics: true, lang: 'auto' },
   stats: { gamesPlayed: 0, totalCleanedCells: 0 },
   ads: { lastInterstitialAt: 0, gamesSinceInterstitial: 0 },
   progress: { unlocked: 1, stars: {}, bestTime: {} },

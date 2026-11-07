@@ -86,6 +86,12 @@ try {
   assert((await page.locator('[data-el="unknown"]').innerText()) === '1', 'notebook badge shows 1 unknown mess');
   await page.screenshot({ path: resolve(shots, '02-stage1-dirty.png') });
   await sweep(page, 1);
+  const audio = await page.evaluate(() => window.__sparkle.audio());
+  assert(audio.unlocked && audio.state === 'running', `audio unlocked on first touch (state ${audio.state})`);
+  assert(audio.scrub === 'cloth', `scrub sound uses the cloth profile (${audio.scrub})`);
+  await page.waitForTimeout(700);
+  const audio2 = await page.evaluate(() => window.__sparkle.audio());
+  assert(audio2.musicStep > 2, `background music is scheduling notes (${audio2.musicStep} steps)`);
   const mid = await page.evaluate(() => window.__sparkle.session().cleanliness);
   assert(mid > 0.2, `one sweep with the cloth cleans ${(mid * 100).toFixed(0)}%`);
   assert((await page.evaluate(() => window.__sparkle.journal())).includes('dust|cloth|-'), 'cloth-on-dust recipe recorded in the notebook');

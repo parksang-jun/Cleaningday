@@ -3,7 +3,7 @@ import './style.css';
 import { Capacitor } from '@capacitor/core';
 import { AdsController } from './ads';
 import { track } from './analytics';
-import { scrubSound, setSoundEnabled, sfx, stopScrub, unlockAudio } from './audio';
+import { audioDebug, duckMusic, installAudioUnlock, scrubSound, setMusicEnabled, setSoundEnabled, sfx, stopScrub, unlockAudio, type ScrubProfile } from './audio';
 import { resolveTiming } from './game/bot';
 import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES, recipesFor, type CleanerFamily, type DetergentId, type DetergentSpec, type DirtType, type SurfaceType, type ToolFamily, type ToolId, type ToolSpec } from './game/catalog';
 import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
@@ -113,6 +113,7 @@ function nextLevelId(): number {
 // ---------- 홈: 월드·구역 ----------
 function renderHome() {
   stopGame();
+  duckMusic(false);
   const st = getStore();
   const totalStars = Object.values(st.progress.stars).reduce((a, b) => a + b, 0);
   const next = getLevel(nextLevelId())!;
@@ -166,6 +167,26 @@ const AREA_ICON: Record<string, string> = {
   garden: '🌿',
   exterior: '🚗',
   interior: '💺',
+};
+const SCRUB_PROFILE: Record<ToolId, ScrubProfile> = {
+  cloth: 'cloth',
+  vacuum: 'vacuum',
+  lintroller: 'roller',
+  sponge: 'sponge',
+  scrubpad: 'brush',
+  tilebrush: 'brush',
+  squeegee: 'squeegee',
+  deckbrush: 'brush',
+  hose: 'water',
+  washer: 'washer',
+  mitt: 'mitt',
+  wheelbrush: 'brush',
+  rinse: 'water',
+  cordlessvac: 'vacuum',
+  scrubber: 'brush',
+  drillbrush: 'brush',
+  steamer: 'steam',
+  magiceraser: 'sponge',
 };
 const MODE_ICON: Record<StageMode, string> = { clean: '', spots: '🎯', rush: '🐾', spread: '🦠', fragile: '⚠️', dark: '🔦' };
 const SPAWN_ICON: Partial<Record<DirtType, string>> = { hair: '🐈', mud: '🐾', stain: '🧃', grease: '🍳', tar: '🪰', dust: '🌼' };
@@ -299,6 +320,7 @@ interface GameState {
   noEffects: number;
   kit: Set<string>;
   spawnToastAt: number;
+  lastTick: number;
 }
 
 let game: GameState | null = null;
@@ -405,6 +427,7 @@ function startLevel(id: number) {
     noEffects: 0,
     kit: new Set(),
     spawnToastAt: -10,
+    lastTick: -1,
   };
   game.kit = stageKit(session);
   renderToolbar();
@@ -455,6 +478,8 @@ function startLevel(id: number) {
       root.querySelector('[data-act="ok"]')!.addEventListener('click', () => {
         close();
         unlockAudio();
+        sfx.start();
+        duckMusic(true);
       });
     },
   );
@@ -646,6 +671,7 @@ function handleEvents(events: SessionEvent[]) {
       updateModeHud();
     } else if (ev.kind === 'spawned') {
       updateModeHud();
+      sfx.plop();
       if (g.session.time - g.spawnToastAt > 6) {
         g.spawnToastAt = g.session.time;
         toast(`${SPAWN_ICON[ev.dirt] ?? ''} ${esc(t('spawned', { dirt: t(`dirt_${ev.dirt}`) }))}`, 'warn');
@@ -751,9 +777,7 @@ function step(dt: number) {
       }
     } else {
       const gain = g.session.cleanliness - before;
-      const base = spec.base as ToolId;
-      const freq = base === 'vacuum' || base === 'cordlessvac' ? 600 : base === 'washer' || base === 'hose' ? 3000 : base === 'tilebrush' || base === 'drillbrush' || base === 'scrubber' ? 2600 : base === 'rinse' ? 900 : base === 'squeegee' ? 2200 : 1500;
-      scrubSound(0.35 + Math.min(1, gain * 400), freq);
+      scrubSound(0.35 + Math.min(1, gain * 400), SCRUB_PROFILE[spec.base as ToolId] ?? 'cloth');
     }
   }
   // 콤보
@@ -791,6 +815,13 @@ function step(dt: number) {
     const left = g.session.limitSec - g.session.time;
     limitEl.textContent = g.session.engaged ? `⏱ ${fmtTime(left)}` : `⏱ ${fmtTime(left)} ⏸`;
     limitEl.classList.toggle('is-urgent', g.session.engaged && left <= 10);
+    if (g.session.engaged && left <= 10 && left > 0) {
+      const sec = Math.ceil(left);
+      if (sec !== g.lastTick) {
+        g.lastTick = sec;
+        sfx.tick(sec <= 3);
+      }
+    }
   }
   if (g.level.mode === 'fragile' || g.level.mode === 'rush') updateModeHud();
   if (g.session.passed) finishLevel();
@@ -840,7 +871,7 @@ function failLevel(reason: 'time' | 'ruined' = 'time') {
   g.failed = true;
   g.pointer = null;
   stopScrub();
-  sfx.warn();
+  sfx.fail();
   track('level_fail', { level: g.level.id, clean: Math.round(g.session.cleanliness * 100), reason });
   modal(
     `<div class="result" data-testid="fail">
@@ -1041,6 +1072,8 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
     (root, closeFn) => {
       root.parentElement!.dataset.dismiss = 'no';
       [0, 1, 2].forEach((i) => i < r.stars && setTimeout(() => sfx.star(i), 250 + i * 200));
+      for (let i = 0; i < Math.min(6, Math.ceil(r.coins / 20)); i++) setTimeout(() => sfx.coin(i), 900 + i * 70);
+      duckMusic(false);
       root.querySelector('[data-act="double"]')!.addEventListener('click', async (e) => {
         const b = e.currentTarget as HTMLButtonElement;
         b.disabled = true;
@@ -1157,7 +1190,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
           getStore().owned.push(e.spec.id);
           persist();
           track('shop_buy', { item: e.spec.id, premium: Boolean(e.spec.premium) });
-          sfx.discover();
+          sfx.buy();
           close();
           if (game) renderToolbar();
           openShop(inGame);
@@ -1289,6 +1322,7 @@ function openSettings() {
   modal(
     `<h2>${t('settings')}</h2>
     <label class="setting"><span>${t('sound')}</span><input type="checkbox" data-k="sound" ${s.sound ? 'checked' : ''}></label>
+    <label class="setting"><span>${t('music')}</span><input type="checkbox" data-k="music" ${s.music ? 'checked' : ''}></label>
     <label class="setting"><span>${t('haptics')}</span><input type="checkbox" data-k="haptics" ${s.haptics ? 'checked' : ''}></label>
     <label class="setting"><span>${t('language')}</span>
       <select data-k="lang">${(['auto', 'ko', 'en', 'ja'] as const).map((l) => `<option value="${l}" ${s.lang === l ? 'selected' : ''}>${l === 'auto' ? t('auto') : l === 'ko' ? '한국어' : l === 'en' ? 'English' : '日本語'}</option>`).join('')}</select>
@@ -1300,7 +1334,10 @@ function openSettings() {
       root.querySelectorAll<HTMLInputElement>('input[data-k]').forEach((inp) =>
         inp.addEventListener('change', () => {
           (s as unknown as Record<string, boolean>)[inp.dataset.k!] = inp.checked;
+          unlockAudio();
           setSoundEnabled(s.sound);
+          setMusicEnabled(s.music);
+          if (s.sound) sfx.ui();
           persist();
         }),
       );
@@ -1338,6 +1375,7 @@ declare global {
       tries: (d: string) => number;
       noEffects: () => number;
       kit: () => string[];
+      audio: () => ReturnType<typeof audioDebug>;
     };
   }
 }
@@ -1363,6 +1401,7 @@ function exposeDebug() {
     tries: (d: string) => game?.session.triesOn(d as DirtType) ?? 0,
     noEffects: () => game?.noEffects ?? 0,
     kit: () => [...(game?.kit ?? [])],
+    audio: () => audioDebug(),
   };
 }
 
@@ -1371,13 +1410,12 @@ async function boot() {
   const s = getStore().settings;
   setLang(detectLang(s.lang));
   setSoundEnabled(s.sound);
+  setMusicEnabled(s.music);
+  installAudioUnlock(); // 첫 터치에서 오디오 잠금 해제 (+ iOS 무음 스위치 우회) → 배경음악 시작
   items = allItems();
   renderHome();
   exposeDebug();
   void ads.init();
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopScrub();
-  });
 }
 
 void boot();
