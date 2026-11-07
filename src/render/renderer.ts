@@ -24,9 +24,12 @@ export class Renderer {
   private base = document.createElement('canvas');
   private dirt = document.createElement('canvas');
   private foam = document.createElement('canvas');
+  private gloss = document.createElement('canvas');
   private snap = document.createElement('canvas');
   private dirtImg: ImageData | null = null;
   private foamImg: ImageData | null = null;
+  private glossImg: ImageData | null = null;
+  private glossCount = -1;
   private sparkles: Sparkle[] = [];
   private session: CleanSession | null = null;
   private cssW = 0;
@@ -52,8 +55,12 @@ export class Renderer {
     this.dirt.height = s.h;
     this.foam.width = s.w;
     this.foam.height = s.h;
+    this.gloss.width = s.w;
+    this.gloss.height = s.h;
     this.dirtImg = this.dirt.getContext('2d')!.createImageData(s.w, s.h);
     this.foamImg = this.foam.getContext('2d')!.createImageData(s.w, s.h);
+    this.glossImg = this.gloss.getContext('2d')!.createImageData(s.w, s.h);
+    this.glossCount = -1;
     this.sparkles = [];
     this.reveal = null;
     this.hasSnap = false;
@@ -241,11 +248,55 @@ export class Renderer {
     this.foam.getContext('2d')!.putImageData(this.foamImg, 0, 0);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    const cw = W / s.w;
+    // 광택 마감: 고성능 장비로 지운 칸은 은은한 광이 돌고 드문드문 반짝인다
+    if (s.shineCells > 0 && this.glossImg) {
+      if (this.glossCount !== s.shineCells) {
+        this.glossCount = s.shineCells;
+        const gdata = this.glossImg.data;
+        for (let i = 0; i < s.shine.length; i++) {
+          const o = i * 4;
+          gdata[o] = 255;
+          gdata[o + 1] = 255;
+          gdata[o + 2] = 255;
+          gdata[o + 3] = s.shine[i] && s.amount[i] <= 0 ? 34 + 26 * s.grain[i] : 0;
+        }
+        this.gloss.getContext('2d')!.putImageData(this.glossImg, 0, 0);
+      }
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(this.gloss, 0, 0, W, H);
+      ctx.restore();
+      // 반짝임: 고정 위치의 작은 별이 번갈아 빛남
+      const now = performance.now() / 1000;
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < s.shine.length; i += 1) {
+        if (!s.shine[i] || s.amount[i] > 0) continue;
+        const h = (i * 2654435761) >>> 0;
+        if (h % 47 !== 0) continue;
+        const tw = 0.5 + 0.5 * Math.sin(now * 2.2 + (h % 628) / 100);
+        if (tw < 0.55) continue;
+        const r = cw * (0.5 + tw * 0.9);
+        const x = ((i % s.w) + 0.5) * cw;
+        const y = (Math.floor(i / s.w) + 0.5) * cw;
+        ctx.globalAlpha = (tw - 0.55) * 1.6;
+        ctx.beginPath();
+        for (let k = 0; k < 4; k++) {
+          const a = (k * Math.PI) / 2;
+          ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+          ctx.lineTo(x + Math.cos(a + Math.PI / 4) * r * 0.22, y + Math.sin(a + Math.PI / 4) * r * 0.22);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
     ctx.drawImage(this.dirt, 0, 0, W, H);
     ctx.globalAlpha = 0.85;
     ctx.drawImage(this.foam, 0, 0, W, H);
     ctx.globalAlpha = 1;
-    const cw = W / s.w;
 
     // 스팟 모드: 표적 링 (완료되면 체크)
     if (s.spots.length) {

@@ -134,16 +134,18 @@ export interface TierDef {
   parFactor: number // 목표시간 = 봇 시간 × parFactor
   limitFactor?: number // 제한시간 = 목표시간 × limitFactor (없으면 제한 없음)
   sprayBudgetSec?: number // 세제별 분사 가능 시간(초)
+  /** 찌든 때 감속 — 일반 도구가 마지막 층(TAIL_AMOUNT 아래)을 지우는 속도 배율 (없으면 1). 고성능 장비는 무시 */
+  tailRate?: number
   fromId: number
 }
 
 export const TIERS: TierDef[] = [
-  { id: 1, fromId: 1, passClean: 0.9, resistMul: 1.0, parFactor: 1.9 },
-  { id: 2, fromId: 13, passClean: 0.92, resistMul: 1.05, parFactor: 1.7, limitFactor: 2.8 },
-  { id: 3, fromId: 25, passClean: 0.94, resistMul: 1.1, parFactor: 1.6, limitFactor: 2.5, sprayBudgetSec: 20 },
-  { id: 4, fromId: 37, passClean: 0.95, resistMul: 1.15, parFactor: 1.5, limitFactor: 2.3, sprayBudgetSec: 18 },
-  { id: 5, fromId: 49, passClean: 0.96, resistMul: 1.2, parFactor: 1.4, limitFactor: 2.1, sprayBudgetSec: 16 },
-  { id: 6, fromId: 73, passClean: 0.97, resistMul: 1.25, parFactor: 1.3, limitFactor: 1.9, sprayBudgetSec: 14 },
+  { id: 1, fromId: 1, passClean: 0.9, resistMul: 1.0, parFactor: 1.8 },
+  { id: 2, fromId: 13, passClean: 0.93, resistMul: 1.05, parFactor: 1.6, limitFactor: 2.6 },
+  { id: 3, fromId: 25, passClean: 0.95, resistMul: 1.1, parFactor: 1.5, limitFactor: 2.3, sprayBudgetSec: 18, tailRate: 0.7 },
+  { id: 4, fromId: 37, passClean: 0.96, resistMul: 1.15, parFactor: 1.4, limitFactor: 2.1, sprayBudgetSec: 16, tailRate: 0.65 },
+  { id: 5, fromId: 49, passClean: 0.97, resistMul: 1.2, parFactor: 1.3, limitFactor: 1.9, sprayBudgetSec: 14, tailRate: 0.6 },
+  { id: 6, fromId: 73, passClean: 0.98, resistMul: 1.25, parFactor: 1.2, limitFactor: 1.75, sprayBudgetSec: 12, tailRate: 0.55 },
 ]
 
 export function tierFor(id: number): TierDef {
@@ -170,6 +172,7 @@ export interface LevelDef {
   passClean: number
   resistMul: number
   sprayBudgetSec?: number
+  tailRate?: number
   grants: ItemId[]
   hint?: string
   seed: number
@@ -571,6 +574,7 @@ function build(): { levels: LevelDef[]; worlds: WorldInfo[] } {
           passClean: tier.passClean,
           resistMul: tier.resistMul,
           sprayBudgetSec: tier.sprayBudgetSec,
+          tailRate: tier.tailRate,
           grants: seed.grants ?? [],
           hint: seed.hint,
           seed: id * 7919 + 17,

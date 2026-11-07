@@ -32,9 +32,18 @@ interface Plan {
   score: number
 }
 
-export function simulateBot(level: LevelDef, maxSec = 900): BotResult {
+/** 기본 지급품 + 프리미엄 전부 — "좋은 장비" 효과 측정용 */
+export function premiumKitFor(level: LevelDef): { tools: ToolSpec[]; dets: DetergentSpec[] } {
+  const base = kitFor(level)
+  return {
+    tools: [...base.tools, ...Object.values(BASE_TOOLS).filter((t) => t.premium)],
+    dets: [...base.dets, ...Object.values(BASE_DETERGENTS).filter((d) => d.premium)],
+  }
+}
+
+export function simulateBot(level: LevelDef, maxSec = 900, kit: { tools: ToolSpec[]; dets: DetergentSpec[] } = kitFor(level)): BotResult & { polish: number } {
   const s = new CleanSession(level)
-  const { tools, dets } = kitFor(level)
+  const { tools, dets } = kit
   const usable = tools.filter((t) => s.canUse(t))
   const rinse = tools.find((t) => t.families.includes('rinse') && !t.onlyOn) ?? tools.find((t) => t.families.includes('rinse'))
 
@@ -222,7 +231,7 @@ export function simulateBot(level: LevelDef, maxSec = 900): BotResult {
     if (!scrubAt(best)) {
       stuck = stuck ?? `${dirt} on ${surface} with ${tool.id} (level ${level.id})`
       s.amount[best] = 0
-      if (++stuckGuard > 400) return { time: s.time, passed: false, hazard: s.hazard, damage: s.damage, stuck }
+      if (++stuckGuard > 400) return { time: s.time, passed: false, hazard: s.hazard, damage: s.damage, stuck, polish: s.polish }
       continue
     }
     // 세정제를 뿌렸으면 그 범위 안의 같은 오염을 마르기 전에 다 닦는다 (숙련자의 "뿌리고 쓸기")
@@ -246,7 +255,7 @@ export function simulateBot(level: LevelDef, maxSec = 900): BotResult {
       }
     }
   }
-  return { time: s.time, passed: s.passed, hazard: s.hazard, damage: s.damage, stuck, stats }
+  return { time: s.time, passed: s.passed, hazard: s.hazard, damage: s.damage, stuck, stats, polish: s.polish }
 }
 
 const cache = new Map<number, Timing>()

@@ -29,6 +29,14 @@ function assert(cond, msg) {
   console.log('ok -', msg);
 }
 
+/** 쇼호스트 카드가 떠 있으면 닫는다 */
+async function closeHostIfOpen(page) {
+  if (await page.locator('[data-testid="host"]').count()) {
+    await page.click('[data-testid="host-close"]');
+    await page.waitForTimeout(350);
+  }
+}
+
 /** 캔버스 위를 지그재그로 문지름 (passes 회) */
 async function sweep(page, passes = 1, rows = 14, stepMs = 8) {
   const box = await page.locator('[data-testid="canvas"]').boundingBox();
@@ -85,10 +93,21 @@ try {
   assert((await page.locator('[data-testid="limit"]').count()) === 0, 'tier 1 has no time limit');
   assert((await page.locator('[data-el="unknown"]').innerText()) === '1', 'notebook badge shows 1 unknown mess');
   await page.screenshot({ path: resolve(shots, '02-stage1-dirty.png') });
-  await sweep(page, 1);
+  // 드래그 중에 문지르는 소리가 나고, 손을 떼면 바로 멈춘다
+  const box0 = await page.locator('[data-testid="canvas"]').boundingBox();
+  await page.mouse.move(box0.x + 20, box0.y + 20);
+  await page.mouse.down();
+  for (let k = 0; k < 12; k++) {
+    await page.mouse.move(box0.x + 20 + k * 12, box0.y + 24 + k * 6);
+    await page.waitForTimeout(16);
+  }
   const audio = await page.evaluate(() => window.__sparkle.audio());
   assert(audio.unlocked && audio.state === 'running', `audio unlocked on first touch (state ${audio.state})`);
-  assert(audio.scrub === 'cloth', `scrub sound uses the cloth profile (${audio.scrub})`);
+  assert(audio.scrub === 'cloth', `scrub sound uses the cloth profile while dragging (${audio.scrub})`);
+  await page.mouse.up();
+  await page.waitForTimeout(450);
+  assert((await page.evaluate(() => window.__sparkle.audio())).scrub === null, 'scrub sound stops right after the pointer lifts');
+  await sweep(page, 1);
   await page.waitForTimeout(700);
   const audio2 = await page.evaluate(() => window.__sparkle.audio());
   assert(audio2.musicStep > 2, `background music is scheduling notes (${audio2.musicStep} steps)`);
@@ -98,6 +117,8 @@ try {
   await page.screenshot({ path: resolve(shots, '03-stage1-cleaning.png') });
   assert(await cleanUntilDone(page), 'stage 1 completes by dragging');
   await page.waitForSelector('[data-testid="result"]', { timeout: 8000 });
+  await page.waitForTimeout(500);
+  assert((await page.evaluate(() => window.__sparkle.audio())).scrub === null, 'scrub sound stops when the stage ends');
   const stars = await page.locator('.result__stars .on').count();
   assert(stars >= 1, `result shows ${stars} stars`);
   assert((await page.locator('.result__found .recipe').count()) >= 1, 'result lists the discovered combo');
@@ -127,14 +148,68 @@ try {
   await page.reload({ waitUntil: 'networkidle' });
   assert((await page.locator('.area.is-locked').count()) === 0, 'all areas unlocked');
 
-  // 25단계(가스레인지 기름때): 틀린 도구는 아무 효과 없음 → 세정제+수세미로만 지워짐 → 발견
+  // 2단계(안내 단계, 얼룩+먼지): 두 번 실패 → 수첩에서 코인 힌트 → 세정제 공개 (힌트는 3단계까지만)
+  await page.click('[data-testid="area-living"]');
+  await page.click('[data-testid="stage-2"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  assert((await page.locator('[data-testid="intro"] .kit').innerText()).includes('Tools for this job'), 'guided stage intro lists the tools for the job');
+  await page.click('[data-testid="start"]');
+  await page.waitForSelector('[data-testid="item-allpurpose"]');
+  await page.click('[data-testid="item-vacuum"]');
+  await sweep(page, 1, 8, 4);
+  await page.click('[data-testid="item-cloth"]');
+  await sweep(page, 1, 8, 4);
+  assert((await page.evaluate(() => window.__sparkle.tries('stain'))) >= 2, 'two failed tools tried on the stain');
+  await page.click('[data-testid="journal"]');
+  await page.waitForSelector('[data-testid="hint-coins-stain"]');
+  await page.click('[data-testid="hint-coins-stain"]');
+  await page.waitForTimeout(200);
+  const hintText = await page.locator('[data-testid="journal-stain"]').innerText();
+  assert(hintText.includes('Cleaner:'), 'coin hint reveals the needed cleaner on a guided stage');
+  await page.screenshot({ path: resolve(shots, '09-hint.png') });
+  await page.click('[data-testid="journal-modal"] [data-act="close"]');
+
+  // 4단계(안내 끝): 미끼 도구가 섞이고, 힌트 버튼이 없다
+  await page.click('[data-testid="back"]');
+  await page.click('[data-testid="stage-4"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  const intro4 = await page.locator('[data-testid="intro"]').innerText();
+  assert(intro4.includes('Hints end after stage 3'), 'stage 4 intro explains that hints are over');
+  assert(intro4.includes('only some of them work'), 'stage 4 intro says only some tools work');
+  await page.click('[data-testid="start"]');
+  await page.waitForSelector('[data-testid="item-squeegee"]');
+  const kit4 = await page.evaluate(() => window.__sparkle.kit());
+  assert(kit4.includes('squeegee') && kit4.includes('glass') && kit4.length >= 5, `stage 4 kit mixes decoys in (${kit4.join(',')})`);
+  await page.click('[data-testid="item-vacuum"]');
+  await sweep(page, 1, 8, 4);
+  await page.click('[data-testid="item-cloth"]');
+  await sweep(page, 1, 8, 4);
+  assert((await page.evaluate(() => window.__sparkle.tries('film'))) >= 2, 'two failed tools tried on the window film');
+  await page.click('[data-testid="journal"]');
+  await page.waitForSelector('[data-testid="journal-modal"]');
+  assert((await page.locator('[data-testid^="hint-coins-"]').count()) === 0 && (await page.locator('[data-testid^="hint-ad-"]').count()) === 0, 'no hint buttons after stage 3');
+  assert((await page.locator('[data-testid="journal-modal"]').innerText()).includes('Hints end after stage 3'), 'notebook says hints are over');
+  await page.click('[data-testid="journal-modal"] [data-act="close"]');
+  await page.click('[data-testid="back"]');
+  await page.click('[data-testid="back-home"]');
+
+  // 25단계(가스레인지 기름때): 쇼호스트가 광고 제품(기름때 제거제) 소개 → 틀린 도구는 아무 효과 없음 → 세정제+수세미로만 지워짐 → 발견
   await page.click('[data-testid="area-kitchen"]');
   await page.click('[data-testid="stage-25"]');
   await page.waitForSelector('[data-testid="intro"]');
   await page.click('[data-testid="start"]');
+  await page.waitForSelector('[data-testid="host"][data-placement="intro"]', { timeout: 4000 });
+  assert((await page.locator('[data-testid="host"]').innerText()).includes('BrightMax'), 'live host introduces the sponsored degreaser at stage start');
+  await page.waitForTimeout(1500);
+  const hostLine = await page.locator('[data-testid="host-line"]').innerText();
+  assert(hostLine.length > 10, `host speaks with a typewriter bubble ("${hostLine.slice(0, 40)}…")`);
+  assert((await page.locator('[data-testid="host-trial"]').count()) === 1 && (await page.locator('[data-testid="host-buy"]').count()) === 1, 'host offers a free trial (ad) and a buy button');
+  await page.screenshot({ path: resolve(shots, '04b-host-intro.png') });
+  await page.click('[data-testid="host-close"]');
+  await page.waitForTimeout(350);
   await page.waitForSelector('[data-testid="item-degreaser"]');
   const kit25 = await page.evaluate(() => window.__sparkle.kit());
-  assert(kit25.includes('degreaser') && kit25.includes('scrubpad') && !kit25.includes('descaler') && !kit25.includes('moldremover'), `stove kit has what grease/dust need and nothing else (${kit25.join(',')})`);
+  assert(kit25.includes('degreaser') && kit25.includes('scrubpad') && !kit25.includes('sp:brightmax-degreaser'), `stove kit has what grease/dust need (${kit25.join(',')})`);
   assert((await page.locator('[data-testid="limit"]').count()) === 1, 'tier 3 stage shows a time limit');
   assert((await page.locator('[data-testid="limit"]').innerText()).includes('⏸'), 'clock is paused until cleaning actually starts');
   const grease0 = await page.evaluate(() => window.__sparkle.session().remainingOf('grease'));
@@ -142,9 +217,22 @@ try {
   await sweep(page, 1, 10, 4);
   const grease1 = await page.evaluate(() => window.__sparkle.session().remainingOf('grease'));
   assert(grease1 === grease0, `sponge alone leaves grease untouched (${grease0.toFixed(1)} → ${grease1.toFixed(1)})`);
-  assert((await page.evaluate(() => window.__sparkle.noEffects())) >= 1, 'a "no effect" toast explained the wrong combo');
-  assert((await page.evaluate(() => window.__sparkle.tries('grease'))) >= 1, 'failed attempt counted toward a hint');
+  assert((await page.evaluate(() => window.__sparkle.noEffects())) >= 1, 'a "no effect" toast (no diagnosis after stage 3) fired for the wrong combo');
+  assert((await page.evaluate(() => window.__sparkle.tries('grease'))) >= 1, 'failed attempt counted');
   await page.screenshot({ path: resolve(shots, '05-stove-wrong-tool.png') });
+  // 수첩: 힌트 대신 쇼호스트 호출 → 막힘 등장(시계 멈춤) → 광고 보고 체험 → 툴바에 광고 제품
+  await page.click('[data-testid="journal"]');
+  await page.waitForSelector('[data-testid="host-hint-grease"]');
+  await page.click('[data-testid="host-hint-grease"]');
+  await page.waitForSelector('[data-testid="host"][data-placement="struggle"]');
+  assert(await page.evaluate(() => window.__sparkle.paused()), 'game clock pauses while the host is on screen');
+  assert((await page.locator('[data-testid="item-sp:brightmax-degreaser"]').count()) === 0, 'sponsored product is not in the toolbar before a trial');
+  await page.click('[data-testid="host-trial"]');
+  await page.waitForSelector('[data-testid="item-sp:brightmax-degreaser"]', { timeout: 5000 });
+  await page.waitForSelector('[data-testid="host"]', { state: 'detached', timeout: 3000 });
+  assert((await page.locator('[data-testid="host"]').count()) === 0, 'host closes after the rewarded trial');
+  assert(!(await page.evaluate(() => window.__sparkle.paused())), 'clock resumes after the host closes');
+  assert((await page.locator('[data-testid="item-sp:brightmax-degreaser"] .tool__ad').count()) === 1, 'sponsored degreaser joins the toolbar as a free trial');
   for (let round = 0; round < 3; round++) {
     await page.click('[data-testid="item-degreaser"]');
     await sweep(page, 1, 12, 3);
@@ -176,29 +264,6 @@ try {
   const extended = await page.evaluate(() => window.__sparkle.session().limitSec);
   assert(extended === limit + 30, `limit extended ${limit} → ${extended}`);
 
-  // 37단계(욕실 타일 비누때): 두 번 실패 → 수첩에서 코인 힌트 → 세정제 공개
-  await page.click('[data-testid="back"]');
-  await page.click('[data-testid="back-home"]');
-  await page.click('[data-testid="area-bathroom"]');
-  await page.click('[data-testid="stage-37"]');
-  await page.waitForSelector('[data-testid="intro"]');
-  await page.click('[data-testid="start"]');
-  await page.waitForSelector('[data-testid="item-bathroom"]');
-  await page.click('[data-testid="item-tilebrush"]');
-  await sweep(page, 1, 8, 4);
-  await page.click('[data-testid="item-sponge"]');
-  await sweep(page, 1, 8, 4);
-  assert((await page.evaluate(() => window.__sparkle.tries('soap'))) >= 2, 'two failed tools tried on soap scum');
-  await page.click('[data-testid="journal"]');
-  await page.waitForSelector('[data-testid="hint-coins-soap"]');
-  await page.click('[data-testid="hint-coins-soap"]');
-  await page.waitForTimeout(200);
-  const hintText = await page.locator('[data-testid="journal-soap"]').innerText();
-  assert(hintText.includes('Bathroom cleaner'), 'coin hint reveals the needed cleaner');
-  await page.screenshot({ path: resolve(shots, '09-hint.png') });
-  await page.click('[data-testid="journal-modal"] [data-act="close"]');
-
-  // 15단계(책상·원목): 수세미 → 원목 손상 경고
   await page.click('[data-testid="back"]');
   await page.click('[data-testid="back-home"]');
   // 27단계(원목 식탁, 정밀 모드): 기름때 제거제를 쓰면 손상 → 10% 에서 실패
@@ -207,6 +272,7 @@ try {
   await page.waitForSelector('[data-testid="intro"]');
   assert((await page.locator('[data-testid="intro"] .intro__mode').innerText()).includes('Fragile'), 'stage 27 is a fragile-surface stage');
   await page.click('[data-testid="start"]');
+  await closeHostIfOpen(page);
   await page.waitForSelector('[data-testid="item-degreaser"]');
   assert(await page.locator('[data-testid="item-degreaser"] .tool__warn').count(), 'toolbar flags degreaser as risky on wood');
   await page.click('[data-testid="item-degreaser"]');
@@ -252,6 +318,7 @@ try {
   await page.click('[data-testid="stage-33"]');
   await page.waitForSelector('[data-testid="intro"]');
   await page.click('[data-testid="start"]');
+  await closeHostIfOpen(page);
   await page.waitForSelector('[data-testid="canvas"]');
   assert((await page.locator('.tool__budget').count()) >= 2, 'tier 3 shows cleaner budget bars');
   const zones = await page.evaluate(() => window.__sparkle.session().surfaces.length);
@@ -265,6 +332,7 @@ try {
   await page.click('[data-testid="stage-43"]');
   await page.waitForSelector('[data-testid="intro"]');
   await page.click('[data-testid="start"]');
+  await closeHostIfOpen(page);
   await page.waitForSelector('[data-testid="item-moldremover"]');
   await page.waitForSelector('[data-testid="item-descaler"]');
   await page.click('[data-testid="item-moldremover"]');
@@ -281,6 +349,7 @@ try {
   await page.waitForSelector('[data-testid="shop"]');
   assert((await page.locator('[data-testid="premium-list"] .shop__item').count()) === 7, 'shop lists 7 premium (faster) items');
   assert(await page.locator('[data-testid="shop-sp:brightmax-degreaser"] .tag-ad').count(), 'sponsored item carries an Ad label');
+  assert((await page.locator('[data-testid="live"] .live__item').count()) === 2, 'shop has a LIVE section with the host for each sponsored product');
   await page.screenshot({ path: resolve(shots, '12-shop.png'), fullPage: true });
   await page.click('[data-testid="shop-cordlessvac"] [data-buy]');
   await page.waitForTimeout(200);
@@ -329,7 +398,14 @@ try {
     await page.waitForSelector('[data-testid="intro"]');
     await page.click('[data-testid="start"]');
     await page.waitForSelector('[data-testid="canvas"]');
-    if (id === 5) assert((await page.locator('[data-testid="item-cordlessvac"].is-premium').count()) === 1, 'bought premium vacuum shows up on the rug stage where it is needed');
+    await closeHostIfOpen(page);
+    if (id === 5) {
+      assert((await page.locator('[data-testid="item-cordlessvac"].is-premium').count()) === 1, 'bought premium vacuum shows up on the rug stage where it is needed');
+      await page.click('[data-testid="item-cordlessvac"]');
+      await sweep(page, 2, 12, 4);
+      const polish = await page.evaluate(() => window.__sparkle.polish());
+      assert(polish > 0.05, `premium vacuum leaves a polished finish (${(polish * 100).toFixed(0)}% of cells)`);
+    }
     const cb = await page.locator('[data-testid="canvas"]').boundingBox();
     await page.mouse.move(cb.x + cb.width * 0.55, cb.y + cb.height * 0.45); // 정전 모드 손전등
     await page.waitForTimeout(300);
@@ -337,6 +413,66 @@ try {
     await page.click('[data-testid="back"]');
     await page.click('[data-testid="back-home"]');
   }
+
+  // 운영자 모드: PIN → 광고 제품 목록 → 새 제품 등록 → 일시정지 → 통계 → 배포 JSON → 게임으로
+  await page.click('[data-testid="admin-entry"]');
+  await page.waitForSelector('[data-testid="admin-pin"]');
+  await page.fill('[data-testid="admin-pin"]', '0000');
+  await page.click('[data-testid="admin-ok"]');
+  await page.waitForTimeout(200);
+  assert((await page.locator('[data-testid="admin"]').count()) === 0, 'wrong PIN is rejected');
+  await page.fill('[data-testid="admin-pin"]', '1234');
+  await page.click('[data-testid="admin-ok"]');
+  await page.waitForSelector('[data-testid="admin"]');
+  assert((await page.locator('[data-testid="admin-list"] .admin__item').count()) === 2, 'admin lists the 2 sponsored products');
+  assert((await page.locator('[data-testid="admin-item-brightmax-degreaser"]').innerText()).includes('노출'), 'admin shows host impressions per product');
+  await page.screenshot({ path: resolve(shots, '21-admin.png'), fullPage: true });
+  await page.click('[data-testid="admin-new"]');
+  await page.waitForSelector('[data-testid="admin-form"]');
+  await page.fill('[data-testid="admin-form"] [name="brand"]', 'WaxCo');
+  await page.fill('[data-testid="admin-form"] [name="name"]', 'Mold Wax');
+  await page.selectOption('[data-testid="admin-form"] [name="base"]', 'moldremover');
+  await page.waitForTimeout(150);
+  await page.fill('[data-testid="admin-form"] [name="lab_mold"]', '95');
+  await page.fill('[data-testid="admin-form"] [name="ev_lab"]', 'KTR');
+  await page.fill('[data-testid="admin-form"] [name="ev_report"]', 'KTR-2027-01');
+  await page.fill('[data-testid="admin-claims"]', '곰팡이 95% 제거 (시험성적서)\n리뷰 평점 4.8');
+  await page.fill('[data-testid="admin-form"] [name="rv_count"]', '8800');
+  await page.fill('[data-testid="admin-form"] [name="rv_rating"]', '4.8');
+  await page.screenshot({ path: resolve(shots, '22-admin-form.png'), fullPage: true });
+  await page.click('[data-testid="admin-save"]');
+  await page.waitForSelector('[data-testid="admin-flash"]');
+  assert((await page.locator('[data-testid="admin-list"] .admin__item').count()) === 3, 'new sponsored product saved from the admin form');
+  const waxRow = await page.locator('.admin__item', { hasText: 'WaxCo' }).innerText();
+  assert(waxRow.includes('노출 중') && waxRow.includes('PRO'), `new product is live and PRO grade (${waxRow.split('\n')[0]})`);
+  await page.click('[data-testid="admin-toggle-brightmax-degreaser"]');
+  await page.waitForTimeout(150);
+  assert((await page.locator('[data-testid="admin-item-brightmax-degreaser"]').innerText()).includes('일시정지'), 'built-in product can be paused');
+  await page.click('[data-testid="admin-tab-stats"]');
+  await page.waitForSelector('[data-testid="admin-stats"]');
+  const counters = await page.evaluate(() => JSON.parse(localStorage.getItem('sparkle-clean-v1')).ops.counters);
+  const shows = Object.entries(counters).filter(([k]) => k.startsWith('host_show|brightmax-degreaser|')).reduce((a, [, n]) => a + n, 0);
+  const trials = counters['host_cta_trial|brightmax-degreaser|struggle'] ?? 0;
+  assert(shows >= 2 && trials >= 1, `stats count host impressions (${shows}) and trial clicks (${trials}) for BrightMax`);
+  assert((await page.locator('[data-testid="admin-stats"]').innerText()).includes('BrightMax'), 'stats table lists the product');
+  await page.click('[data-testid="admin-tab-export"]');
+  await page.waitForSelector('[data-testid="admin-export"]');
+  const json = await page.locator('[data-testid="admin-export"]').inputValue();
+  assert(json.includes('"WaxCo"') && json.includes('"host"'), 'export JSON carries products and host config');
+  await page.click('[data-testid="admin-exit"]');
+  await page.waitForSelector('[data-testid="play"]');
+  // 일시정지한 제품은 상점에서 빠지고, 새 제품이 들어온다
+  await page.click('[data-act="shop"]');
+  await page.waitForSelector('[data-testid="shop"]');
+  assert((await page.locator('[data-testid="shop-sp:brightmax-degreaser"]').count()) === 0, 'paused product disappears from the game');
+  assert((await page.locator('.shop__item', { hasText: 'WaxCo' }).count()) === 1, 'new product appears in the game');
+  await page.locator('.live__item', { hasText: 'WaxCo' }).click();
+  await page.waitForSelector('[data-testid="host"]');
+  await page.waitForTimeout(2500);
+  const liveText = await page.locator('[data-testid="host"]').innerText();
+  assert(liveText.includes('WaxCo'), 'LIVE host presents the newly registered product');
+  await page.screenshot({ path: resolve(shots, '23-host-live.png') });
+  await page.click('[data-testid="host-close"]');
 
   assert(errors.length === 0, `no page errors (${errors.join(' | ')})`);
   console.log('\nE2E PASSED');

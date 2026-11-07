@@ -76,19 +76,29 @@ export type ItemId = ToolId | DetergentId;
 
 /** 오염별 기본 저항(초 단위 감각: 효율 1.0 도구로 한 칸을 지우는 대략 시간) */
 export const DIRT_RESIST: Record<DirtType, number> = {
-  dust: 0.12,
-  hair: 0.18,
-  mud: 0.3,
-  grease: 0.45,
-  stain: 0.35,
-  scale: 0.5,
-  soap: 0.4,
-  mold: 0.5,
-  moss: 0.45,
-  iron: 0.45,
-  tar: 0.4,
-  film: 0.25,
+  dust: 0.13,
+  hair: 0.2,
+  mud: 0.33,
+  grease: 0.5,
+  stain: 0.39,
+  scale: 0.55,
+  soap: 0.44,
+  mold: 0.55,
+  moss: 0.5,
+  iron: 0.5,
+  tar: 0.44,
+  film: 0.28,
 };
+
+/**
+ * 찌든 때: 칸의 오염이 이 농도 아래로 내려가면 "눌어붙은" 마지막 층이라 일반 도구는 단계별 tailRate 배(T3 0.7 → T6 0.55)로 느려진다.
+ * 고성능(pro) 도구·세정제(프리미엄 구매품, 성능 근거가 있는 광고 제품)는 끝까지 같은 속도로 지우고 광택 마감을 남긴다.
+ */
+export const TAIL_AMOUNT = 0.35;
+/** 고성능 세정제의 분사 용량 배율 (T3+ 용량 제한 판) */
+export const PRO_BUDGET_MUL = 1.5;
+/** 광고 제품이 고성능으로 인정되는 기준 — 어느 오염에서든 일반 제품 대비 이 배율 이상 */
+export const PRO_RATIO = 1.15;
 
 /** 렌더링 색 (RGB) + 불투명도 계수 */
 export const DIRT_COLOR: Record<DirtType, [number, number, number, number]> = {
@@ -145,6 +155,8 @@ export interface ToolSpec {
   outdoorOnly?: boolean
   cost: number // 상점 코인 (0 = 지급)
   premium?: boolean // 프리미엄(더 빠른 장비) — 상점 "빨리 닦는 장비" 섹션
+  /** 고성능: 찌든 때 감속 없음 + 광택 마감 (프리미엄 구매품, 근거 있는 광고 제품) */
+  pro?: boolean
 }
 
 export interface DetergentSpec {
@@ -161,6 +173,8 @@ export interface DetergentSpec {
   dissolves?: Partial<Record<DirtType, number>>
   cost: number
   premium?: boolean
+  /** 고성능: 찌든 때 감속 없음 + 광택 마감 + 분사 용량 보너스 */
+  pro?: boolean
 }
 
 export type ItemSpec = ToolSpec | DetergentSpec
@@ -181,13 +195,13 @@ export const BASE_TOOLS: Record<ToolId, ToolSpec> = {
   /** 물 헹굼(실내) — 세정제를 씻어내 화학 반응을 막음(염소계↔산성 전환 전 필수), 먼지·진흙에 약간 효과 */
   rinse: { id: 'rinse', base: 'rinse', kind: 'tool', families: ['rinse'], radius: 4.8, power: 0.9, effect: flat(1), harms: [], cost: 0 },
   // ---- 프리미엄: 실제로 더 빨리 닦이는 장비 (상점 구매) ----
-  cordlessvac: { id: 'cordlessvac', base: 'cordlessvac', kind: 'tool', families: ['vacuum', 'lintroller'], radius: 5.2, power: 1.8, effect: flat(1), harms: [], cost: 600, premium: true },
-  scrubber: { id: 'scrubber', base: 'scrubber', kind: 'tool', families: ['sponge', 'scrubpad', 'tilebrush', 'wheelbrush'], radius: 3.0, power: 2.2, effect: flat(1), harms: ['glass', 'paint', 'vinyl'], cost: 900, premium: true },
-  drillbrush: { id: 'drillbrush', base: 'drillbrush', kind: 'tool', families: ['tilebrush', 'deckbrush', 'wheelbrush', 'scrubpad'], radius: 2.8, power: 2.8, effect: flat(1), harms: ['glass', 'paint', 'wood', 'plastic', 'vinyl', 'fabric'], cost: 800, premium: true },
+  cordlessvac: { id: 'cordlessvac', base: 'cordlessvac', kind: 'tool', families: ['vacuum', 'lintroller'], radius: 5.2, power: 1.8, effect: flat(1), harms: [], cost: 600, premium: true, pro: true },
+  scrubber: { id: 'scrubber', base: 'scrubber', kind: 'tool', families: ['sponge', 'scrubpad', 'tilebrush', 'wheelbrush'], radius: 3.0, power: 2.2, effect: flat(1), harms: ['glass', 'paint', 'vinyl'], cost: 900, premium: true, pro: true },
+  drillbrush: { id: 'drillbrush', base: 'drillbrush', kind: 'tool', families: ['tilebrush', 'deckbrush', 'wheelbrush', 'scrubpad'], radius: 2.8, power: 2.8, effect: flat(1), harms: ['glass', 'paint', 'wood', 'plastic', 'vinyl', 'fabric'], cost: 800, premium: true, pro: true },
   /** 스팀 — 뜨거운 증기가 세정제 역할: 기름때·얼룩·비누때·유막·곰팡이를 세정제 없이 */
-  steamer: { id: 'steamer', base: 'steamer', kind: 'tool', families: ['steam', 'cloth'], radius: 3.0, power: 1.6, effect: flat(1), harms: ['fabric'], cost: 1200, premium: true },
+  steamer: { id: 'steamer', base: 'steamer', kind: 'tool', families: ['steam', 'cloth'], radius: 3.0, power: 1.6, effect: flat(1), harms: ['fabric'], cost: 1200, premium: true, pro: true },
   /** 멜라민 스펀지 — 얼룩·유막·비누때를 세정제 없이 (광택면은 흠집) */
-  magiceraser: { id: 'magiceraser', base: 'magiceraser', kind: 'tool', families: ['eraser', 'sponge'], radius: 2.6, power: 1.4, effect: flat(1), harms: ['paint', 'vinyl'], cost: 500, premium: true },
+  magiceraser: { id: 'magiceraser', base: 'magiceraser', kind: 'tool', families: ['eraser', 'sponge'], radius: 2.6, power: 1.4, effect: flat(1), harms: ['paint', 'vinyl'], cost: 500, premium: true, pro: true },
 };
 
 export const BASE_DETERGENTS: Record<DetergentId, DetergentSpec> = {
@@ -206,8 +220,8 @@ export const BASE_DETERGENTS: Record<DetergentId, DetergentSpec> = {
   tarremover: { id: 'tarremover', base: 'tarremover', kind: 'detergent', family: 'tar', radius: 3.8, soakSec: 12, mult: flat(1), chemistry: 'solvent', harms: ['vinyl', 'fabric'], dissolves: { tar: 0.03 }, cost: 0 },
   interior: { id: 'interior', base: 'interior', kind: 'detergent', family: 'interior', radius: 4.4, soakSec: 12, mult: flat(1), chemistry: 'neutral', harms: [], cost: 0 },
   // ---- 프리미엄 세정제 ----
-  heavydegreaser: { id: 'heavydegreaser', base: 'heavydegreaser', kind: 'detergent', family: 'degreaser', radius: 4.8, soakSec: 10, mult: effect(1, { grease: 1.8, stain: 1.3 }), chemistry: 'alkaline', harms: ['wood', 'vinyl', 'fabric'], cost: 400, premium: true },
-  limescalegel: { id: 'limescalegel', base: 'limescalegel', kind: 'detergent', family: 'descaler', radius: 4.2, soakSec: 24, mult: effect(1, { scale: 1.8, soap: 1.3 }), chemistry: 'acid', harms: ['stone', 'wood', 'fabric'], dissolves: { scale: 0.025 }, cost: 400, premium: true },
+  heavydegreaser: { id: 'heavydegreaser', base: 'heavydegreaser', kind: 'detergent', family: 'degreaser', radius: 4.8, soakSec: 10, mult: effect(1, { grease: 1.8, stain: 1.3 }), chemistry: 'alkaline', harms: ['wood', 'vinyl', 'fabric'], cost: 400, premium: true, pro: true },
+  limescalegel: { id: 'limescalegel', base: 'limescalegel', kind: 'detergent', family: 'descaler', radius: 4.2, soakSec: 24, mult: effect(1, { scale: 1.8, soap: 1.3 }), chemistry: 'acid', harms: ['stone', 'wood', 'fabric'], dissolves: { scale: 0.025 }, cost: 400, premium: true, pro: true },
 };
 
 /** 같은 칸에 섞이면 위험한 조합 (염소계 + 산성 → 유독가스) */

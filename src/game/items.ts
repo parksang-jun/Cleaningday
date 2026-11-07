@@ -17,10 +17,15 @@ export function sponsorsEnabled(): boolean {
   return env.VITE_AD_PROVIDER !== 'poki' && env.VITE_AD_PROVIDER !== 'crazygames';
 }
 
-/** 오늘 노출 가능한 스폰서 (원격 설정으로 교체 가능하도록 목록을 인자로 받음) */
-export function activeSponsors(list: SponsorProduct[] = SAMPLE_SPONSORS, today = new Date().toISOString().slice(0, 10)): SponsorProduct[] {
+/** 언어 → 노출 국가 (광고 제품의 countries 와 대조) */
+export function countryFor(lang: string): string {
+  return lang === 'ko' ? 'KR' : lang === 'ja' ? 'JP' : 'US';
+}
+
+/** 오늘 노출 가능한 스폰서 (원격 설정으로 교체 가능하도록 목록을 인자로 받음). country 가 있으면 노출 국가도 대조 */
+export function activeSponsors(list: SponsorProduct[] = SAMPLE_SPONSORS, today = new Date().toISOString().slice(0, 10), country?: string): SponsorProduct[] {
   if (!sponsorsEnabled()) return [];
-  return list.filter((p) => validateSponsor(p, today).length === 0);
+  return list.filter((p) => validateSponsor(p, today).length === 0 && (!country || !p.countries?.length || p.countries.includes(country)));
 }
 
 export function allItems(sponsors: SponsorProduct[] = activeSponsors()): ItemEntry[] {

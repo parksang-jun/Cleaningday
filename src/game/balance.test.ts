@@ -1,7 +1,7 @@
 // 난이도 검증 — 숙련자 봇이 96단계를 모두 깰 수 있고(보유 아이템·레시피로), 단계·구역 평균 시간이 올라가는지
 import { appendFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { resolveTiming, simulateBot } from './bot'
+import { premiumKitFor, resolveTiming, simulateBot } from './bot'
 import { BASE_DETERGENTS, BASE_TOOLS, DIRT_SURFACES, DIRT_TYPES, recipesFor } from './catalog'
 import { LEVELS, TIERS, WORLDS } from './levels'
 
@@ -58,5 +58,27 @@ describe('difficulty curve', () => {
     for (let i = 1; i < tierAvg.length; i++) expect(tierAvg[i], `tier ${i + 1} harder than ${i}`).toBeGreaterThan(tierAvg[i - 1])
     for (let i = 1; i < areaAvg.length; i++) expect(areaAvg[i], `area ${i + 1} harder than ${i}`).toBeGreaterThan(areaAvg[i - 1])
     expect(tierAvg[tierAvg.length - 1]).toBeGreaterThan(tierAvg[0] * 2)
-  })
+  }, 60_000)
+
+  it('premium gear makes stages clearly easier and leaves a polished finish (basic gear: no polish)', () => {
+    // 각 구역에서 두 판씩 — 기본 지급품 vs 프리미엄 전부
+    const sample = [5, 11, 18, 24, 30, 36, 43, 48, 60, 72, 80, 94]
+    let basicSum = 0
+    let proSum = 0
+    for (const id of sample) {
+      const lv = LEVELS[id - 1]
+      const basic = simulateBot(lv)
+      const pro = simulateBot(lv, 900, premiumKitFor(lv))
+      expect(pro.passed, `level ${id} premium clear`).toBe(true)
+      expect(pro.hazard).toBe(false)
+      expect(pro.damage).toBeLessThan(0.15)
+      expect(basic.polish, `level ${id} basic gear leaves no polish`).toBe(0)
+      expect(pro.polish, `level ${id} premium polish`).toBeGreaterThan(0.3)
+      basicSum += basic.time
+      proSum += pro.time
+      appendFileSync('/tmp/balance.txt', `premium ${String(id).padStart(2)} basic ${basic.time.toFixed(1)}s pro ${pro.time.toFixed(1)}s polish ${(pro.polish * 100).toFixed(0)}%\n`)
+    }
+    appendFileSync('/tmp/balance.txt', `premium speedup ×${(basicSum / proSum).toFixed(2)}\n`)
+    expect(basicSum / proSum, 'premium gear ≥ 1.5× faster on average').toBeGreaterThan(1.5)
+  }, 60_000)
 })

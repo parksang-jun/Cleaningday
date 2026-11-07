@@ -9,6 +9,7 @@ import {
   BASE_DETERGENTS,
   BASE_TOOLS,
   DIRT_TYPES,
+  PRO_RATIO,
   type Chemistry,
   type DetergentId,
   type DetergentSpec,
@@ -52,6 +53,23 @@ export interface SponsorProduct {
   /** 실제 제품 구매 페이지 (마켓별 제휴 링크가 우선) */
   productUrl?: string
   links?: Partial<Record<'coupang' | 'amazon_us' | 'amazon_jp' | 'rakuten', string>>
+  // ---- 쇼호스트(라이브 커머스 멘트)·운영 ----
+  /** 광고주 소구점 — 표시·광고법상 근거 자료가 있는 문구만 (운영자가 검수 후 입력) */
+  claims?: string[]
+  /** 리뷰 수·평점·출처 (예: 쿠팡 4.7/5, 12,480개) */
+  reviews?: { count: number; rating: number; source?: string }
+  /** 운영자가 직접 쓴 쇼호스트 멘트 (언어별). 비우면 시험 성적·소구점·리뷰로 자동 생성 */
+  hostLines?: Partial<Record<'ko' | 'en' | 'ja', string[]>>
+  /** 쇼호스트 노출 위치 (없으면 전부 켜짐) */
+  placements?: { intro?: boolean; struggle?: boolean; result?: boolean; shop?: boolean }
+  /** 노출 국가 (ISO2, 비우면 전부) — 언어로 판정: ko→KR, en→US, ja→JP */
+  countries?: string[]
+  /** 운영 상태 — paused 면 노출 안 함 */
+  status?: 'active' | 'paused'
+  /** 여러 제품이 겹칠 때 우선순위 (높을수록 먼저) */
+  priority?: number
+  /** 운영자가 추가한 제품 (내장 샘플이 아님) */
+  custom?: boolean
 }
 
 /** 일반 기준 제품의 같은 시험 기준 제거율(%) — 운영사가 자체 시험으로 갱신. 레시피상 그 제품이 닦는 오염만 기재 */
@@ -105,11 +123,13 @@ export function performanceRatios(p: SponsorProduct): Record<DirtType, number> {
   return out
 }
 
-export type SponsorIssue = 'no_evidence' | 'campaign_inactive' | 'bad_lab_value' | 'kind_mismatch' | 'no_lab_results'
+export type SponsorIssue = 'no_evidence' | 'campaign_inactive' | 'bad_lab_value' | 'kind_mismatch' | 'no_lab_results' | 'paused' | 'bad_base'
 
 /** 노출 전 검증 — 문제가 있으면 노출하지 않음 */
 export function validateSponsor(p: SponsorProduct, today: string): SponsorIssue[] {
   const issues: SponsorIssue[] = []
+  if (p.status === 'paused') issues.push('paused')
+  if (!(p.base in BASE_TOOLS) && !(p.base in BASE_DETERGENTS)) return [...issues, 'bad_base']
   if (!p.evidence || !p.evidence.lab || !p.evidence.reportId) issues.push('no_evidence')
   if (today < p.campaign.start || today > p.campaign.end) issues.push('campaign_inactive')
   if (!p.lab.length) issues.push('no_lab_results')
@@ -120,9 +140,19 @@ export function validateSponsor(p: SponsorProduct, today: string): SponsorIssue[
   return issues
 }
 
+/** 고성능(pro) 판정 — 시험 성적이 어느 오염에서든 일반 제품 대비 PRO_RATIO 이상이면 찌든 때 보너스·광택 마감을 받는다 */
+export function isProSponsor(p: SponsorProduct): boolean {
+  const ratio = performanceRatios(p)
+  if (DIRT_TYPES.some((d) => ratio[d] >= PRO_RATIO)) return true
+  // 도구는 닦는 면적(분당 m²)이 기준보다 충분히 넓어도 고성능
+  const refCov = p.kind === 'tool' ? REFERENCE_COVERAGE[p.base as ToolId] : undefined
+  return Boolean(p.coverageM2PerMin && refCov && clampRatio(p.coverageM2PerMin / refCov) >= PRO_RATIO)
+}
+
 /** 스폰서 제품을 게임 아이템 스펙으로 변환 */
 export function toItemSpec(p: SponsorProduct): ToolSpec | DetergentSpec {
   const ratio = performanceRatios(p)
+  const pro = isProSponsor(p)
   if (p.kind === 'tool') {
     const base = BASE_TOOLS[p.base as ToolId]
     const refCov = REFERENCE_COVERAGE[p.base as ToolId]
@@ -137,6 +167,7 @@ export function toItemSpec(p: SponsorProduct): ToolSpec | DetergentSpec {
       radius: round2(base.radius * Math.sqrt(covRatio)),
       harms: unique([...base.harms, ...p.cautions]),
       cost: 0,
+      pro,
     }
   }
   const base = BASE_DETERGENTS[p.base as DetergentId]
@@ -150,6 +181,7 @@ export function toItemSpec(p: SponsorProduct): ToolSpec | DetergentSpec {
     chemistry: p.chemistry ?? base.chemistry,
     harms: unique([...base.harms, ...p.cautions]),
     cost: 0,
+    pro,
   }
 }
 
@@ -179,6 +211,9 @@ export const SAMPLE_SPONSORS: SponsorProduct[] = [
     sample: true,
     tagline: 'Cuts kitchen grease fast',
     productUrl: 'https://example.com/brightmax',
+    claims: ['(샘플) 공인 시험 기름때 제거율 92%', '(샘플) 중성 세제 대비 2배 빠른 분해'],
+    reviews: { count: 12480, rating: 4.7, source: '(샘플) 마켓 리뷰' },
+    priority: 10,
   },
   {
     id: 'aquajet-washer',
@@ -197,5 +232,8 @@ export const SAMPLE_SPONSORS: SponsorProduct[] = [
     sample: true,
     tagline: 'Outdoor mud, gone',
     productUrl: 'https://example.com/aquajet',
+    claims: ['(샘플) 1분에 7.5m² — 진흙 96% 제거', '(샘플) 무선 60분 사용'],
+    reviews: { count: 3210, rating: 4.6, source: '(샘플) 마켓 리뷰' },
+    priority: 5,
   },
 ]

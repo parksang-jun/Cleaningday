@@ -7,11 +7,15 @@ import { audioDebug, duckMusic, installAudioUnlock, scrubSound, setMusicEnabled,
 import { resolveTiming } from './game/bot';
 import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES, recipesFor, type CleanerFamily, type DetergentId, type DetergentSpec, type DirtType, type SurfaceType, type ToolFamily, type ToolId, type ToolSpec } from './game/catalog';
 import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
-import { allItems, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
+import { activeSponsors, allItems, countryFor, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
 import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type StageMode, type WorldInfo } from './game/levels';
-import { performanceRatios, REFERENCE_REMOVAL } from './game/sponsor';
+import { mulberry32 } from './game/rng';
+import { performanceRatios, REFERENCE_REMOVAL, type SponsorProduct } from './game/sponsor';
+import { closeHost, hostAvatarSvg, hostOpen, showHost, type Placement } from './host';
 import { detectLang, getLang, setLang, t, type Lang } from './i18n';
 import { CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MALL_PRODUCTS, MARKET_LABEL, marketsFor, searchUrl, sponsorBuyUrl, type Market } from './mall';
+import { adminEnabled, adminPin, hostConfig, installOpsCounters, sponsorList } from './ops';
+import { renderAdmin } from './admin';
 import { Renderer } from './render/renderer';
 import { getStore, loadStore, persist, resetStore } from './storage';
 import { iconFor } from './ui/icons';
@@ -23,6 +27,19 @@ const EXTEND_SEC = 30;
 const REFILL_SEC = 8;
 const HINT_COINS = 30;
 const HINT_AFTER_TRIES = 2;
+/** 안내 단계: 이 스테이지까지만 필요한 도구만 주고, 틀린 이유를 알려 주고, 힌트를 판다. 그 뒤로는 직접 찾아야 한다 */
+const GUIDED_UNTIL = 3;
+/** 결과 화면에서 "다음 판 체험"을 눌러 둔 광고 제품 — 다음 판 시작 시 체험 목록에 들어간다 */
+let pendingTrials: string[] = [];
+
+function guided(level: LevelDef): boolean {
+  return level.id <= GUIDED_UNTIL;
+}
+
+/** 오늘·이 언어권에 노출되는 광고 제품으로 아이템 목록을 다시 만든다 (운영자 모드에서 바꾸면 호출) */
+function reloadItems() {
+  items = allItems(activeSponsors(sponsorList(), new Date().toISOString().slice(0, 10), countryFor(getLang())));
+}
 
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -51,7 +68,8 @@ function haptic(style: 'light' | 'medium' = 'light') {
 function owns(id: string): boolean {
   const e = findItem(id, items);
   if (!e) return false;
-  if (e.sponsor) return true; // 스폰서 아이템은 무료 사용 (광고 표시)
+  // 광고 제품은 보상형 광고로 "이번 판 체험"해야 쓸 수 있다 (쇼호스트·상점 LIVE 에서 제공)
+  if (e.sponsor) return Boolean(game?.trials.has(id));
   return getStore().owned.includes(id); // 기본 도구도 지급(grants)받아야 보유
 }
 
@@ -152,8 +170,10 @@ function renderHome() {
       </section>
       ${WORLDS.map(worldCard).join('')}
       <p class="muted small center">${t('adsFree')}</p>
+      ${adminEnabled() ? `<p class="center"><button class="link-btn small" data-act="admin" data-testid="admin-entry">🛠 ${t('adminEntry')}</button></p>` : ''}
     </div>`;
   app.querySelector('[data-act="continue"]')!.addEventListener('click', () => startLevel(nextLevelId()));
+  app.querySelector('[data-act="admin"]')?.addEventListener('click', openAdminGate);
   app.querySelector('[data-act="shop"]')!.addEventListener('click', () => openShop());
   app.querySelector('[data-act="settings"]')!.addEventListener('click', openSettings);
   app.querySelectorAll<HTMLButtonElement>('.area').forEach((b) => b.addEventListener('click', () => renderArea(b.dataset.area!)));
@@ -253,7 +273,107 @@ function stageKit(session: CleanSession): Set<string> {
   // 염소계 + 산성 → 헹굼 필수
   const chems = new Set(ownedDets.filter((e) => kit.has(e.spec.id)).map((e) => e.spec.chemistry));
   if (chems.has('chlorine') && chems.has('acid')) for (const e of ownedTools) if (e.spec.families.includes('rinse') && !e.spec.outdoorOnly) kit.add(e.spec.id);
+  // 안내 단계가 끝나면 "솔깃한" 엉뚱한 도구·세정제도 섞는다 — 맞는 것을 직접 찾아야 한다 (프리미엄·광고 제품은 미끼로 쓰지 않음)
+  if (!guided(session.level)) {
+    const present = new Set(pairs.keys());
+    const rng = mulberry32(session.level.seed * 31 + 7);
+    const cands = [...ownedTools, ...ownedDets]
+      .filter((e) => !kit.has(e.spec.id) && !e.spec.premium && !e.sponsor && session.canUse(e.spec) && !(e.spec.kind === 'tool' && e.spec.families.includes('rinse')))
+      .map((e) => ({ e, plausible: strengths(e.spec).some((d) => present.has(d)), r: rng.next() }))
+      .sort((a, b) => Number(b.plausible) - Number(a.plausible) || a.r - b.r);
+    const n = Math.min(cands.length, Math.min(4, 2 + Math.floor(session.level.tier / 2)));
+    for (let i = 0; i < n; i++) kit.add(cands[i].e.spec.id);
+  }
   return kit;
+}
+
+/** 이 오염을 닦는 광고 제품 (표면에 해롭지 않고, 이 판에서 쓸 수 있고, 해당 위치 노출이 켜진 것) */
+function sponsorFor(dirt: DirtType | undefined, placement: Placement, surface?: SurfaceType): ItemEntry | null {
+  const cands = items.filter((e) => {
+    if (!e.sponsor) return false;
+    const pl = e.sponsor.placements;
+    if (pl && placement !== 'preview' && pl[placement] === false) return false;
+    if (dirt && !strengths(e.spec).includes(dirt)) return false;
+    if (surface && e.spec.harms.includes(surface)) return false;
+    if (game && !game.session.canUse(e.spec)) return false;
+    return true;
+  });
+  cands.sort((a, b) => (b.sponsor!.priority ?? 0) - (a.sponsor!.priority ?? 0));
+  return cands[0] ?? null;
+}
+
+/** 쇼호스트 이름 — 기본 이름 '반디'는 언어별 표기, 운영자가 바꾼 이름은 그대로 */
+function hostName(): string {
+  const n = hostConfig().name;
+  if (n !== '반디') return n;
+  return getLang() === 'ko' ? '반디' : getLang() === 'ja' ? 'バンディ' : 'Bandi';
+}
+
+/** 쇼호스트 등장 조건: 켜져 있고, 같은 판에서 같은 제품을 다시 보여주지 않고, 소개(intro)·결과(result)는 제품별 재노출 간격을 지킨다 */
+function canHost(p: SponsorProduct, placement: Placement): boolean {
+  const cfg = hostConfig();
+  if (!cfg.enabled || hostOpen()) return false;
+  if (game?.hostShown.has(p.id)) return false;
+  if (placement === 'intro' || placement === 'result') {
+    if (placement === 'result' && !cfg.result) return false;
+    const last = getStore().ops.lastHostAt[p.id] ?? 0;
+    if (Date.now() - last < cfg.introCooldownMin * 60_000) return false;
+  }
+  return true;
+}
+
+/** 쇼호스트 등장 — 체험(보상형 광고)·구매·근거 버튼 포함 */
+function presentHost(entry: ItemEntry, placement: Placement, dirt?: DirtType) {
+  const p = entry.sponsor!;
+  const st = getStore();
+  st.ops.lastHostAt[p.id] = Date.now();
+  persist();
+  game?.hostShown.add(p.id);
+  if (game && placement === 'struggle') {
+    // 손가락을 뗀 것으로 처리하고 시계를 멈춘다 (카드가 닫힌 뒤 저절로 문지르지 않게)
+    game.paused = true;
+    game.pointer = null;
+    game.queue = [];
+    stopScrub();
+  }
+  const market = defaultMarket(getLang());
+  const buy = mallEnabled() ? sponsorBuyUrl(p, market) : undefined;
+  const nextStage = placement === 'result' || !game;
+  showHost({
+    product: p,
+    placement,
+    lang: getLang(),
+    hostName: hostName(),
+    dirt,
+    speak: st.settings.hostVoice,
+    trialLabel: nextStage ? t('hostTrialNext') : undefined,
+    onTrial: async () => {
+      const ok = await ads.showRewarded('try_item');
+      if (!ok) return false;
+      track('sponsor_trial', { sponsor: p.id, placement });
+      if (nextStage || !game) {
+        if (!pendingTrials.includes(entry.spec.id)) pendingTrials.push(entry.spec.id);
+        toast(t('hostTrialNext'), 'good');
+      } else {
+        game.trials.add(entry.spec.id);
+        game.kit = stageKit(game.session);
+        game.selected = entry.spec.id;
+        renderToolbar();
+        toast(`${itemName(entry)} ✓`, 'good');
+      }
+      return true;
+    },
+    onBuy: isSafeUrl(buy)
+      ? () => {
+          track('mall_click', { from: 'host', id: p.id, market });
+          openExternal(buy!);
+        }
+      : undefined,
+    onEvidence: () => openEvidence(entry),
+    onClose: () => {
+      if (game) game.paused = false;
+    },
+  });
 }
 
 // ---------- 구역: 스테이지 목록 ----------
@@ -321,11 +441,16 @@ interface GameState {
   kit: Set<string>;
   spawnToastAt: number;
   lastTick: number;
+  /** 쇼호스트가 떠 있는 동안 시계를 멈춤 */
+  paused: boolean;
+  /** 이 판에서 이미 소개한 광고 제품 */
+  hostShown: Set<string>;
 }
 
 let game: GameState | null = null;
 
 function stopGame() {
+  closeHost();
   if (game) {
     cancelAnimationFrame(game.raf);
     stopScrub();
@@ -428,8 +553,14 @@ function startLevel(id: number) {
     kit: new Set(),
     spawnToastAt: -10,
     lastTick: -1,
+    paused: false,
+    hostShown: new Set(),
   };
+  // 결과 화면·홈 LIVE 에서 예약한 "다음 판 체험" — 이 판에 쓰이는 제품만 소비하고 나머지는 다음 판으로 이월
+  for (const id of pendingTrials) if (findItem(id, items)) game.trials.add(id);
   game.kit = stageKit(session);
+  pendingTrials = pendingTrials.filter((id) => !game!.kit.has(id));
+  for (const id of pendingTrials) game.trials.delete(id);
   renderToolbar();
   renderer.setSession(session);
   updateUnknownBadge();
@@ -458,6 +589,7 @@ function startLevel(id: number) {
   // 인트로 카드: 테마·목표·이 판의 도구 (+ 새 난이도 단계면 규칙)
   const tier = tierFor(id);
   const showRule = tier.fromId === id && tier.id > 1 && !st.progress.stars[id];
+  const showTail = showRule && tier.tailRate !== undefined && (tierFor(id - 1).tailRate === undefined);
   const kitIcons = [...game.kit]
     .map((kid) => findItem(kid, items))
     .filter((e): e is ItemEntry => Boolean(e))
@@ -469,8 +601,10 @@ function startLevel(id: number) {
       <h2>${esc(levelTitle(level))}</h2>
       <p class="intro__goal">${esc(goalText(level, session))}</p>
       ${showRule ? `<p class="intro__rule">📌 ${esc(t(`tierRule_${tier.id}`))}</p>` : ''}
+      ${showTail ? `<p class="intro__rule">🧽 ${esc(t('tierRuleTail'))}</p>` : ''}
+      ${id === GUIDED_UNTIL + 1 && !st.progress.stars[id] ? `<p class="intro__rule">🔍 ${esc(t('hintsOver', { n: GUIDED_UNTIL }))}</p>` : ''}
       ${level.hint ? `<p class="small muted">${esc(t(level.hint))}</p>` : ''}
-      <div class="kit"><span class="small muted">${t('kitNote')}</span><div class="kit__row">${kitIcons}</div></div>
+      <div class="kit"><span class="small muted">${guided(level) ? t('kitNote') : t('kitNoteFind')}</span><div class="kit__row">${kitIcons}</div></div>
       <button class="btn btn--primary btn--block" data-act="ok" data-testid="start">${t('start')}</button>
     </div>`,
     (root, close) => {
@@ -480,9 +614,23 @@ function startLevel(id: number) {
         unlockAudio();
         sfx.start();
         duckMusic(true);
+        maybeHostIntro();
       });
     },
   );
+}
+
+/** 판 시작 소개: 이 판의 오염에 맞는 광고 제품이 있으면 쇼호스트가 잠깐 소개한다 (재노출 간격·시작 스테이지는 운영자 설정) */
+function maybeHostIntro() {
+  const g = game;
+  if (!g || g.level.id < hostConfig().introFromStage) return;
+  for (const d of g.session.dirtKinds) {
+    const entry = sponsorFor(d, 'intro', mainSurfaceOf(d) as SurfaceType);
+    if (entry && canHost(entry.sponsor!, 'intro') && !g.trials.has(entry.spec.id)) {
+      presentHost(entry, 'intro', d);
+      return;
+    }
+  }
 }
 
 function updateUnknownBadge() {
@@ -719,14 +867,23 @@ function onNoEffect(reason: string, dirt: DirtType, surface: string, item: strin
   g.renderer.shake();
   sfx.thud();
   const name = itemName(findItem(item, items));
-  toast(t(`noeffect_${reason}`, { item: name, dirt: t(`dirt_${dirt}`), surface: t(`surf_${surface}`) }), 'warn');
+  const isGuided = guided(g.level);
+  // 안내 단계에서만 "왜" 안 되는지 알려 준다. 그 뒤로는 효과 없음만 — 조합은 직접 찾아야 한다
+  toast(isGuided ? t(`noeffect_${reason}`, { item: name, dirt: t(`dirt_${dirt}`), surface: t(`surf_${surface}`) }) : t('noeffect_generic', { item: name }), 'warn');
   track('no_effect', { level: g.level.id, dirt, reason, item });
   if (g.session.triesOn(dirt) >= HINT_AFTER_TRIES && knownRecipes(dirt).length === 0 && !g.hintNudged.has(dirt)) {
     g.hintNudged.add(dirt);
-    setTimeout(() => {
-      toast(t('hintReady'), 'info');
-      app.querySelector('.hud__journal')?.classList.add('is-pulse');
-    }, 900);
+    if (isGuided) {
+      setTimeout(() => {
+        toast(t('hintReady'), 'info');
+        app.querySelector('.hud__journal')?.classList.add('is-pulse');
+      }, 900);
+    }
+  }
+  // 막혔을 때 쇼호스트: 이 오염을 닦는 광고 제품이 있으면 소개 (광고가 곧 힌트)
+  if (!isGuided && g.session.triesOn(dirt) >= hostConfig().struggleAfterTries && knownRecipes(dirt).length === 0) {
+    const entry = sponsorFor(dirt, 'struggle', surface as SurfaceType);
+    if (entry && canHost(entry.sponsor!, 'struggle') && !g.trials.has(entry.spec.id)) setTimeout(() => game && !game.finished && !game.failed && presentHost(entry, 'struggle', dirt), 700);
   }
 }
 
@@ -754,7 +911,7 @@ function onDiscovered(dirt: DirtType, tool: ToolFamily, cleaner: CleanerFamily |
 
 function step(dt: number) {
   const g = game;
-  if (!g || g.finished || g.failed) return;
+  if (!g || g.finished || g.failed || g.paused) return;
   g.sparkleCooldown -= dt;
   g.sprayCooldown -= dt;
   // 시계는 첫 효과(분사·제거)부터 — 도구를 고르고 시험해 보는 시간은 세지 않음
@@ -835,6 +992,7 @@ function finishLevel() {
   g.finished = true;
   g.pointer = null;
   stopScrub();
+  closeHost();
   ads.gameplayStop();
   // 남은 잔여 오염을 반짝이며 정리
   const rest: number[] = [];
@@ -871,6 +1029,7 @@ function failLevel(reason: 'time' | 'ruined' = 'time') {
   g.failed = true;
   g.pointer = null;
   stopScrub();
+  closeHost();
   sfx.fail();
   track('level_fail', { level: g.level.id, clean: Math.round(g.session.cleanliness * 100), reason });
   modal(
@@ -985,9 +1144,15 @@ function openJournal() {
         if (hintLvl >= 1 && hr) parts.push(`<span class="recipe">${hr.cleaner ? iconFor(familyItem(hr.cleaner)) : ''}<span class="small">${esc(hr.cleaner ? t('hintRevealCleaner', { item: familyName(hr.cleaner) }) : t('hintNoCleaner'))}</span></span>`);
         if (hintLvl >= 2 && hr) parts.push(`<span class="recipe">${iconFor(familyItem(hr.tool))}<span class="small">${esc(t('hintRevealTool', { item: familyName(hr.tool) }))}</span></span>`);
         body = parts.length ? parts.join('') : `<span class="unknown">${t('journalUnknown')}</span>`;
-        if (hr && hintLvl < 2) {
-          const canHint = tries >= HINT_AFTER_TRIES;
-          body += `<div class="journal__hint">${canHint ? `<button class="btn btn--sm btn--ad" data-hint-ad="${d}" data-testid="hint-ad-${d}">${t('journalHintAd')}</button><button class="btn btn--sm" data-hint-coins="${d}" data-testid="hint-coins-${d}">${esc(t('journalHintCoins', { c: HINT_COINS }))}</button>` : `<span class="small muted">${t('journalHint')}: ${tries}/${HINT_AFTER_TRIES} ${t('tried')}</span>`}</div>`;
+        if (guided(g.level)) {
+          if (hr && hintLvl < 2) {
+            const canHint = tries >= HINT_AFTER_TRIES;
+            body += `<div class="journal__hint">${canHint ? `<button class="btn btn--sm btn--ad" data-hint-ad="${d}" data-testid="hint-ad-${d}">${t('journalHintAd')}</button><button class="btn btn--sm" data-hint-coins="${d}" data-testid="hint-coins-${d}">${esc(t('journalHintCoins', { c: HINT_COINS }))}</button>` : `<span class="small muted">${t('journalHint')}: ${tries}/${HINT_AFTER_TRIES} ${t('tried')}</span>`}</div>`;
+          }
+        } else {
+          // 안내 단계 이후: 힌트 없음. 이 오염을 닦는 광고 제품이 있으면 쇼호스트가 대신 소개한다
+          const sp = sponsorFor(d, 'struggle', mainSurfaceOf(d) as SurfaceType);
+          body += `<div class="journal__hint"><span class="small muted">${esc(t('hintsOver', { n: GUIDED_UNTIL }))}</span>${sp ? `<button class="btn btn--sm btn--ad" data-host="${d}" data-testid="host-hint-${d}">${t('journalHostHint')}</button>` : ''}</div>`;
         }
       }
       return `<li class="journal__row${left <= 0 ? ' is-done' : ''}" data-testid="journal-${d}">
@@ -1031,6 +1196,17 @@ function openJournal() {
           reveal(b.dataset.hintCoins as DirtType);
         }),
       );
+      root.querySelectorAll<HTMLButtonElement>('[data-host]').forEach((b) =>
+        b.addEventListener('click', () => {
+          const d = b.dataset.host as DirtType;
+          const entry = sponsorFor(d, 'struggle', mainSurfaceOf(d) as SurfaceType);
+          close();
+          if (entry && game) {
+            game.hostShown.delete(entry.sponsor!.id); // 수첩에서 직접 부르면 다시 보여 준다
+            presentHost(entry, 'struggle', d);
+          }
+        }),
+      );
     },
   );
 }
@@ -1056,6 +1232,11 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
   const found = discoveries.length
     ? `<div class="result__found"><b>${t('discoveries')}</b>${discoveries.map((d) => `<span class="recipe">${dirtSwatch(d.dirt)}${esc(t(`dirt_${d.dirt}`))} = ${esc(d.cleaner ? `${familyName(d.cleaner)} + ${familyName(d.tool)}` : familyName(d.tool))}</span>`).join('')}</div>`
     : '';
+  const polish = r.polish > 0 ? `<p class="result__polish" data-testid="polish">${esc(t('polishLine', { pct: Math.round(r.polish * 100), c: r.polishBonus }))}</p>` : '';
+  const hostEntry = mainDirt ? sponsorFor(mainDirt, 'result') : null;
+  const hostCard = hostEntry
+    ? `<button class="host-rec" data-act="host" data-testid="result-host"><span class="host-rec__avatar">${hostAvatarSvg()}</span><span class="host-rec__body"><b>${esc(t('hostTitle', { name: hostName() }))}</b><span class="small">${esc(hostEntry.sponsor!.brand)} ${esc(hostEntry.sponsor!.name)} <span class="tag-ad">${t('sponsored')}</span></span></span></button>`
+    : '';
   modal(
     `<div class="result" data-testid="result">
       <h2>${t('done')}</h2>
@@ -1063,11 +1244,12 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
       <p class="muted">${t('time')} ${r.timeSec}s · ${t('par', { s: timing.parSec })}</p>
       ${penalties.length ? `<ul class="penalties">${penalties.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
       <p class="result__coins" data-el="coins">${t('reward', { c: coinsShown })}</p>
+      ${polish}
       ${found}
       <button class="btn btn--ad btn--block" data-act="double" data-testid="double">${t('doubleAd')}</button>
       ${hasNext ? `<button class="btn btn--primary btn--block" data-act="next" data-testid="next">${t('next')}</button>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry">${t('retry')}</button><button class="btn" data-act="menu" data-testid="to-menu">${t('menu')}</button></div>
-      ${mallCard}
+      ${hostCard || mallCard}
     </div>`,
     (root, closeFn) => {
       root.parentElement!.dataset.dismiss = 'no';
@@ -1097,7 +1279,15 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
         track('mall_click', { from: 'result', base: recBase!, market });
         openExternal(searchUrl(recBase!, market));
       });
-      if (mallCard) track('mall_impression', { from: 'result', base: recBase!, market });
+      if (mallCard && !hostCard) track('mall_impression', { from: 'result', base: recBase!, market });
+      root.querySelector('[data-act="host"]')?.addEventListener('click', () => {
+        if (hostEntry) {
+          game?.hostShown.delete(hostEntry.sponsor!.id);
+          presentHost(hostEntry, 'result', mainDirt);
+        }
+      });
+      // 광고 제품이 이 판의 오염에 맞으면 쇼호스트가 결과 화면에서 한 번 추천 (재노출 간격 적용)
+      if (hostEntry && canHost(hostEntry.sponsor!, 'result')) setTimeout(() => document.querySelector('[data-testid="result"]') && presentHost(hostEntry, 'result', mainDirt), 1500);
     },
   );
 }
@@ -1132,7 +1322,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
     const trial = game?.trials.has(e.spec.id);
     const harms = e.spec.harms.map((s) => t(`surf_${s}`)).join(', ');
     let action = '';
-    if (e.sponsor) action = `<button class="btn btn--sm" data-evidence="${esc(e.spec.id)}">${t('evidence')}</button>`;
+    if (e.sponsor) action = `${inGame && !trial ? `<button class="btn btn--sm btn--ad" data-try="${esc(e.spec.id)}">${t('tryAd')}</button>` : trial ? `<span class="pill">${t('owned')}</span>` : ''}<button class="btn btn--sm" data-evidence="${esc(e.spec.id)}">${t('evidence')}</button>`;
     else if (own) action = `<span class="pill">${t('owned')}</span>`;
     else
       action = `<button class="btn btn--sm btn--primary" data-buy="${esc(e.spec.id)}" ${st.coins < e.spec.cost ? 'data-poor="1"' : ''}>${t('buy', { c: e.spec.cost })}</button>${inGame && !trial ? `<button class="btn btn--sm btn--ad" data-try="${esc(e.spec.id)}">${t('tryAd')}</button>` : ''}`;
@@ -1150,7 +1340,9 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
   const premium = items.filter((e) => !e.sponsor && e.spec.premium);
   const baseTools = items.filter((e) => !e.sponsor && !e.spec.premium && e.spec.kind === 'tool' && owns(e.spec.id));
   const baseDets = items.filter((e) => !e.sponsor && !e.spec.premium && e.spec.kind === 'detergent' && owns(e.spec.id));
+  const live = sponsors.filter((e) => e.sponsor!.placements?.shop !== false);
   const gameTab = `
+    ${live.length ? `<div class="live" data-testid="live"><div class="live__head"><span class="host__live">● LIVE</span> <b>${esc(t('hostTitle', { name: hostName() }))}</b></div><div class="live__row">${live.map((e) => `<button class="live__item" data-live="${esc(e.spec.id)}" data-testid="live-${esc(e.spec.id)}"><span class="host-rec__avatar">${hostAvatarSvg()}</span><span class="small"><b>${esc(e.sponsor!.brand)}</b><br>${esc(e.sponsor!.name)}</span><span class="tag-ad">${t('sponsored')}</span></button>`).join('')}</div></div>` : ''}
     ${sponsors.length ? `<ul class="shop__list">${sponsors.map(row).join('')}</ul>` : ''}
     <h3>⚡ ${t('premiumTab')}</h3><p class="small muted">${esc(t('premiumIntro'))}</p>
     <ul class="shop__list" data-testid="premium-list">${premium.map(row).join('')}</ul>
@@ -1199,13 +1391,28 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
       root.querySelectorAll<HTMLButtonElement>('[data-try]').forEach((b) =>
         b.addEventListener('click', async () => {
           if (await ads.showRewarded('try_item')) {
-            game?.trials.add(b.dataset.try!);
+            const id = b.dataset.try!;
+            const e = findItem(id, items);
+            if (game) {
+              game.trials.add(id);
+              if (e?.sponsor) track('sponsor_trial', { sponsor: e.sponsor.id, placement: 'shop' });
+              game.kit = stageKit(game.session);
+              if (game.kit.has(id)) game.selected = id;
+            }
             close();
             renderToolbar();
           }
         }),
       );
       root.querySelectorAll<HTMLButtonElement>('[data-evidence]').forEach((b) => b.addEventListener('click', () => openEvidence(findItem(b.dataset.evidence!, items)!)));
+      root.querySelectorAll<HTMLButtonElement>('[data-live]').forEach((b) =>
+        b.addEventListener('click', () => {
+          const e = findItem(b.dataset.live!, items)!;
+          close();
+          game?.hostShown.delete(e.sponsor!.id);
+          presentHost(e, 'shop');
+        }),
+      );
     },
   );
 }
@@ -1324,6 +1531,7 @@ function openSettings() {
     <label class="setting"><span>${t('sound')}</span><input type="checkbox" data-k="sound" ${s.sound ? 'checked' : ''}></label>
     <label class="setting"><span>${t('music')}</span><input type="checkbox" data-k="music" ${s.music ? 'checked' : ''}></label>
     <label class="setting"><span>${t('haptics')}</span><input type="checkbox" data-k="haptics" ${s.haptics ? 'checked' : ''}></label>
+    <label class="setting"><span>${t('hostVoice')}</span><input type="checkbox" data-k="hostVoice" ${s.hostVoice ? 'checked' : ''}></label>
     <label class="setting"><span>${t('language')}</span>
       <select data-k="lang">${(['auto', 'ko', 'en', 'ja'] as const).map((l) => `<option value="${l}" ${s.lang === l ? 'selected' : ''}>${l === 'auto' ? t('auto') : l === 'ko' ? '한국어' : l === 'en' ? 'English' : '日本語'}</option>`).join('')}</select>
     </label>
@@ -1345,6 +1553,7 @@ function openSettings() {
         s.lang = (e.target as HTMLSelectElement).value as Lang | 'auto';
         setLang(detectLang(s.lang));
         persist();
+        reloadItems();
         close();
         renderHome();
       });
@@ -1359,6 +1568,52 @@ function openSettings() {
       });
     },
   );
+}
+
+// ---------- 운영자(관리자) 모드 ----------
+let adminUnlocked = false;
+function openAdminGate() {
+  if (adminUnlocked) return enterAdmin();
+  modal(
+    `<h2>🛠 ${t('adminEntry')}</h2>
+    <label class="setting"><span>${t('adminPin')}</span><input type="password" inputmode="numeric" data-el="pin" data-testid="admin-pin" maxlength="8" autocomplete="off"></label>
+    <button class="btn btn--primary btn--block" data-act="ok" data-testid="admin-ok">${t('ok')}</button>
+    <button class="btn btn--block" data-act="close">${t('close')}</button>`,
+    (root, close) => {
+      const inp = root.querySelector<HTMLInputElement>('[data-el="pin"]')!;
+      const go = () => {
+        if (inp.value === adminPin()) {
+          adminUnlocked = true;
+          close();
+          enterAdmin();
+        } else {
+          toast(t('adminWrongPin'), 'warn');
+          inp.value = '';
+        }
+      };
+      root.querySelector('[data-act="ok"]')!.addEventListener('click', go);
+      inp.addEventListener('keydown', (e) => e.key === 'Enter' && go());
+      root.querySelector('[data-act="close"]')!.addEventListener('click', close);
+      setTimeout(() => inp.focus(), 50);
+    },
+  );
+}
+function enterAdmin() {
+  stopGame();
+  closeHost();
+  track('admin_open');
+  renderAdmin(app, {
+    onExit: () => {
+      reloadItems();
+      renderHome();
+    },
+    onChange: reloadItems,
+    preview: (p, placement) => {
+      reloadItems();
+      const entry = items.find((e) => e.sponsor?.id === p.id) ?? allItems([p]).find((e) => e.sponsor)!;
+      presentHost(entry, placement);
+    },
+  });
 }
 
 // ---------- 테스트용 훅 ----------
@@ -1376,6 +1631,10 @@ declare global {
       noEffects: () => number;
       kit: () => string[];
       audio: () => ReturnType<typeof audioDebug>;
+      polish: () => number;
+      paused: () => boolean;
+      openAdmin: () => void;
+      hostFor: (dirt: string) => string | null;
     };
   }
 }
@@ -1402,6 +1661,13 @@ function exposeDebug() {
     noEffects: () => game?.noEffects ?? 0,
     kit: () => [...(game?.kit ?? [])],
     audio: () => audioDebug(),
+    polish: () => game?.session.polish ?? 0,
+    paused: () => game?.paused ?? false,
+    openAdmin: () => {
+      adminUnlocked = true;
+      enterAdmin();
+    },
+    hostFor: (dirt: string) => sponsorFor(dirt as DirtType, 'struggle')?.sponsor?.id ?? null,
   };
 }
 
@@ -1412,10 +1678,12 @@ async function boot() {
   setSoundEnabled(s.sound);
   setMusicEnabled(s.music);
   installAudioUnlock(); // 첫 터치에서 오디오 잠금 해제 (+ iOS 무음 스위치 우회) → 배경음악 시작
-  items = allItems();
+  installOpsCounters();
+  reloadItems();
   renderHome();
   exposeDebug();
   void ads.init();
+  if (location.hash === '#admin' && adminEnabled()) openAdminGate();
 }
 
 void boot();

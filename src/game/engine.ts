@@ -3,6 +3,8 @@
 import {
   diagnose,
   DIRT_RESIST,
+  PRO_BUDGET_MUL,
+  TAIL_AMOUNT,
   DIRT_SURFACES,
   DIRT_TYPES,
   isHazardMix,
@@ -70,6 +72,11 @@ export class CleanSession {
   readonly tried = new Map<DirtType, Set<string>>()
   /** 스팟 모드 표적 (중심·반경·완료) */
   readonly spots: { x: number; y: number; r: number; done: boolean }[] = []
+  /** 광택 마감: 고성능 도구·세정제로 끝까지 지운 칸 (렌더링·결과 보너스) */
+  readonly shine: Uint8Array
+  shineCells = 0
+  /** 오염이 있었던 칸 수 (광택 비율의 분모) */
+  dirtyCellsSeen = 0
   /** 러시 모드: 아직 생길 오염 수 */
   spawnLeft = 0
   private nextSpawnAt = 0
@@ -103,6 +110,7 @@ export class CleanSession {
     this.grain = new Float32Array(n)
     this.surfaceIdx = new Uint8Array(n)
     this.soak = new Array(n).fill(null)
+    this.shine = new Uint8Array(n)
     this.sprayLeft = new Map()
     this.perType = new Float32Array(DIRT_TYPES.length)
     this.limitSec = timing?.limitSec
@@ -206,7 +214,10 @@ export class CleanSession {
     let total = 0
     for (let i = 0; i < n; i++) {
       total += this.amount[i] + this.under[i]
-      if (this.amount[i] > 0) this.perType[this.type[i]] += this.amount[i]
+      if (this.amount[i] > 0) {
+        this.perType[this.type[i]] += this.amount[i]
+        this.dirtyCellsSeen++
+      }
       if (this.under[i] > 0) this.perType[this.underType[i]] += this.under[i]
     }
     this.initialTotal = Math.max(total, 1e-6)
@@ -221,6 +232,13 @@ export class CleanSession {
     this.put(i, t, a)
     const delta = this.amount[i] - before
     if (delta <= 0) return
+    if (before <= 0) {
+      this.dirtyCellsSeen++
+      if (this.shine[i]) {
+        this.shine[i] = 0
+        this.shineCells--
+      }
+    }
     if (this.type[i] !== tBefore && before > 0) {
       // 종류가 바뀌면 이전 종류 양을 옮김
       this.perType[tBefore] -= before
@@ -345,6 +363,11 @@ export class CleanSession {
     return Math.max(0, Math.min(1, 1 - this.remaining / this.initialTotal))
   }
 
+  /** 광택 마감 비율 — 고성능 장비로 끝까지 지운 칸 / 오염이 있었던 칸 */
+  get polish(): number {
+    return this.dirtyCellsSeen > 0 ? Math.max(0, Math.min(1, this.shineCells / this.dirtyCellsSeen)) : 0
+  }
+
   get passed(): boolean {
     if (this.level.mode === 'spots') return this.spots.length > 0 && this.spots.every((sp) => sp.done)
     if (this.level.spawn && this.spawnLeft > 0) return false // 러시: 다 생길 때까지 통과 없음
@@ -408,7 +431,7 @@ export class CleanSession {
       const next = Math.max(0, a - (rate * dt) / this.level.resistMul)
       this.take(i, a - next)
       this.amount[i] = next
-      if (next < 0.02) this.finishCell(i, cleared, null, events)
+      if (next < 0.02) this.finishCell(i, cleared, null, events, Boolean(s.det.pro))
     }
     if (cleared.length) {
       events.push({ kind: 'cleared', cells: cleared })
@@ -420,7 +443,7 @@ export class CleanSession {
   /** 남은 분사 시간 (무제한이면 Infinity) */
   budgetOf(det: DetergentSpec): number {
     if (this.level.sprayBudgetSec === undefined) return Infinity
-    return this.sprayLeft.get(det.id) ?? this.level.sprayBudgetSec
+    return this.sprayLeft.get(det.id) ?? this.level.sprayBudgetSec * (det.pro ? PRO_BUDGET_MUL : 1)
   }
 
   refill(det: DetergentSpec, sec: number) {
@@ -478,7 +501,7 @@ export class CleanSession {
   }
 
   /** 칸이 다 지워짐 — 아래층이 있으면 드러내고, 없으면 비움. 종류가 다 사라지면 typecleared */
-  private finishCell(i: number, cleared: number[], revealed: number[] | null, events: SessionEvent[]) {
+  private finishCell(i: number, cleared: number[], revealed: number[] | null, events: SessionEvent[], pro = false) {
     const t = this.type[i]
     this.take(i, this.amount[i])
     if (this.under[i] > 0) {
@@ -490,6 +513,11 @@ export class CleanSession {
     } else {
       this.amount[i] = 0
       cleared.push(i)
+      // 고성능 장비로 바닥까지 지운 칸은 광택이 남는다
+      if (pro && !this.shine[i]) {
+        this.shine[i] = 1
+        this.shineCells++
+      }
     }
     if (this.perType[t] < 0.05 && this.perType[t] > -1) {
       this.perType[t] = -1 // 한 번만 알림
@@ -519,6 +547,7 @@ export class CleanSession {
     const cleared: number[] = []
     const revealed: number[] = []
     const resistMul = this.level.resistMul
+    const tailRate = this.level.tailRate ?? 1
     const isRinse = tool.families.includes('rinse')
     // 무효과 통계: 오염 칸 수 vs 효과 난 칸 수, 가장 흔한 이유
     let dirtyCells = 0
@@ -554,12 +583,15 @@ export class CleanSession {
         events.push({ kind: 'discovered', dirt, tool: toolFam, cleaner: recipe.cleaner ?? null })
       }
       const mult = det ? det.mult[dirt] : 1
-      const rate = (tool.power * tool.effect[dirt] * recipe.speed * mult * w) / (DIRT_RESIST[dirt] * resistMul)
+      const pro = Boolean(tool.pro || det?.pro)
+      let rate = (tool.power * tool.effect[dirt] * recipe.speed * mult * w) / (DIRT_RESIST[dirt] * resistMul)
+      // 찌든 때: 마지막 층은 일반 도구로는 더디다 (고성능 장비는 끝까지 같은 속도)
+      if (!pro && a < TAIL_AMOUNT) rate *= tailRate
       const next = Math.max(0, a - rate * dt)
       this.take(i, a - next)
       this.amount[i] = next
       this.engaged = true
-      if (next < 0.02) this.finishCell(i, cleared, revealed, events)
+      if (next < 0.02) this.finishCell(i, cleared, revealed, events, pro)
     })
     if (dirtyCells > 0) {
       if (effective === 0 && reasons.size) {
@@ -639,17 +671,23 @@ export interface Result {
   timeSec: number
   damage: number
   hazard: boolean
+  /** 광택 마감 비율 (0~1) — 고성능 장비로 지운 칸 */
+  polish: number
+  /** 광택 보너스 코인 (coins 에 포함) */
+  polishBonus: number
 }
 
-/** 별점: 기본 3, 목표시간 초과 -1(2배 초과 -2), 손상 15% 이상 -1, 위험 혼합 -1, 최소 1 */
-export function scoreSession(s: Pick<CleanSession, 'time' | 'damage' | 'hazard'>, parSec: number, tier = 1): Result {
+/** 별점: 기본 3, 목표시간 초과 -1(2배 초과 -2), 손상 15% 이상 -1, 위험 혼합 -1, 최소 1. 광택 마감 50% 이상이면 보너스 코인 */
+export function scoreSession(s: Pick<CleanSession, 'time' | 'damage' | 'hazard'> & { polish?: number }, parSec: number, tier = 1): Result {
   let stars = 3
   if (s.time > parSec) stars--
   if (s.time > parSec * 2) stars--
   if (s.damage >= 0.15) stars--
   if (s.hazard) stars--
   stars = Math.max(1, stars)
-  return { stars, coins: (20 + stars * 10) * tier, timeSec: Math.round(s.time), damage: s.damage, hazard: s.hazard }
+  const polish = Math.max(0, Math.min(1, s.polish ?? 0))
+  const polishBonus = polish >= 0.5 ? Math.round(10 * polish) * tier : 0
+  return { stars, coins: (20 + stars * 10) * tier + polishBonus, timeSec: Math.round(s.time), damage: s.damage, hazard: s.hazard, polish, polishBonus }
 }
 
 /** 값 노이즈(격자 난수 + 부드러운 보간), 0~1 */

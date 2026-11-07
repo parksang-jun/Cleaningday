@@ -18,12 +18,16 @@ interface ScrubNode {
   src: AudioBufferSourceNode;
   filter: BiquadFilterNode;
   gain: GainNode;
+  trem?: GainNode;
   osc?: OscillatorNode;
   oscGain?: GainNode;
   lfo?: OscillatorNode;
   profile: ScrubProfile;
 }
 let scrub: ScrubNode | null = null;
+// 마지막으로 scrubSound 가 불린 시각 — 프레임마다 갱신되지 않으면(판 종료·화면 전환) 감시 타이머가 끈다
+let scrubAt = 0;
+let scrubWatch: number | null = null;
 
 export type ScrubProfile = 'cloth' | 'sponge' | 'brush' | 'vacuum' | 'water' | 'washer' | 'squeegee' | 'steam' | 'roller' | 'mitt';
 
@@ -202,9 +206,12 @@ export function scrubSound(intensity: number, profile: ScrubProfile = 'cloth'): 
     filter.Q.value = p.q;
     const gain = ctx.createGain();
     gain.gain.value = 0;
-    src.connect(filter).connect(gain).connect(sfxBus);
+    // 떨림은 별도 단(trem)에 건다 — 주 게인에 직접 걸면 게인 0 에서도 ±떨림만큼 소리가 남는다
+    const trem = ctx.createGain();
+    trem.gain.value = 1;
+    src.connect(filter).connect(trem).connect(gain).connect(sfxBus);
     src.start();
-    const node: ScrubNode = { src, filter, gain, profile };
+    const node: ScrubNode = { src, filter, gain, trem, profile };
     if (p.hum) {
       const osc = ctx.createOscillator();
       osc.type = p.humType ?? 'sawtooth';
@@ -224,13 +231,26 @@ export function scrubSound(intensity: number, profile: ScrubProfile = 'cloth'): 
       const lfo = ctx.createOscillator();
       lfo.type = 'sine';
       lfo.frequency.value = p.lfo;
+      const depth = 0.5 * (p.lfoDepth ?? 0.5);
+      trem.gain.value = 1 - depth;
       const lg = ctx.createGain();
-      lg.gain.value = 0.5 * (p.lfoDepth ?? 0.5);
-      lfo.connect(lg).connect(gain.gain);
+      lg.gain.value = depth;
+      lfo.connect(lg).connect(trem.gain);
       lfo.start();
       node.lfo = lfo;
     }
     scrub = node;
+  }
+  scrubAt = performance.now();
+  if (scrubWatch === null) {
+    scrubWatch = window.setInterval(() => {
+      // 프레임 갱신이 끊기면(클리어·실패·모달·화면 전환) 자동으로 끈다
+      if (scrub && performance.now() - scrubAt > 220) stopScrub();
+      if (!scrub && scrubWatch !== null) {
+        clearInterval(scrubWatch);
+        scrubWatch = null;
+      }
+    }, 100);
   }
   const level = p.gain * (0.35 + 0.65 * Math.min(1, intensity));
   scrub.gain.gain.setTargetAtTime(level, ctx.currentTime, 0.04);
@@ -257,11 +277,9 @@ function killScrub(): void {
   }, 300);
 }
 
+/** 문지르기 소리 끄기 — 페이드 후 노드를 완전히 정지시킨다(다음 문지르기는 새로 만든다) */
 export function stopScrub(): void {
-  if (scrub && ctx) {
-    scrub.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.06);
-    if (scrub.oscGain) scrub.oscGain.gain.setTargetAtTime(0, ctx.currentTime, 0.06);
-  }
+  killScrub();
 }
 
 export const sfx = {
