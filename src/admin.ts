@@ -5,7 +5,9 @@
 //  · 설정 JSON 내보내기/가져오기 — 실서비스에선 이 JSON 을 원격 설정으로 배포한다
 import { BASE_DETERGENTS, BASE_TOOLS, DIRT_TYPES, SURFACES, type Chemistry, type DirtType, type SurfaceType } from './game/catalog';
 import { isProSponsor, performanceRatios, REFERENCE_REMOVAL, type SponsorProduct } from './game/sponsor';
+import { avatarHtml } from './avatar';
 import { pitchLines, type Placement } from './host';
+import { deleteMedia, photoToDataUrl, putMedia } from './media';
 import { getLang, t } from './i18n';
 import { BASE_CHOICES, blankSponsor, counterRows, exportConfig, findSponsor, hostConfig, importConfig, removeSponsor, resetCounters, saveHostConfig, saveSponsor, setSponsorStatus, sponsorIssues, sponsorList, sumCounter } from './ops';
 import { getStore } from './storage';
@@ -76,7 +78,25 @@ const KO: Record<string, string> = {
   introCooldown: '같은 제품 재노출 간격(분)',
   introFrom: '판 시작 소개를 시작할 스테이지',
   struggleAfter: '막혔을 때 등장 조건 (틀린 시도 횟수)',
-  resultOn: '결과 화면에서 추천',
+  resultOn: '매 판 끝 결과 화면에서 이번 판에 쓴 제품 소개',
+  realHost: '실사 쇼호스트 (사진·영상)',
+  realHostNote: '사진을 넣으면 내장 초상 대신 실제 사람 얼굴이 라이브 카드에 나옵니다(목소리는 기기 TTS). 제품마다 소개 영상을 넣으면 영상이 재생되고 영상 음성이 목소리가 됩니다 — 영상은 "편집" 화면에서 제품별로.',
+  howToReal: '실사 영상 만드는 법',
+  howToRealSteps: '① 편집 화면의 "멘트 복사"로 대본(한/영/일)을 복사 → ② HeyGen · D-ID · Synthesia 같은 AI 아바타 서비스(또는 실제 모델 촬영)에서 같은 인물로 제품별 영상(mp4, 세로 1:1 권장, 20~40초)을 만든다 → ③ 영상을 CDN 에 올려 https URL 을 제품의 "소개 영상 URL"에 넣거나, 테스트용으로 파일을 직접 올린다(이 기기에만 저장) → ④ 같은 인물의 정면 사진 1장을 아래 "사진"에 넣으면 영상이 없는 제품도 같은 얼굴로 소개한다.',
+  photo: '사진',
+  photoUrl: '사진 URL (https)',
+  photoFile: '사진 파일 올리기',
+  photoClear: '사진 지우기',
+  photoSaved: '사진 저장됨',
+  videoTitle: '이 제품 소개 영상 (실사 쇼호스트)',
+  videoUrl: '소개 영상 URL (https mp4/webm)',
+  videoFile: '영상 파일 올리기 (이 기기 전용)',
+  videoClear: '영상 지우기',
+  videoUploaded: '업로드된 영상 사용 중',
+  hostPhotoUrl: '이 제품 전용 쇼호스트 사진 URL (비우면 공통 사진)',
+  copyScript: '멘트 복사 (한/영/일 대본)',
+  scriptCopied: '대본을 복사했어요 — HeyGen 등에 붙여넣으세요',
+  copyFailed: '복사 실패 — 아래 자동 생성 멘트를 직접 복사하세요',
   statsTitle: '집계 (이 기기, 출시 후엔 서버 집계로 교체)',
   reset: '집계 초기화',
   game: '게임',
@@ -179,7 +199,25 @@ const EN: Record<string, string> = {
   introCooldown: 'Same-product cooldown (min)',
   introFrom: 'Stage intros start at stage',
   struggleAfter: 'Appear when stuck after N wrong tries',
-  resultOn: 'Recommend on result screen',
+  resultOn: 'Every stage end: present a product used in that stage',
+  realHost: 'Real-person host (photo · video)',
+  realHostNote: 'Add a photo and the live card shows a real face instead of the built-in portrait (voice = device TTS). Add a per-product video and it plays with its own voice — videos are set per product in "Edit".',
+  howToReal: 'How to make real-person videos',
+  howToRealSteps: '① Copy the script (ko/en/ja) with "Copy script" in Edit → ② Generate one video per product with the same presenter on an AI avatar service (HeyGen, D-ID, Synthesia) or film a model (mp4, 1:1, 20–40 s) → ③ Host it on a CDN and paste the https URL into the product\'s "Video URL", or upload the file for testing (stored on this device only) → ④ Add one frontal photo of the same presenter below so products without a video use the same face.',
+  photo: 'Photo',
+  photoUrl: 'Photo URL (https)',
+  photoFile: 'Upload photo',
+  photoClear: 'Remove photo',
+  photoSaved: 'Photo saved',
+  videoTitle: 'Product video (real-person host)',
+  videoUrl: 'Video URL (https mp4/webm)',
+  videoFile: 'Upload video file (this device only)',
+  videoClear: 'Remove video',
+  videoUploaded: 'Using uploaded video',
+  hostPhotoUrl: 'Host photo URL for this product only (blank = shared photo)',
+  copyScript: 'Copy script (ko/en/ja)',
+  scriptCopied: 'Script copied — paste it into HeyGen etc.',
+  copyFailed: 'Copy failed — copy the auto-generated lines below',
   statsTitle: 'Counters (this device; replace with server analytics at launch)',
   reset: 'Reset counters',
   game: 'Game',
@@ -237,6 +275,8 @@ const esc = (s: string) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;',
 let tab: Tab = 'campaigns';
 let editing: SponsorProduct | null = null;
 let flash = '';
+/** 복사에 실패했을 때 직접 복사하라고 보여 주는 대본 */
+let scriptText = '';
 
 export function renderAdmin(app: HTMLElement, hooks: AdminHooks): void {
   const tabs: Tab[] = ['campaigns', 'edit', 'host', 'stats', 'export'];
@@ -421,6 +461,17 @@ function renderEdit(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
       </div>
       ${(['ko', 'en', 'ja'] as const).map((l) => field(`${A('pitchTitle')} (${l})`, `<textarea name="host_${l}" rows="3">${esc((p.hostLines?.[l] ?? []).join('\n'))}</textarea>`)).join('')}
       <details class="admin__auto"><summary>${esc(A('autoPitch'))}</summary><ol>${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ol></details>
+      ${scriptText ? `<textarea class="admin__script" rows="8" readonly data-testid="admin-script">${esc(scriptText)}</textarea>` : ''}
+      <h3>${esc(A('videoTitle'))}</h3>
+      <div class="admin__grid">
+        ${field(A('videoUrl'), input('hostVideo', p.hostVideo?.startsWith('idb:') ? '' : p.hostVideo, 'url', 'data-testid="admin-video-url"'))}
+        ${field(A('hostPhotoUrl'), input('hostPhoto', p.hostPhoto, 'url'))}
+      </div>
+      <div class="btn-row admin__media-row">
+        <label class="btn btn--sm">${esc(A('videoFile'))}<input type="file" name="videoFile" accept="video/mp4,video/webm" hidden data-testid="admin-video-file"></label>
+        ${p.hostVideo?.startsWith('idb:') ? `<span class="small muted" data-testid="admin-video-state">✓ ${esc(A('videoUploaded'))}</span><button class="btn btn--sm" type="button" data-act="video-clear">${esc(A('videoClear'))}</button>` : ''}
+        <button class="btn btn--sm" type="button" data-act="copy-script" data-testid="admin-copy-script">📋 ${esc(A('copyScript'))}</button>
+      </div>
       <h3>${esc(A('links'))}</h3>
       <div class="admin__grid">
         ${field('productUrl', input('productUrl', p.productUrl, 'url'))}
@@ -463,6 +514,8 @@ function renderEdit(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
       claims: g('claims').split('\n').map((x) => x.trim()).filter(Boolean),
       reviews: { count: Number(g('rv_count') || 0), rating: Number(g('rv_rating') || 0), source: g('rv_source') || undefined },
       hostLines: Object.fromEntries((['ko', 'en', 'ja'] as const).map((l) => [l, g(`host_${l}`).split('\n').map((x) => x.trim()).filter(Boolean)])),
+      hostVideo: g('hostVideo') || (p.hostVideo?.startsWith('idb:') ? p.hostVideo : undefined),
+      hostPhoto: g('hostPhoto') || undefined,
       productUrl: g('productUrl') || undefined,
       links: { coupang: g('link_coupang') || undefined, amazon_us: g('link_amazon_us') || undefined, amazon_jp: g('link_amazon_jp') || undefined, rakuten: g('link_rakuten') || undefined },
     };
@@ -492,6 +545,56 @@ function renderEdit(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
     editing = read();
     hooks.preview(editing, 'preview');
   });
+  // 실사 영상 파일 → IndexedDB (이 기기 전용), 설정에는 idb: 참조만
+  form.querySelector<HTMLInputElement>('[name="videoFile"]')!.addEventListener('change', async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const next = read();
+    const key = `sponsor-video:${next.id || 'new'}`;
+    if (await putMedia(key, file)) {
+      next.hostVideo = `idb:${key}`;
+      editing = next;
+      flash = `${A('saved')} · ${A('videoUploaded')}`;
+      renderAdmin(app, hooks);
+    }
+  });
+  form.querySelector('[data-act="video-clear"]')?.addEventListener('click', async () => {
+    const next = read();
+    if (next.hostVideo?.startsWith('idb:')) await deleteMedia(next.hostVideo.slice(4));
+    next.hostVideo = undefined;
+    editing = next;
+    renderAdmin(app, hooks);
+  });
+  // 대본 복사: 세 언어 자동 생성(또는 직접 쓴) 멘트 — AI 아바타 영상 제작용
+  form.querySelector('[data-act="copy-script"]')!.addEventListener('click', async () => {
+    const next = read();
+    const name = hostConfig().name;
+    const text = (['ko', 'en', 'ja'] as const)
+      .map((l) => `[${l}] ${next.brand} ${next.name}\n` + pitchLines(next, l, { hostName: name, placement: 'result', context: 'used' }).join('\n'))
+      .join('\n\n');
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch {
+      // 클립보드 API 가 막힌 환경(웹뷰·권한 없음): 숨은 textarea + execCommand
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      ta.remove();
+    }
+    flash = ok ? A('scriptCopied') : A('copyFailed');
+    scriptText = ok ? '' : text;
+    editing = next;
+    renderAdmin(app, hooks);
+  });
   form.querySelector('[data-act="cancel"]')!.addEventListener('click', () => {
     editing = null;
     tab = 'campaigns';
@@ -510,11 +613,26 @@ function renderHost(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
       ${field(A('introFrom'), input('introFromStage', h.introFromStage, 'number', 'min="1" max="96"'))}
       ${field(A('struggleAfter'), input('struggleAfterTries', h.struggleAfterTries, 'number', 'min="1"'))}
       <label class="setting"><span>${esc(A('resultOn'))}</span><input type="checkbox" name="result" ${h.result ? 'checked' : ''}></label>
+      <h3>${esc(A('realHost'))}</h3>
+      <p class="small muted">${esc(A('realHostNote'))}</p>
+      <div class="admin__media">
+        <div class="admin__media-preview" data-testid="admin-host-preview">${avatarHtml({ photo: h.photo }, { small: true })}</div>
+        <div class="admin__media-fields">
+          ${field(A('photoUrl'), input('photo', h.photo?.startsWith('data:') ? '' : h.photo, 'url', 'placeholder="https://…/host.jpg"'))}
+          <div class="btn-row">
+            <label class="btn btn--sm">${esc(A('photoFile'))}<input type="file" name="photoFile" accept="image/*" hidden data-testid="admin-photo-file"></label>
+            ${h.photo ? `<button class="btn btn--sm" type="button" data-act="photo-clear" data-testid="admin-photo-clear">${esc(A('photoClear'))}</button>` : ''}
+          </div>
+        </div>
+      </div>
+      <details class="admin__auto"><summary>${esc(A('howToReal'))}</summary><p class="small">${esc(A('howToRealSteps'))}</p></details>
       <div class="btn-row"><button class="btn btn--primary" type="submit" data-testid="admin-host-save">${esc(A('save'))}</button></div>
     </form>`;
-  panel.querySelector('form')!.addEventListener('submit', (e) => {
+  const form = panel.querySelector('form')!;
+  form.addEventListener('submit', (e) => {
     e.preventDefault();
     const f = new FormData(e.target as HTMLFormElement);
+    const url = String(f.get('photo') || '').trim();
     saveHostConfig({
       enabled: Boolean(f.get('enabled')),
       name: String(f.get('name') || '민서'),
@@ -522,8 +640,28 @@ function renderHost(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
       introFromStage: Number(f.get('introFromStage') || 1),
       struggleAfterTries: Number(f.get('struggleAfterTries') || 2),
       result: Boolean(f.get('result')),
+      photo: url || (h.photo?.startsWith('data:') ? h.photo : undefined),
     });
     flash = A('saved');
+    hooks.onChange();
+    renderAdmin(app, hooks);
+  });
+  form.querySelector<HTMLInputElement>('[name="photoFile"]')!.addEventListener('change', async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    try {
+      const data = await photoToDataUrl(file);
+      saveHostConfig({ photo: data });
+      flash = A('photoSaved');
+      hooks.onChange();
+      renderAdmin(app, hooks);
+    } catch {
+      flash = A('copyFailed');
+      renderAdmin(app, hooks);
+    }
+  });
+  form.querySelector('[data-act="photo-clear"]')?.addEventListener('click', () => {
+    saveHostConfig({ photo: undefined });
     hooks.onChange();
     renderAdmin(app, hooks);
   });

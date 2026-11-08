@@ -76,4 +76,18 @@ describe('ops: sponsored product management', () => {
     expect(findSponsor('rt-1')?.brand).toBe('RT')
     expect(importConfig('{"nope":1}').ok).toBe(false)
   })
+
+  it('result-screen pitch names how the player met the product this stage (used / same category), other placements ignore it', () => {
+    const p = SAMPLE_SPONSORS[0]
+    const used = pitchLines(p, 'ko', { hostName: '민서', placement: 'result', context: 'used' })
+    expect(used[1]).toContain('직접 써 보셨죠')
+    const cat = pitchLines(p, 'ko', { hostName: '민서', placement: 'result', context: 'category', usedItem: '기름때 제거제' })
+    expect(cat[1]).toContain('기름때 제거제 쓰셨죠')
+    const generic = pitchLines(p, 'ko', { hostName: '민서', placement: 'result', context: 'generic' })
+    expect(generic[1]).not.toContain('쓰셨죠')
+    const intro = pitchLines(p, 'ko', { hostName: '민서', placement: 'intro', context: 'used' })
+    expect(intro[1]).not.toContain('직접 써 보셨죠')
+    expect(pitchLines(p, 'en', { hostName: 'Minseo', placement: 'result', context: 'used' })[1]).toContain('just used it')
+    expect(pitchLines(p, 'ja', { hostName: 'ミンソ', placement: 'result', context: 'category', usedItem: '油汚れ用洗剤' })[1]).toContain('油汚れ用洗剤')
+  })
 })

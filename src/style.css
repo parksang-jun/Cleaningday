@@ -1095,11 +1095,6 @@ button {
   gap: 10px;
   align-items: flex-end;
 }
-.host__svg {
-  width: 100%;
-  height: auto;
-  display: block;
-}
 .host__bubble {
   flex: 1;
   min-width: 0;
@@ -1201,10 +1196,8 @@ button {
   width: 44px;
   flex: 0 0 44px;
 }
-.host-rec__avatar svg {
-  width: 100%;
-  height: auto;
-  display: block;
+.host-rec__avatar .hav {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
 }
 .host-rec__body {
   display: flex;
@@ -1455,6 +1448,15 @@ button {
   gap: 4px;
   align-items: center;
 }
+.admin__script {
+  width: 100%;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin: 6px 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line, #cfd8dc);
+  padding: 8px;
+  box-sizing: border-box;
+}
 .admin__auto ol {
   margin: 6px 0 0;
   padding-left: 18px;
@@ -1585,82 +1587,138 @@ button {
   width: 124px;
   flex: 0 0 124px;
   border-radius: 50%;
-  overflow: hidden;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16), inset 0 0 0 2px rgba(255, 255, 255, 0.7);
-  animation: host-breathe 3.6s ease-in-out infinite;
 }
-@keyframes host-breathe {
+
+/* ---------- 쇼호스트 얼굴 (avatar.ts) ---------- */
+.hav {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 32%, #f4faf8 0%, #d2e7e2 70%, #c3dcd6 100%);
+  isolation: isolate;
+}
+.hav__fig {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+  animation: hav-breathe 3.9s ease-in-out infinite;
+}
+.hav--small .hav__fig {
+  animation: none;
+}
+@keyframes hav-breathe {
   50% {
-    transform: translateY(-1.5px);
+    transform: translateY(-0.5%) scale(1.008);
   }
 }
-.host__head {
-  transform-origin: 100px 130px;
-  animation: host-tilt 6.5s ease-in-out infinite;
+.hav__l {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  /* 초상은 반신이라 원 안에서 얼굴이 크게 보이도록 살짝 확대 */
+  transform: scale(1.22);
+  transform-origin: 50% 44%;
 }
-@keyframes host-tilt {
-  0%,
-  100% {
-    transform: rotate(0deg);
-  }
-  35% {
-    transform: rotate(-1.6deg);
-  }
-  70% {
-    transform: rotate(1.2deg);
-  }
-}
-.host__lid {
-  transform-origin: center 84px;
-  transform: scaleY(0);
-  animation: host-blink 4.4s infinite;
-}
-.host__eye:nth-of-type(2) .host__lid {
-  animation-delay: 0.02s;
-}
-@keyframes host-blink {
-  0%,
-  93%,
-  100% {
-    transform: scaleY(0);
-  }
-  95.5% {
-    transform: scaleY(1);
-  }
-}
-.host__brows {
-  transition: transform 0.25s ease;
-}
-.host__avatar.is-emph .host__brows {
-  transform: translateY(-2.2px);
-}
-.host__mouth-open {
+.hav__eyes,
+.hav__mouth {
   opacity: 0;
-  transform-origin: 100px 110px;
 }
-.host__avatar.is-talking .host__mouth-closed {
-  animation: host-mouth-closed 0.26s steps(1) infinite alternate;
+.hav__eyes.is-on,
+.hav__mouth.is-on {
+  opacity: 1;
 }
-.host__avatar.is-talking .host__mouth-open {
-  animation: host-mouth-open 0.26s ease-in-out infinite alternate;
+.hav__brows {
+  transition: transform 0.22s ease;
 }
-@keyframes host-mouth-closed {
-  from {
-    opacity: 1;
-  }
+.hav.is-emph .hav__brows {
+  transform: translateY(-1.4%);
+}
+/* 실사 사진·영상 */
+.hav__photo,
+.hav__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #0b1a1c;
+}
+.hav--photo .hav__photo {
+  animation: hav-kenburns 9s ease-in-out infinite alternate;
+}
+@keyframes hav-kenburns {
   to {
-    opacity: 0;
+    transform: scale(1.04);
   }
 }
-@keyframes host-mouth-open {
-  from {
-    opacity: 0;
-    transform: scaleY(0.35);
+.hav__photo--fallback,
+.hav__fig--fallback {
+  opacity: 0;
+}
+.hav--video.is-video-failed .hav__video {
+  opacity: 0;
+}
+.hav--video.is-video-failed .hav__photo--fallback,
+.hav--video.is-video-failed .hav__fig--fallback {
+  opacity: 1;
+}
+.hav__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 0 rgba(31, 138, 128, 0);
+  transition: box-shadow 0.3s;
+}
+.hav.is-talking .hav__ring {
+  animation: hav-ring 1.1s ease-out infinite;
+}
+@keyframes hav-ring {
+  0% {
+    box-shadow: inset 0 0 0 0 rgba(255, 255, 255, 0.55), 0 0 0 0 rgba(31, 138, 128, 0.45);
   }
-  to {
-    opacity: 1;
-    transform: scaleY(1);
+  100% {
+    box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0), 0 0 0 10px rgba(31, 138, 128, 0);
   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hav__fig,
+  .hav--photo .hav__photo,
+  .hav.is-talking .hav__ring {
+    animation: none;
+  }
+}
+/* 운영자 화면: 사진 미리보기 */
+.admin__media {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin: 8px 0;
+}
+.admin__media-preview {
+  width: 96px;
+  flex: 0 0 96px;
+}
+.admin__media-fields {
+  flex: 1;
+  min-width: 0;
+}
+.admin__media-row {
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 6px 0 2px;
+}
+.admin__media-row .btn input[type='file'] {
+  display: none;
 }
 .host-rec__avatar,
 .live__item .host-rec__avatar {

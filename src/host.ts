@@ -1,8 +1,10 @@
-// AI 쇼호스트 "반디" — 광고 제품을 라이브 커머스처럼 소개한다.
+// AI 쇼호스트 "민서" — 광고 제품을 라이브 커머스처럼 소개한다.
+//  · 얼굴: 운영자가 올린 실사 영상/사진이 있으면 그것(avatar.ts), 없으면 내장 페인팅 초상(레이어 애니메이션)
 //  · 멘트는 광고주가 낸 시험 성적·소구점·리뷰 수치로 자동 생성 (운영자가 직접 쓴 멘트가 있으면 그것을 우선)
 //  · 음성: 브라우저/웹뷰의 speechSynthesis(TTS). 설정에서 끌 수 있고, 지원 안 되면 자막만 나온다
 //  · 과장 방지: 성능 문장은 시험 성적서 수치만, 주의 재질은 라벨 그대로 항상 읽어 준다
 import { track } from './analytics';
+import { animateAvatar, avatarHtml, type HostMedia } from './avatar';
 import { BASE_DETERGENTS, BASE_TOOLS, type DirtType, type SurfaceType } from './game/catalog';
 import { performanceRatios, type SponsorProduct } from './game/sponsor';
 import { expertLine } from './game/tips';
@@ -28,7 +30,16 @@ export interface HostShowOptions {
   /** 체험 버튼 문구를 바꿀 때 (결과 화면: "다음 판에서 체험") */
   trialLabel?: string;
   hideTrial?: boolean;
+  /** 실사 사진·영상 (운영자 설정) — 없으면 내장 초상 */
+  media?: HostMedia;
+  /** 결과 화면: 이 제품을 이번 판에서 어떻게 만났나 */
+  context?: PitchContext;
+  /** context='category' 일 때 플레이어가 쓴 일반 제품 이름 */
+  usedItem?: string;
 }
+
+/** 결과 화면 멘트의 맥락: 직접 써 봤다 / 같은 종류를 썼다 / 이 판 오염에 맞다 / 일반 추천 */
+export type PitchContext = 'used' | 'category' | 'dirt' | 'generic';
 
 const LANG_TAG: Record<Lang, string> = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP' };
 
@@ -53,8 +64,9 @@ export function bestLab(p: SponsorProduct, dirt?: DirtType): { dirt: DirtType; r
 }
 
 /** 쇼호스트(청소 전문가) 멘트 생성 — 인사 → 오염의 원리(꿀팁) → 시험 수치 → 소구점 → 리뷰 → 라벨 주의 → 제안 */
-export function pitchLines(p: SponsorProduct, lang: Lang, opts: { hostName: string; placement: Placement; dirt?: DirtType; surface?: SurfaceType }): string[] {
+export function pitchLines(p: SponsorProduct, lang: Lang, opts: { hostName: string; placement: Placement; dirt?: DirtType; surface?: SurfaceType; context?: PitchContext; usedItem?: string }): string[] {
   const lines: string[] = [];
+  const ctx = opts.placement === 'result' ? opts.context : undefined;
   const custom = p.hostLines?.[lang]?.map((l) => l.replace(/\{brand\}/g, p.brand).replace(/\{name\}/g, p.name).replace(/\{host\}/g, opts.hostName)).filter(Boolean) ?? [];
   const lab = bestLab(p, opts.dirt);
   const x = lab && lab.ratio > 1.05 ? Math.round(lab.ratio * 10) / 10 : 0;
@@ -65,6 +77,8 @@ export function pitchLines(p: SponsorProduct, lang: Lang, opts: { hostName: stri
   const expert = opts.dirt ? expertLine(opts.dirt, lang, opts.surface) : undefined;
   if (lang === 'ko') {
     lines.push(`안녕하세요, 청소 전문가 ${opts.hostName}입니다. 오늘은 ${p.brand} ${p.name} 이야기를 해볼게요.`);
+    if (ctx === 'used') lines.push(`방금 이 판에서 직접 써 보셨죠? 손에 느껴진 차이, 수치로도 증명된 제품이에요.`);
+    else if (ctx === 'category' && opts.usedItem) lines.push(`이번 판에 ${opts.usedItem} 쓰셨죠? 같은 종류인데 이 제품은 뭐가 다른지 보여드릴게요.`);
     if (expert) lines.push(expert);
     if (custom.length) lines.push(...custom);
     else {
@@ -88,6 +102,8 @@ export function pitchLines(p: SponsorProduct, lang: Lang, opts: { hostName: stri
     }
   } else if (lang === 'ja') {
     lines.push(`こんにちは、お掃除の専門家の${opts.hostName}です。今日は ${p.brand} ${p.name} のお話をします。`);
+    if (ctx === 'used') lines.push(`さっきこのステージで実際に使いましたよね？手で感じた違いは、数値でも証明されています。`);
+    else if (ctx === 'category' && opts.usedItem) lines.push(`このステージで${opts.usedItem}を使いましたね。同じ種類でも、この製品は何が違うのかお見せします。`);
     if (expert) lines.push(expert);
     if (custom.length) lines.push(...custom);
     else {
@@ -111,6 +127,8 @@ export function pitchLines(p: SponsorProduct, lang: Lang, opts: { hostName: stri
     }
   } else {
     lines.push(`Hi, I'm ${opts.hostName}, a cleaning specialist. Let's talk about the ${p.brand} ${p.name}.`);
+    if (ctx === 'used') lines.push(`You just used it in this stage — the difference you felt is backed by the numbers.`);
+    else if (ctx === 'category' && opts.usedItem) lines.push(`You used a ${opts.usedItem} this stage. Same category — here's what makes this one different.`);
     if (expert) lines.push(expert);
     if (custom.length) lines.push(...custom);
     else {
@@ -221,93 +239,9 @@ export function closeHost(): void {
   current?.close();
 }
 
-/** 쇼호스트 — AI 청소 전문가 (사람 모습의 일러스트: 깜빡임·입 모양·호흡·눈썹 강조 애니메이션) */
-export function hostAvatarSvg(): string {
-  return `<svg viewBox="0 0 200 200" class="host__svg" aria-hidden="true">
-    <defs>
-      <radialGradient id="hbg" cx="50%" cy="35%" r="70%"><stop offset="0" stop-color="#f3faf8"/><stop offset="1" stop-color="#cfe6e1"/></radialGradient>
-      <linearGradient id="hskin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7dcc6"/><stop offset="1" stop-color="#e8bb9a"/></linearGradient>
-      <radialGradient id="hcheek" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="rgba(233,120,120,0.45)"/><stop offset="1" stop-color="rgba(233,120,120,0)"/></radialGradient>
-      <linearGradient id="hhair" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4a3328"/><stop offset="0.5" stop-color="#2e1f18"/><stop offset="1" stop-color="#4a3328"/></linearGradient>
-      <linearGradient id="hapron" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3bb3a7"/><stop offset="1" stop-color="#1f8a80"/></linearGradient>
-      <linearGradient id="hshirt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf1"/></linearGradient>
-    </defs>
-    <circle cx="100" cy="100" r="100" fill="url(#hbg)"/>
-    <g class="host__body">
-      <!-- 어깨·셔츠 -->
-      <path d="M28 200 C30 160 55 146 82 142 L100 150 L118 142 C145 146 170 160 172 200 Z" fill="url(#hshirt)"/>
-      <path d="M82 142 L100 170 L118 142 L112 140 L100 156 L88 140 Z" fill="#dfe5ea"/>
-      <!-- 앞치마 -->
-      <path d="M70 200 L74 152 Q100 162 126 152 L130 200 Z" fill="url(#hapron)"/>
-      <path d="M78 150 L70 200 M122 150 L130 200" stroke="rgba(255,255,255,0.35)" stroke-width="2"/>
-      <path d="M86 140 Q80 120 92 118 M114 140 Q120 120 108 118" stroke="#1f8a80" stroke-width="5" fill="none" stroke-linecap="round"/>
-      <rect x="88" y="168" width="24" height="12" rx="2" fill="#fff" stroke="#1f8a80" stroke-width="1.2"/>
-      <text x="100" y="177" font-size="6.5" font-weight="700" text-anchor="middle" fill="#1f8a80" font-family="system-ui, sans-serif">AI</text>
-      <!-- 목 -->
-      <path d="M88 118 L88 146 Q100 154 112 146 L112 118 Z" fill="#e3b391"/>
-      <path d="M88 118 Q100 130 112 118 L112 128 Q100 140 88 128 Z" fill="rgba(0,0,0,0.08)"/>
-    </g>
-    <g class="host__head">
-      <!-- 뒷머리(낮은 묶음) -->
-      <ellipse cx="126" cy="96" rx="14" ry="22" fill="#2e1f18"/>
-      <circle cx="137" cy="120" r="10" fill="url(#hhair)"/>
-      <path d="M133 112 Q140 118 138 128" stroke="rgba(255,255,255,0.15)" stroke-width="1.4" fill="none"/>
-      <!-- 흘러내린 잔머리 -->
-      <path d="M70 84 Q66 96 69 106" stroke="#3b2a22" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-      <path d="M130 86 Q134 96 132 104" stroke="#3b2a22" stroke-width="1.4" fill="none" stroke-linecap="round"/>
-      <!-- 귀 -->
-      <ellipse cx="66" cy="94" rx="6" ry="9" fill="#e8bb9a"/>
-      <ellipse cx="134" cy="94" rx="6" ry="9" fill="#e8bb9a"/>
-      <!-- 얼굴 -->
-      <path d="M66 86 C66 50 134 50 134 86 C134 112 120 130 100 132 C80 130 66 112 66 86 Z" fill="url(#hskin)"/>
-      <path d="M72 108 Q100 126 128 108 Q122 128 100 131 Q78 128 72 108Z" fill="rgba(170,110,80,0.12)"/>
-      <!-- 머리카락 -->
-      <path d="M64 86 C62 44 138 44 136 86 C130 68 122 60 100 60 C78 60 70 68 64 86 Z" fill="url(#hhair)"/>
-      <path d="M72 84 C74 66 86 58 100 58 C94 64 82 70 78 86Z" fill="rgba(255,255,255,0.08)"/>
-      <path d="M118 62 C128 68 132 76 134 86" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" fill="none"/>
-      <!-- 눈썹 -->
-      <g class="host__brows">
-        <path d="M78 74 Q86 69 94 73" stroke="#3a281f" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-        <path d="M106 73 Q114 69 122 74" stroke="#3a281f" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-      </g>
-      <!-- 눈 -->
-      <g class="host__eye">
-        <ellipse cx="86" cy="84" rx="7.2" ry="4.4" fill="#fff"/>
-        <circle cx="87" cy="84.5" r="3.6" fill="#4b2f22"/>
-        <circle cx="87" cy="84.5" r="1.9" fill="#1b100c"/>
-        <circle cx="85.8" cy="83.2" r="1.1" fill="#fff"/>
-        <path d="M79 82 Q86 78 93 82" stroke="#2b1a12" stroke-width="1.6" fill="none"/>
-        <ellipse class="host__lid" cx="86" cy="84" rx="7.6" ry="4.8" fill="url(#hskin)"/>
-      </g>
-      <g class="host__eye">
-        <ellipse cx="114" cy="84" rx="7.2" ry="4.4" fill="#fff"/>
-        <circle cx="113" cy="84.5" r="3.6" fill="#4b2f22"/>
-        <circle cx="113" cy="84.5" r="1.9" fill="#1b100c"/>
-        <circle cx="111.8" cy="83.2" r="1.1" fill="#fff"/>
-        <path d="M107 82 Q114 78 121 82" stroke="#2b1a12" stroke-width="1.6" fill="none"/>
-        <ellipse class="host__lid" cx="114" cy="84" rx="7.6" ry="4.8" fill="url(#hskin)"/>
-      </g>
-      <!-- 코 -->
-      <path d="M98 92 Q96 100 100 102 Q104 100 102 92" stroke="rgba(150,95,70,0.35)" stroke-width="1.4" fill="none"/>
-      <!-- 볼 -->
-      <ellipse cx="78" cy="100" rx="9" ry="5" fill="url(#hcheek)"/>
-      <ellipse cx="122" cy="100" rx="9" ry="5" fill="url(#hcheek)"/>
-      <!-- 입: 닫힘(미소) / 말할 때 -->
-      <g class="host__mouth">
-        <path class="host__mouth-closed" d="M90 111 Q100 119 110 111" stroke="#b9505c" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-        <g class="host__mouth-open">
-          <path d="M90 110 Q100 124 110 110 Q100 108 90 110Z" fill="#6b2630"/>
-          <path d="M92 110.5 Q100 113 108 110.5 L107 113 Q100 115 93 113Z" fill="#fff"/>
-          <path d="M94 118 Q100 121 106 118" stroke="#d26a76" stroke-width="2" fill="none"/>
-        </g>
-      </g>
-      <!-- 헤드셋 -->
-      <path d="M64 84 C64 50 136 50 136 84" stroke="#2f343b" stroke-width="2.6" fill="none"/>
-      <rect x="58" y="84" width="10" height="16" rx="4" fill="#2f343b"/>
-      <path d="M66 100 C70 112 78 116 88 114" stroke="#2f343b" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-      <circle cx="89" cy="114" r="2.6" fill="#1b1e23"/>
-    </g>
-  </svg>`;
+/** 목록·결과 카드용 작은 아바타 (애니메이션 없음) */
+export function hostAvatarSmall(media?: HostMedia): string {
+  return avatarHtml(media, { small: true });
 }
 
 /** 쇼호스트 등장 — 반환값은 닫기 함수 */
@@ -321,6 +255,7 @@ export function showHost(o: HostShowOptions): () => void {
   el.dataset.testid = 'host';
   el.dataset.placement = o.placement;
   el.dataset.sponsor = p.id;
+  if (o.context) el.dataset.context = o.context;
   const trialLabel = o.trialLabel ?? t('hostTrial');
   el.innerHTML = `
     <div class="host__card" role="dialog" aria-label="${t('hostTitle', { name: o.hostName })}">
@@ -331,7 +266,7 @@ export function showHost(o: HostShowOptions): () => void {
         <button class="host__close" data-act="close" aria-label="${t('close')}" data-testid="host-close">✕</button>
       </div>
       <div class="host__body">
-        <div class="host__avatar is-talking">${hostAvatarSvg()}</div>
+        <div class="host__avatar">${avatarHtml(o.media)}</div>
         <div class="host__bubble"><p class="host__line" data-el="line" data-testid="host-line"></p><div class="host__dots" data-el="dots"></div></div>
       </div>
       <div class="host__product">
@@ -348,7 +283,11 @@ export function showHost(o: HostShowOptions): () => void {
   document.body.appendChild(el);
   const lineEl = el.querySelector<HTMLElement>('[data-el="line"]')!;
   const dotsEl = el.querySelector<HTMLElement>('[data-el="dots"]')!;
-  const avatar = el.querySelector<HTMLElement>('.host__avatar')!;
+  const avatar = animateAvatar(el.querySelector<HTMLElement>('[data-el="avatar"]')!);
+  const hasVideo = el.querySelector('video') !== null;
+  // 영상이 있으면 영상 음성이 목소리 — 소리 있는 재생이 막힌 경우에만 TTS 로 대체
+  let speak = o.speak && !hasVideo;
+  const videoReady = hasVideo ? avatar.playVideo().then((ok) => (speak = o.speak && !ok)) : Promise.resolve();
   let idx = 0;
   let alive = true;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -372,16 +311,17 @@ export function showHost(o: HostShowOptions): () => void {
   const next = async () => {
     if (!alive) return;
     if (idx >= lines.length) {
-      avatar.classList.remove('is-talking');
+      avatar.talking(false);
       return;
     }
     renderDots();
     const text = lines[idx];
-    avatar.classList.add('is-talking');
+    avatar.talking(true);
     // 문장이 시작될 때 눈썹을 살짝 올려 강조
-    avatar.classList.add('is-emph');
-    setTimeout(() => avatar.classList.remove('is-emph'), 500);
-    const spoken = o.speak ? speakLine(text, o.lang) : Promise.resolve(false);
+    avatar.emph();
+    if (idx === 0) await videoReady;
+    if (!alive) return;
+    const spoken = speak ? speakLine(text, o.lang) : Promise.resolve(false);
     await typeLine(text);
     const ok = await spoken;
     if (!alive) return;
@@ -395,6 +335,7 @@ export function showHost(o: HostShowOptions): () => void {
     if (!alive) return;
     alive = false;
     if (timer) clearTimeout(timer);
+    avatar.stop();
     stopSpeaking();
     el.classList.add('is-out');
     setTimeout(() => el.remove(), 260);

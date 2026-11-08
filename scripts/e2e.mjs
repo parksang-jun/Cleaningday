@@ -124,12 +124,23 @@ try {
   assert((await page.locator('.result__found .recipe').count()) >= 1, 'result lists the discovered combo');
   assert((await page.locator('[data-testid="rec"]').count()) === 1, 'result recommends a real product for the main dirt');
   await page.screenshot({ path: resolve(shots, '04-result.png') });
+  // 매 판 끝: 쇼호스트가 결과 화면 위로 나와 제품을 소개 (1단계는 쓴 제품·오염에 맞는 광고가 없으니 일반 추천)
+  await page.waitForSelector('[data-testid="host"][data-placement="result"]', { timeout: 4000 });
+  const ctx1 = await page.getAttribute('[data-testid="host"]', 'data-context');
+  assert(ctx1 === 'generic', `host appears at every stage end (stage 1 context: ${ctx1})`);
+  assert((await page.locator('[data-testid="host"] .hav--paint [data-eye]').count()) === 3 && (await page.locator('[data-testid="host"] .hav--paint [data-mouth]').count()) === 3, 'host face is the painted portrait with eye and mouth layers (blink / lip-sync)');
+  await page.waitForTimeout(900);
+  const mouthOn = await page.locator('[data-testid="host"] .hav__mouth.is-on').getAttribute('data-mouth');
+  assert(['closed', 'mid', 'open'].includes(mouthOn), `portrait animates the mouth while talking (${mouthOn})`);
+  await page.screenshot({ path: resolve(shots, '04a-result-host.png') });
+  await page.click('[data-testid="host-close"]');
+  await page.waitForTimeout(350);
+
   const before = Number((await page.locator('[data-el="coins"]').innerText()).match(/\d+/)[0]);
   await page.click('[data-testid="double"]');
   await page.waitForTimeout(1600);
   const after = Number((await page.locator('[data-el="coins"]').innerText()).match(/\d+/)[0]);
   assert(after === before * 2, `rewarded ad doubles coins (${before} → ${after})`);
-
   // 2단계 열림 → 구역 화면 (12판)
   await page.click('[data-testid="to-menu"]');
   await page.waitForSelector('[data-testid="stage-1"]');
@@ -279,6 +290,9 @@ try {
   const grease2 = await page.evaluate(() => window.__sparkle.session().remainingOf('grease'));
   assert(grease2 < grease1 * 0.7, `degreaser + scouring pad removes grease (${grease1.toFixed(1)} → ${grease2.toFixed(1)})`);
   assert((await page.evaluate(() => window.__sparkle.journal())).includes('grease|scrubpad|degreaser'), 'grease recipe discovered and saved');
+  const pick25 = await page.evaluate(() => window.__sparkle.resultPick());
+  assert(pick25 && pick25.id === 'brightmax-degreaser' && pick25.context === 'category', `stage-end host will pitch the sponsored degreaser because a plain degreaser was used this stage (${JSON.stringify(pick25)})`);
+  assert((await page.evaluate(() => window.__sparkle.used())).includes('degreaser'), 'items actually used this stage are tracked');
   assert((await page.locator('[data-testid="limit"]').innerText()).includes('⏸') === false, 'clock runs once cleaning started');
   await page.screenshot({ path: resolve(shots, '06-stove-discovered.png') });
 
@@ -485,6 +499,39 @@ try {
   await page.click('[data-testid="admin-toggle-brightmax-degreaser"]');
   await page.waitForTimeout(150);
   assert((await page.locator('[data-testid="admin-item-brightmax-degreaser"]').innerText()).includes('일시정지'), 'built-in product can be paused');
+  // 실사 쇼호스트: 사진 파일 올리기 → 미리보기가 사진으로, 라이브 카드도 사진으로
+  await page.click('[data-testid="admin-tab-host"]');
+  await page.waitForSelector('[data-testid="admin-host"]');
+  assert((await page.locator('[data-testid="admin-host-preview"] .hav--paint').count()) === 1, 'host settings preview shows the built-in portrait by default');
+  const png = await page.screenshot({ clip: { x: 0, y: 0, width: 120, height: 120 } });
+  await page.setInputFiles('[data-testid="admin-photo-file"]', { name: 'host.png', mimeType: 'image/png', buffer: png });
+  await page.waitForSelector('[data-testid="admin-photo-clear"]');
+  const photoSrc = await page.getAttribute('[data-testid="admin-host-preview"] .hav--photo img', 'src');
+  assert(photoSrc && photoSrc.startsWith('data:image/jpeg') && photoSrc.length < 200_000, `uploaded photo is cropped, compressed and saved (${Math.round(photoSrc.length / 1024)} KB)`);
+  await page.click('[data-testid="admin-tab-campaigns"]');
+  await page.click('[data-testid="admin-preview-brightmax-degreaser"]');
+  await page.waitForSelector('[data-testid="host"]');
+  assert((await page.locator('[data-testid="host"] .hav--photo img').count()) === 1, 'live card shows the real-person photo instead of the portrait');
+  await page.waitForTimeout(600);
+  assert((await page.locator('[data-testid="host"] .hav.is-talking').count()) === 1, 'photo host pulses a talking ring while speaking');
+  await page.screenshot({ path: resolve(shots, '22b-host-photo.png') });
+  await page.click('[data-testid="host-close"]');
+  await page.waitForTimeout(350);
+  await page.click('[data-testid="admin-tab-host"]');
+  await page.click('[data-testid="admin-photo-clear"]');
+  await page.waitForTimeout(150);
+  assert((await page.locator('[data-testid="admin-host-preview"] .hav--paint').count()) === 1, 'removing the photo falls back to the portrait');
+  // 편집 화면: 제품 소개 영상 URL + 대본 복사
+  await page.click('[data-testid="admin-tab-campaigns"]');
+  await page.click('[data-testid="admin-edit-brightmax-degreaser"]');
+  await page.waitForSelector('[data-testid="admin-form"]');
+  assert((await page.locator('[data-testid="admin-video-url"]').count()) === 1 && (await page.locator('[data-testid="admin-video-file"]').count()) === 1, 'product form takes a real-person video (URL or file)');
+  await page.click('[data-testid="admin-copy-script"]');
+  await page.waitForSelector('[data-testid="admin-flash"]');
+  const scriptFlash = await page.locator('[data-testid="admin-flash"]').innerText();
+  const scriptBox = await page.locator('[data-testid="admin-script"]').count();
+  assert(scriptFlash.includes('대본을 복사') || (scriptBox === 1 && (await page.locator('[data-testid="admin-script"]').inputValue()).includes('[en] BrightMax')), `copy-script gives the three-language pitch for AI avatar services (${scriptFlash})`);
+  await page.click('[data-testid="admin-form"] [data-act="cancel"]');
   await page.click('[data-testid="admin-tab-stats"]');
   await page.waitForSelector('[data-testid="admin-stats"]');
   const counters = await page.evaluate(() => JSON.parse(localStorage.getItem('sparkle-clean-v1')).ops.counters);

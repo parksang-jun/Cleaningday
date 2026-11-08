@@ -22,8 +22,10 @@ export interface HostConfig {
   introFromStage: number;
   /** 막혔을 때(틀린 시도 N회) 등장 */
   struggleAfterTries: number;
-  /** 결과 화면에서 추천 */
+  /** 결과 화면(매 판 끝)에서 이번 판에 쓴 제품을 소개 */
   result: boolean;
+  /** 실사 쇼호스트 사진 (https URL 또는 작은 data URL) — 없으면 내장 초상 */
+  photo?: string;
 }
 
 /** 운영 데이터 — 광고 제품 관리·쇼호스트·집계 (실서비스에선 원격 설정 JSON 으로 교체) */
@@ -36,7 +38,10 @@ export interface Ops {
   /** 이벤트 집계 "이벤트|제품|위치" → 횟수 */
   counters: Record<string, number>;
   /** 제품별 마지막 쇼호스트 노출 시각(ms) */
+  /** 제품별 마지막 쇼호스트 노출(모든 위치) — 결과 화면 돌아가며 노출용 */
   lastHostAt: Record<string, number>;
+  /** 제품별 마지막 '판 시작 소개' — 소개 재노출 간격용 (결과 화면 노출은 소개를 막지 않는다) */
+  lastIntroAt: Record<string, number>;
 }
 
 export interface AdState {
@@ -78,7 +83,7 @@ const DEFAULTS: Store = {
   coins: 0,
   owned: [],
   journal: [],
-  ops: { sponsors: [], overrides: {}, host: { ...DEFAULT_HOST }, counters: {}, lastHostAt: {} },
+  ops: { sponsors: [], overrides: {}, host: { ...DEFAULT_HOST }, counters: {}, lastHostAt: {}, lastIntroAt: {} },
 };
 
 let cache: Store = structuredClone(DEFAULTS);
@@ -124,6 +129,7 @@ export async function loadStore(): Promise<Store> {
           host: { ...DEFAULT_HOST, ...(p.ops?.host ?? {}) },
           counters: { ...(p.ops?.counters ?? {}) },
           lastHostAt: { ...(p.ops?.lastHostAt ?? {}) },
+          lastIntroAt: { ...(p.ops?.lastIntroAt ?? {}) },
         },
       };
     } catch {

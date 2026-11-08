@@ -62,6 +62,10 @@ export interface SponsorProduct {
   hostLines?: Partial<Record<'ko' | 'en' | 'ja', string[]>>
   /** 쇼호스트 노출 위치 (없으면 전부 켜짐) */
   placements?: { intro?: boolean; struggle?: boolean; result?: boolean; shop?: boolean }
+  /** 이 제품 소개 영상 (https mp4/webm, 또는 운영자 업로드 `idb:` 참조) — 실사 AI 아바타(HeyGen·D-ID 등)나 촬영본. 있으면 TTS 대신 영상 음성 */
+  hostVideo?: string
+  /** 이 제품 소개 때만 쓸 쇼호스트 사진 (없으면 전역 설정 사진) */
+  hostPhoto?: string
   /** 노출 국가 (ISO2, 비우면 전부) — 언어로 판정: ko→KR, en→US, ja→JP */
   countries?: string[]
   /** 운영 상태 — paused 면 노출 안 함 */

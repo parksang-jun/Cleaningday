@@ -13,7 +13,9 @@ import { findMix, MIXES, mixParts } from './game/catalog';
 import { mulberry32 } from './game/rng';
 import { cautionTipFor, tipForCombo, tipForItems, tipsFor, type CleaningTip } from './game/tips';
 import { performanceRatios, REFERENCE_REMOVAL, type SponsorProduct } from './game/sponsor';
-import { closeHost, hostAvatarSvg, hostOpen, showHost, type Placement } from './host';
+import { closeHost, hostAvatarSmall, hostOpen, showHost, type PitchContext, type Placement } from './host';
+import { type HostMedia } from './avatar';
+import { resolveMediaUrl } from './media';
 import { detectLang, getLang, setLang, t, type Lang } from './i18n';
 import { CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MALL_PRODUCTS, MARKET_LABEL, marketsFor, searchUrl, sponsorBuyUrl, type Market } from './mall';
 import { adminEnabled, adminPin, hostConfig, installOpsCounters, sponsorList } from './ops';
@@ -359,26 +361,61 @@ function hostName(): string {
   return getLang() === 'ko' ? '민서' : getLang() === 'ja' ? 'ミンソ' : 'Minseo';
 }
 
-/** 쇼호스트 등장 조건: 켜져 있고, 같은 판에서 같은 제품을 다시 보여주지 않고, 소개(intro)·결과(result)는 제품별 재노출 간격을 지킨다 */
+/** 쇼호스트 등장 조건: 켜져 있고, 같은 판에서 같은 제품을 다시 보여주지 않고, 소개(intro)는 제품별 재노출 간격을 지킨다.
+ *  결과(result)는 매 판 끝마다 — 이번 판에 쓴 제품을 소개하므로 간격·중복 제한이 없다 (설정으로 끌 수 있음) */
 function canHost(p: SponsorProduct, placement: Placement): boolean {
   const cfg = hostConfig();
   if (!cfg.enabled || hostOpen()) return false;
+  if (placement === 'result') return cfg.result;
   if (game?.hostShown.has(p.id)) return false;
-  if (placement === 'intro' || placement === 'result') {
-    if (placement === 'result' && !cfg.result) return false;
-    const last = getStore().ops.lastHostAt[p.id] ?? 0;
+  if (placement === 'intro') {
+    const last = getStore().ops.lastIntroAt[p.id] ?? 0;
     if (Date.now() - last < cfg.introCooldownMin * 60_000) return false;
   }
   return true;
 }
 
+/** 결과 화면 광고: 이번 판에서 ① 직접 써 본 광고 제품 → ② 같은 종류(기준 제품)를 쓴 광고 제품 → ③ 이 판 오염에 맞는 제품 → ④ 아무 제품.
+ *  같은 등급 안에서는 우선순위, 그다음 가장 오래전에 보여 준 것(돌아가며 노출) */
+function resultSponsor(g: GameState | null, mainDirt: DirtType | undefined): { entry: ItemEntry; context: PitchContext; usedItem?: string } | null {
+  const last = getStore().ops.lastHostAt;
+  const live = items.filter((e) => e.sponsor && e.sponsor.placements?.result !== false);
+  if (!live.length) return null;
+  const rank = (list: ItemEntry[]) => [...list].sort((a, b) => (b.sponsor!.priority ?? 0) - (a.sponsor!.priority ?? 0) || (last[a.sponsor!.id] ?? 0) - (last[b.sponsor!.id] ?? 0));
+  const usedIds = g?.used ?? new Set<string>();
+  const used = [...usedIds].map((id) => findItem(id, items)).filter((e): e is ItemEntry => Boolean(e));
+  const direct = rank(live.filter((e) => usedIds.has(e.spec.id)));
+  if (direct.length) return { entry: direct[0], context: 'used' };
+  const usedBases = new Map<string, ItemEntry>();
+  for (const e of used) if (!e.sponsor) usedBases.set(e.spec.base, e);
+  const sameKind = rank(live.filter((e) => usedBases.has(e.sponsor!.base)));
+  if (sameKind.length) return { entry: sameKind[0], context: 'category', usedItem: itemName(usedBases.get(sameKind[0].sponsor!.base)!) };
+  const forDirt = rank(live.filter((e) => mainDirt && strengths(e.spec).includes(mainDirt) && (!g || g.session.canUse(e.spec))));
+  if (forDirt.length) return { entry: forDirt[0], context: 'dirt' };
+  return { entry: rank(live)[0], context: 'generic' };
+}
+
+/** 쇼호스트 실사 미디어: 제품 영상(있으면) + 사진(제품별 → 전역). idb: 참조는 blob URL 로 푼다 */
+async function hostMedia(p?: SponsorProduct): Promise<HostMedia> {
+  const cfg = hostConfig();
+  const [video, photo] = await Promise.all([resolveMediaUrl(p?.hostVideo), resolveMediaUrl(p?.hostPhoto ?? cfg.photo)]);
+  return { video, photo };
+}
+
 /** 쇼호스트 등장 — 체험(보상형 광고)·구매·근거 버튼 포함 */
-function presentHost(entry: ItemEntry, placement: Placement, dirt?: DirtType) {
+function presentHost(entry: ItemEntry, placement: Placement, dirt?: DirtType, ctx?: { context: PitchContext; usedItem?: string }) {
   const p = entry.sponsor!;
   const st = getStore();
   st.ops.lastHostAt[p.id] = Date.now();
+  if (placement === 'intro') st.ops.lastIntroAt[p.id] = Date.now();
   persist();
   game?.hostShown.add(p.id);
+  void hostMedia(p).then((media) => presentHostWith(entry, placement, dirt, ctx, media));
+}
+
+function presentHostWith(entry: ItemEntry, placement: Placement, dirt: DirtType | undefined, ctx: { context: PitchContext; usedItem?: string } | undefined, media: HostMedia) {
+  const p = entry.sponsor!;
+  const st = getStore();
   if (game && placement === 'struggle') {
     // 손가락을 뗀 것으로 처리하고 시계를 멈춘다 (카드가 닫힌 뒤 저절로 문지르지 않게)
     game.paused = true;
@@ -397,6 +434,9 @@ function presentHost(entry: ItemEntry, placement: Placement, dirt?: DirtType) {
     dirt,
     surface: dirt ? (mainSurfaceOf(dirt) as SurfaceType) : undefined,
     speak: st.settings.hostVoice,
+    media,
+    context: ctx?.context,
+    usedItem: ctx?.usedItem,
     trialLabel: nextStage ? t('hostTrialNext') : undefined,
     onTrial: async () => {
       const ok = await ads.showRewarded('try_item');
@@ -498,6 +538,8 @@ interface GameState {
   paused: boolean;
   /** 이 판에서 이미 소개한 광고 제품 */
   hostShown: Set<string>;
+  /** 이번 판에서 실제로 쓴(문지르거나 뿌린) 아이템 — 결과 화면 쇼호스트가 이 중에서 고른다 */
+  used: Set<string>;
 }
 
 let game: GameState | null = null;
@@ -609,6 +651,7 @@ function startLevel(id: number) {
     lastTick: -1,
     paused: false,
     hostShown: new Set(),
+    used: new Set(),
   };
   // 결과 화면·홈 LIVE 에서 예약한 "다음 판 체험" — 이 판에 쓰이는 제품만 소비하고 나머지는 다음 판으로 이월
   for (const id of pendingTrials) if (findItem(id, items)) game.trials.add(id);
@@ -1018,6 +1061,7 @@ function step(dt: number) {
     const pts = g.queue.length ? g.queue.splice(0, g.queue.length) : [g.pointer];
     const each = dt / pts.length;
     const before = g.session.cleanliness;
+    g.used.add(spec.id);
     for (const p of pts) {
       const evs = spec.kind === 'tool' ? g.session.scrub(spec, p.x, p.y, each) : g.session.spray(spec, p.x, p.y, each);
       handleEvents(evs);
@@ -1335,9 +1379,12 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
   const polish = r.polish > 0 ? `<p class="result__polish" data-testid="polish">${esc(t('polishLine', { pct: Math.round(r.polish * 100), c: r.polishBonus }))}</p>` : '';
   const foundTips = [...new Set(discoveries.map((d) => tipForFamilies(d.dirt, d.tool, d.cleaner, mainSurfaceOf(d.dirt) as SurfaceType)).filter((x): x is CleaningTip => Boolean(x)))];
   const tipsBlock = foundTips.length ? `<div class="result__tips" data-testid="result-tips"><b>${t('tipMatched')}</b>${foundTips.map((tp) => tipHtml(tp, true)).join('')}</div>` : '';
-  const hostEntry = mainDirt ? sponsorFor(mainDirt, 'result') : null;
+  const pick = resultSponsor(game, mainDirt);
+  const hostEntry = pick?.entry ?? null;
+  // 광고 제품이 이 판과 무관한(일반 추천) 때는 이 오염에 맞는 실제 제품 추천 카드도 함께
+  const showMall = Boolean(mallCard) && (!hostEntry || pick!.context === 'generic');
   const hostCard = hostEntry
-    ? `<button class="host-rec" data-act="host" data-testid="result-host"><span class="host-rec__avatar">${hostAvatarSvg()}</span><span class="host-rec__body"><b>${esc(t('hostTitle', { name: hostName() }))}</b><span class="small">${esc(hostEntry.sponsor!.brand)} ${esc(hostEntry.sponsor!.name)} <span class="tag-ad">${t('sponsored')}</span></span></span></button>`
+    ? `<button class="host-rec" data-act="host" data-testid="result-host" data-context="${pick!.context}"><span class="host-rec__avatar">${hostAvatarSmall({ photo: hostConfig().photo })}</span><span class="host-rec__body"><b>${esc(t('hostTitle', { name: hostName() }))}</b><span class="small">${esc(hostEntry.sponsor!.brand)} ${esc(hostEntry.sponsor!.name)} <span class="tag-ad">${t('sponsored')}</span></span></span></button>`
     : '';
   modal(
     `<div class="result" data-testid="result">
@@ -1352,7 +1399,7 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
       <button class="btn btn--ad btn--block" data-act="double" data-testid="double">${t('doubleAd')}</button>
       ${hasNext ? `<button class="btn btn--primary btn--block" data-act="next" data-testid="next">${t('next')}</button>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry">${t('retry')}</button><button class="btn" data-act="menu" data-testid="to-menu">${t('menu')}</button></div>
-      ${hostCard || mallCard}
+      ${hostCard}${showMall ? mallCard : ''}
     </div>`,
     (root, closeFn) => {
       root.parentElement!.dataset.dismiss = 'no';
@@ -1383,15 +1430,12 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
         openExternal(searchUrl(recBase!, market));
       });
       bindTipLinks(root);
-      if (mallCard && !hostCard) track('mall_impression', { from: 'result', base: recBase!, market });
+      if (showMall) track('mall_impression', { from: 'result', base: recBase!, market });
       root.querySelector('[data-act="host"]')?.addEventListener('click', () => {
-        if (hostEntry) {
-          game?.hostShown.delete(hostEntry.sponsor!.id);
-          presentHost(hostEntry, 'result', mainDirt);
-        }
+        if (hostEntry) presentHost(hostEntry, 'result', mainDirt, pick!);
       });
-      // 광고 제품이 이 판의 오염에 맞으면 쇼호스트가 결과 화면에서 한 번 추천 (재노출 간격 적용)
-      if (hostEntry && canHost(hostEntry.sponsor!, 'result')) setTimeout(() => document.querySelector('[data-testid="result"]') && presentHost(hostEntry, 'result', mainDirt), 1500);
+      // 매 판 끝: 쇼호스트가 이번 판에 쓴 제품(또는 같은 종류·이 판 오염에 맞는 제품)을 소개 — 별 연출 뒤에
+      if (hostEntry && canHost(hostEntry.sponsor!, 'result')) setTimeout(() => document.querySelector('[data-testid="result"]') && presentHost(hostEntry, 'result', mainDirt, pick!), 1300);
     },
   );
 }
@@ -1446,7 +1490,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
   const baseDets = items.filter((e) => !e.sponsor && !e.spec.premium && e.spec.kind === 'detergent' && owns(e.spec.id));
   const live = sponsors.filter((e) => e.sponsor!.placements?.shop !== false);
   const gameTab = `
-    ${live.length ? `<div class="live" data-testid="live"><div class="live__head"><span class="host__live">● LIVE</span> <b>${esc(t('hostTitle', { name: hostName() }))}</b></div><div class="live__row">${live.map((e) => `<button class="live__item" data-live="${esc(e.spec.id)}" data-testid="live-${esc(e.spec.id)}"><span class="host-rec__avatar">${hostAvatarSvg()}</span><span class="small"><b>${esc(e.sponsor!.brand)}</b><br>${esc(e.sponsor!.name)}</span><span class="tag-ad">${t('sponsored')}</span></button>`).join('')}</div></div>` : ''}
+    ${live.length ? `<div class="live" data-testid="live"><div class="live__head"><span class="host__live">● LIVE</span> <b>${esc(t('hostTitle', { name: hostName() }))}</b></div><div class="live__row">${live.map((e) => `<button class="live__item" data-live="${esc(e.spec.id)}" data-testid="live-${esc(e.spec.id)}"><span class="host-rec__avatar">${hostAvatarSmall({ photo: e.sponsor!.hostPhoto ?? hostConfig().photo })}</span><span class="small"><b>${esc(e.sponsor!.brand)}</b><br>${esc(e.sponsor!.name)}</span><span class="tag-ad">${t('sponsored')}</span></button>`).join('')}</div></div>` : ''}
     ${sponsors.length ? `<ul class="shop__list">${sponsors.map(row).join('')}</ul>` : ''}
     <h3>⚡ ${t('premiumTab')}</h3><p class="small muted">${esc(t('premiumIntro'))}</p>
     <ul class="shop__list" data-testid="premium-list">${premium.map(row).join('')}</ul>
@@ -1734,6 +1778,8 @@ declare global {
       tries: (d: string) => number;
       noEffects: () => number;
       mixes: () => string[];
+      used: () => string[];
+      resultPick: () => { id: string; context: string; usedItem?: string } | null;
       kit: () => string[];
       audio: () => ReturnType<typeof audioDebug>;
       polish: () => number;
@@ -1765,6 +1811,11 @@ function exposeDebug() {
     tries: (d: string) => game?.session.triesOn(d as DirtType) ?? 0,
     noEffects: () => game?.noEffects ?? 0,
     mixes: () => [...(game?.mixes ?? [])],
+    used: () => [...(game?.used ?? [])],
+    resultPick: () => {
+      const pk = resultSponsor(game, game?.session.level.patches[0]?.type);
+      return pk ? { id: pk.entry.sponsor!.id, context: pk.context, usedItem: pk.usedItem } : null;
+    },
     kit: () => [...(game?.kit ?? [])],
     audio: () => audioDebug(),
     polish: () => game?.session.polish ?? 0,
