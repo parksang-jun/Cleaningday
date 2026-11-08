@@ -28,12 +28,12 @@ export const DIRT_SURFACES: Record<DirtType, SurfaceType[]> = {
   film: ['glass', 'steel', 'wood', 'vinyl', 'plastic', 'paint', 'tile', 'ceramic'],
 };
 
-export type Chemistry = 'neutral' | 'alkaline' | 'acid' | 'chlorine' | 'solvent';
+export type Chemistry = 'neutral' | 'alkaline' | 'acid' | 'chlorine' | 'solvent' | 'oxygen';
 
 /** 도구군 — 레시피는 도구군으로 판정하고, 프리미엄 도구는 여러 군을 겸한다 */
-export type ToolFamily = 'cloth' | 'vacuum' | 'lintroller' | 'sponge' | 'scrubpad' | 'tilebrush' | 'squeegee' | 'deckbrush' | 'hose' | 'washer' | 'mitt' | 'wheelbrush' | 'rinse' | 'steam' | 'eraser';
+export type ToolFamily = 'cloth' | 'vacuum' | 'lintroller' | 'sponge' | 'scrubpad' | 'tilebrush' | 'squeegee' | 'deckbrush' | 'hose' | 'washer' | 'mitt' | 'wheelbrush' | 'rinse' | 'steam' | 'eraser' | 'claybar';
 /** 세정제군 */
-export type CleanerFamily = 'allpurpose' | 'glass' | 'degreaser' | 'descaler' | 'bathroom' | 'mold' | 'fabric' | 'deck' | 'moss' | 'carshampoo' | 'wheel' | 'tar' | 'interior';
+export type CleanerFamily = 'allpurpose' | 'glass' | 'degreaser' | 'descaler' | 'bathroom' | 'mold' | 'fabric' | 'deck' | 'moss' | 'carshampoo' | 'wheel' | 'tar' | 'interior' | 'bakingsoda' | 'oxy' | 'vinegar' | 'polish';
 
 export type ToolId =
   | 'cloth'
@@ -49,6 +49,11 @@ export type ToolId =
   | 'mitt'
   | 'wheelbrush'
   | 'rinse'
+  // 살림 꿀팁 도구 (집에 있는 것들)
+  | 'rubberglove'
+  | 'toothbrush'
+  | 'newspaper'
+  | 'claybar'
   // 프리미엄(상점 전용) — 더 빠르거나 세정제 없이도 닦임
   | 'cordlessvac'
   | 'scrubber'
@@ -69,6 +74,13 @@ export type DetergentId =
   | 'wheelcleaner'
   | 'tarremover'
   | 'interior'
+  // 살림 꿀팁 세정제 (천연 세제·집에 있는 것들)
+  | 'bakingsoda'
+  | 'citric'
+  | 'percarbonate'
+  | 'vinegar'
+  | 'toothpaste'
+  | 'cookingoil'
   // 프리미엄
   | 'heavydegreaser'
   | 'limescalegel';
@@ -194,6 +206,15 @@ export const BASE_TOOLS: Record<ToolId, ToolSpec> = {
   wheelbrush: { id: 'wheelbrush', base: 'wheelbrush', kind: 'tool', families: ['wheelbrush'], radius: 2.2, power: 1.3, effect: flat(1), harms: ['glass', 'vinyl', 'fabric'], cost: 0 },
   /** 물 헹굼(실내) — 세정제를 씻어내 화학 반응을 막음(염소계↔산성 전환 전 필수), 먼지·진흙에 약간 효과 */
   rinse: { id: 'rinse', base: 'rinse', kind: 'tool', families: ['rinse'], radius: 4.8, power: 0.9, effect: flat(1), harms: [], cost: 0 },
+  // ---- 살림 꿀팁 도구 ----
+  /** 고무장갑 — 살짝 적셔 한 방향으로 쓸면 패브릭 사이 털이 뭉쳐 나온다 (돌돌이보다 깊이) */
+  rubberglove: { id: 'rubberglove', base: 'rubberglove', kind: 'tool', families: ['lintroller'], radius: 3.0, power: 1.15, effect: effect(1, { hair: 1.15 }), harms: [], cost: 0 },
+  /** 칫솔 — 줄눈·틈새 (작지만 구석까지) */
+  toothbrush: { id: 'toothbrush', base: 'toothbrush', kind: 'tool', families: ['tilebrush'], radius: 1.6, power: 1.0, effect: effect(1, { mold: 1.15 }), harms: ['paint'], cost: 0 },
+  /** 신문지 — 유리 마무리 (잉크의 기름이 잔여물을 잡고 보풀이 없다) */
+  newspaper: { id: 'newspaper', base: 'newspaper', kind: 'tool', families: ['cloth'], radius: 3.2, power: 1.15, effect: effect(1, { film: 1.2 }), harms: [], onlyOn: ['glass'], cost: 0 },
+  /** 클레이바 — 윤활(카샴푸)과 함께 도장면의 철분·타르를 떼어낸다. 떨어뜨리면 버릴 것 */
+  claybar: { id: 'claybar', base: 'claybar', kind: 'tool', families: ['claybar'], radius: 2.2, power: 1.0, effect: flat(1), harms: [], onlyOn: ['paint', 'glass'], cost: 0 },
   // ---- 프리미엄: 실제로 더 빨리 닦이는 장비 (상점 구매) ----
   cordlessvac: { id: 'cordlessvac', base: 'cordlessvac', kind: 'tool', families: ['vacuum', 'lintroller'], radius: 5.2, power: 1.8, effect: flat(1), harms: [], cost: 600, premium: true, pro: true },
   scrubber: { id: 'scrubber', base: 'scrubber', kind: 'tool', families: ['sponge', 'scrubpad', 'tilebrush', 'wheelbrush'], radius: 3.0, power: 2.2, effect: flat(1), harms: ['glass', 'paint', 'vinyl'], cost: 900, premium: true, pro: true },
@@ -219,14 +240,28 @@ export const BASE_DETERGENTS: Record<DetergentId, DetergentSpec> = {
   wheelcleaner: { id: 'wheelcleaner', base: 'wheelcleaner', kind: 'detergent', family: 'wheel', radius: 4.2, soakSec: 14, mult: flat(1), chemistry: 'neutral', harms: ['fabric', 'vinyl'], dissolves: { iron: 0.03 }, cost: 0 },
   tarremover: { id: 'tarremover', base: 'tarremover', kind: 'detergent', family: 'tar', radius: 3.8, soakSec: 12, mult: flat(1), chemistry: 'solvent', harms: ['vinyl', 'fabric'], dissolves: { tar: 0.03 }, cost: 0 },
   interior: { id: 'interior', base: 'interior', kind: 'detergent', family: 'interior', radius: 4.4, soakSec: 12, mult: flat(1), chemistry: 'neutral', harms: [], cost: 0 },
+  // ---- 살림 꿀팁 세정제 (천연 세제·집에 있는 것들) ----
+  /** 베이킹소다 — 약알칼리 + 고운 연마: 반죽을 발라 불린 기름때, 싱크대 얼룩·물자국, 비누때 */
+  bakingsoda: { id: 'bakingsoda', base: 'bakingsoda', kind: 'detergent', family: 'bakingsoda', radius: 4.0, soakSec: 20, mult: flat(1), chemistry: 'alkaline', harms: [], cost: 0 },
+  /** 구연산 — 산성: 물때·석회 (물때 제거제의 천연 버전). 대리석·원목엔 금지, 락스와 절대 혼합 금지 */
+  citric: { id: 'citric', base: 'citric', kind: 'detergent', family: 'descaler', radius: 4.4, soakSec: 22, mult: effect(1, { scale: 0.9, soap: 0.8 }), chemistry: 'acid', harms: ['stone', 'wood', 'fabric'], dissolves: { scale: 0.015 }, cost: 0 },
+  /** 과탄산소다 — 산소계 표백: 40~60℃ 물에 녹여 곰팡이·줄눈·찌든 때·데크 녹조. 염소계와 혼합 금지, 알루미늄·구리 변색 */
+  percarbonate: { id: 'percarbonate', base: 'percarbonate', kind: 'detergent', family: 'oxy', radius: 4.2, soakSec: 24, mult: flat(1), chemistry: 'oxygen', harms: ['paint', 'metal'], dissolves: { mold: 0.03 }, cost: 0 },
+  /** 식초 — 산성: 유리 유막·물 자국, 가벼운 물때·비누때, 데크 녹조. 대리석엔 금지, 락스와 절대 혼합 금지 */
+  vinegar: { id: 'vinegar', base: 'vinegar', kind: 'detergent', family: 'vinegar', radius: 4.2, soakSec: 12, mult: flat(1), chemistry: 'acid', harms: ['stone'], cost: 0 },
+  /** 치약(흰색 불투명) — 고운 연마제: 헤드라이트 황변·플라스틱 유막. 도장면은 흠집 */
+  toothpaste: { id: 'toothpaste', base: 'toothpaste', kind: 'detergent', family: 'polish', radius: 2.6, soakSec: 10, mult: flat(1), chemistry: 'neutral', harms: ['paint'], cost: 0 },
+  /** 식용유 — 타르·스티커 자국을 불려 떼어낸다 (WD-40 과 같은 원리). 패브릭엔 기름 얼룩 */
+  cookingoil: { id: 'cookingoil', base: 'cookingoil', kind: 'detergent', family: 'tar', radius: 3.2, soakSec: 24, mult: effect(1, { tar: 0.6 }), chemistry: 'neutral', harms: ['fabric'], dissolves: { tar: 0.012 }, cost: 0 },
   // ---- 프리미엄 세정제 ----
   heavydegreaser: { id: 'heavydegreaser', base: 'heavydegreaser', kind: 'detergent', family: 'degreaser', radius: 4.8, soakSec: 10, mult: effect(1, { grease: 1.8, stain: 1.3 }), chemistry: 'alkaline', harms: ['wood', 'vinyl', 'fabric'], cost: 400, premium: true, pro: true },
   limescalegel: { id: 'limescalegel', base: 'limescalegel', kind: 'detergent', family: 'descaler', radius: 4.2, soakSec: 24, mult: effect(1, { scale: 1.8, soap: 1.3 }), chemistry: 'acid', harms: ['stone', 'wood', 'fabric'], dissolves: { scale: 0.025 }, cost: 400, premium: true, pro: true },
 };
 
-/** 같은 칸에 섞이면 위험한 조합 (염소계 + 산성 → 유독가스) */
+/** 같은 칸에 섞이면 위험한 조합 — 염소계(락스) + 산성(식초·구연산·물때 제거제) → 염소가스, 염소계 + 산소계(과탄산소다) → 유해가스 */
 export function isHazardMix(a: Chemistry, b: Chemistry): boolean {
-  return (a === 'chlorine' && b === 'acid') || (a === 'acid' && b === 'chlorine')
+  const bad = (x: Chemistry, y: Chemistry) => x === 'chlorine' && (y === 'acid' || y === 'oxygen')
+  return bad(a, b) || bad(b, a)
 }
 
 export const BASE_ITEMS: ItemSpec[] = [...Object.values(BASE_TOOLS), ...Object.values(BASE_DETERGENTS)]
@@ -255,7 +290,8 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
   ],
   hair: [
     { tools: ['vacuum'], speed: 1.0 },
-    { tools: ['lintroller'], on: ['fabric'], speed: 1.3 },
+    { tools: ['lintroller'], on: ['fabric'], speed: 1.3 }, // 돌돌이·고무장갑
+    { tools: ['squeegee'], on: ['fabric'], speed: 1.0 }, // 꿀팁: 스퀴지를 한 방향으로 끌면 털이 모인다
     { tools: ['hose', 'washer'], on: ['stone', 'tile', 'plastic'], speed: 1.0 },
   ],
   mud: [
@@ -268,6 +304,8 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
   ],
   grease: [
     { tools: ['scrubpad', 'sponge'], cleaner: 'degreaser', not: ['wood', 'vinyl', 'fabric'], speed: 1.0 },
+    { tools: ['scrubpad', 'sponge'], cleaner: 'bakingsoda', not: ['wood', 'vinyl', 'fabric'], speed: 0.8 }, // 꿀팁: 베이킹소다 반죽을 발라 20~30분 불린 뒤
+    { tools: ['scrubpad', 'tilebrush'], cleaner: 'oxy', on: ['steel', 'metal'], speed: 0.85 }, // 꿀팁: 삼발이는 과탄산소다 따뜻한 물에 담갔다가
     { tools: ['cloth'], cleaner: 'allpurpose', on: ['wood'], speed: 0.6 }, // 원목엔 알칼리 금지 → 중성세제로 천천히
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 0.9 },
     { tools: ['sponge'], cleaner: 'fabric', on: ['fabric'], speed: 0.7 },
@@ -275,6 +313,8 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
   ],
   stain: [
     { tools: ['cloth', 'sponge'], cleaner: 'allpurpose', not: ['fabric', 'glass'], speed: 1.0 },
+    { tools: ['cloth', 'sponge'], cleaner: 'bakingsoda', on: ['steel', 'ceramic', 'tile'], speed: 0.85 }, // 꿀팁: 싱크대·컵 얼룩은 베이킹소다로
+    { tools: ['sponge', 'tilebrush'], cleaner: 'descaler', on: ['ceramic'], speed: 0.8 }, // 꿀팁: 변기 얼룩은 구연산 10분
     { tools: ['sponge', 'tilebrush', 'cloth'], cleaner: 'fabric', on: ['fabric'], speed: 1.0 },
     { tools: ['cloth', 'squeegee'], cleaner: 'glass', on: ['glass'], speed: 1.0 },
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 1.0 },
@@ -284,8 +324,10 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['washer'], on: ['stone', 'brick', 'tile'], speed: 0.7 },
   ],
   scale: [
-    { tools: ['sponge', 'tilebrush', 'scrubpad'], cleaner: 'descaler', not: ['glass', 'metal'], speed: 1.0 },
+    { tools: ['sponge', 'tilebrush', 'scrubpad'], cleaner: 'descaler', not: ['glass', 'metal'], speed: 1.0 }, // 물때 제거제·구연산
     { tools: ['cloth', 'squeegee', 'sponge'], cleaner: 'descaler', on: ['glass'], speed: 1.0 },
+    { tools: ['sponge', 'cloth'], cleaner: 'bakingsoda', on: ['steel'], speed: 0.6 }, // 꿀팁: 스테인리스 물자국은 베이킹소다 뿌려 결 방향으로
+    { tools: ['sponge', 'cloth', 'squeegee'], cleaner: 'vinegar', not: ['metal', 'stone'], speed: 0.6 }, // 식초물 — 가벼운 물때
     { tools: ['wheelbrush', 'tilebrush'], cleaner: 'wheel', on: ['metal'], speed: 1.0 },
     { tools: ['sponge', 'tilebrush'], cleaner: 'bathroom', speed: 0.5 }, // 욕실 세정제로는 느리게
   ],
@@ -293,28 +335,37 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['sponge', 'tilebrush'], cleaner: 'bathroom', not: ['glass'], speed: 1.0 },
     { tools: ['squeegee', 'sponge', 'cloth'], cleaner: 'bathroom', on: ['glass'], speed: 1.0 },
     { tools: ['sponge'], cleaner: 'descaler', speed: 0.6 },
+    { tools: ['sponge', 'tilebrush'], cleaner: 'bakingsoda', speed: 0.7 }, // 꿀팁: 비누때·물자국엔 베이킹소다 연마
+    { tools: ['sponge', 'squeegee'], cleaner: 'vinegar', speed: 0.6 },
     { tools: ['eraser'], speed: 1.0 },
     { tools: ['steam'], speed: 1.0 },
   ],
   mold: [
-    { tools: ['tilebrush', 'sponge', 'squeegee', 'scrubpad'], cleaner: 'mold', not: ['wood', 'fabric', 'paint', 'plastic'], speed: 1.0 },
+    { tools: ['tilebrush', 'sponge', 'squeegee', 'scrubpad'], cleaner: 'mold', not: ['wood', 'fabric', 'paint', 'plastic'], speed: 1.0 }, // 락스 습포
+    { tools: ['tilebrush', 'sponge', 'scrubpad', 'deckbrush'], cleaner: 'oxy', not: ['paint', 'metal'], speed: 0.85 }, // 꿀팁: 과탄산소다 페이스트 20~30분 → 칫솔
     { tools: ['deckbrush', 'sponge', 'tilebrush'], cleaner: 'deck', speed: 0.9 }, // 원목·플라스틱·패브릭 곰팡이는 산소계
     { tools: ['steam'], speed: 0.8 },
   ],
   moss: [
-    { tools: ['washer'], on: ['stone', 'brick', 'tile', 'metal', 'plastic', 'paint'], speed: 1.2 },
+    { tools: ['washer'], on: ['stone', 'brick', 'tile', 'metal', 'plastic', 'paint'], speed: 1.2 }, // 저~중압으로
     { tools: ['deckbrush', 'tilebrush', 'wheelbrush'], cleaner: 'moss', speed: 1.0 },
     { tools: ['deckbrush'], cleaner: 'deck', on: ['wood'], speed: 0.9 },
+    { tools: ['deckbrush', 'tilebrush'], cleaner: 'oxy', not: ['paint', 'metal'], speed: 0.85 }, // 꿀팁: 산소계(과탄산소다)로 녹조
+    { tools: ['deckbrush'], cleaner: 'vinegar', on: ['wood', 'stone', 'brick'], speed: 0.7 }, // 꿀팁: 식초 1컵/양동이 10~20분 → 부드러운 솔
   ],
   iron: [
     { tools: ['wheelbrush', 'tilebrush', 'sponge'], cleaner: 'wheel', speed: 1.0 },
+    { tools: ['claybar'], cleaner: 'carshampoo', on: ['paint', 'glass'], speed: 1.0 }, // 꿀팁: 세차 후 까끌하면 클레이바 + 윤활
   ],
   tar: [
-    { tools: ['cloth', 'mitt', 'sponge'], cleaner: 'tar', speed: 1.0 },
+    { tools: ['cloth', 'mitt', 'sponge'], cleaner: 'tar', speed: 1.0 }, // 타르 리무버·식용유(WD-40 원리)
+    { tools: ['claybar'], cleaner: 'carshampoo', on: ['paint', 'glass'], speed: 0.9 },
   ],
   film: [
     { tools: ['squeegee'], cleaner: 'glass', on: ['glass'], speed: 1.5 },
     { tools: ['cloth'], cleaner: 'glass', on: ['glass'], speed: 0.9 },
+    { tools: ['squeegee', 'cloth'], cleaner: 'vinegar', on: ['glass'], speed: 1.1 }, // 꿀팁: 식초물 + 신문지/스퀴지
+    { tools: ['cloth', 'sponge', 'eraser'], cleaner: 'polish', on: ['plastic'], speed: 0.8 }, // 꿀팁: 헤드라이트 황변은 흰 치약으로 5~10분
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 1.0 },
     { tools: ['cloth', 'sponge'], cleaner: 'allpurpose', not: ['glass', 'fabric'], speed: 0.9 },
     { tools: ['mitt'], cleaner: 'carshampoo', on: ['paint', 'glass', 'plastic'], speed: 1.0 },

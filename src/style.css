@@ -1095,57 +1095,10 @@ button {
   gap: 10px;
   align-items: flex-end;
 }
-.host__avatar {
-  width: 84px;
-  flex: 0 0 84px;
-  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.15));
-  animation: host-bob 2.4s ease-in-out infinite;
-}
-@keyframes host-bob {
-  50% {
-    transform: translateY(-3px);
-  }
-}
 .host__svg {
   width: 100%;
   height: auto;
   display: block;
-}
-.host__mouth {
-  transform-origin: 60px 78px;
-}
-.host__avatar.is-talking .host__mouth {
-  animation: host-talk 0.28s infinite alternate;
-}
-@keyframes host-talk {
-  from {
-    transform: scaleY(0.4);
-  }
-  to {
-    transform: scaleY(1.3);
-  }
-}
-.host__spark {
-  transform-origin: 60px 18px;
-  animation: host-spark 1.6s ease-in-out infinite;
-}
-@keyframes host-spark {
-  50% {
-    transform: scale(1.25) rotate(20deg);
-  }
-}
-.host__hand {
-  transform-origin: 100px 96px;
-  animation: host-wave 1.4s ease-in-out infinite;
-}
-@keyframes host-wave {
-  0%,
-  100% {
-    transform: rotate(0deg);
-  }
-  50% {
-    transform: rotate(-22deg) translateY(-3px);
-  }
 }
 .host__bubble {
   flex: 1;
@@ -1557,4 +1510,160 @@ button {
 .admin__json {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
+}
+
+/* ---------- 진짜 꿀팁 카드 ---------- */
+.tip {
+  border: 1px solid #ffe3a3;
+  background: linear-gradient(180deg, #fffaf0, #ffffff);
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+.tip__title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #7a5a00;
+}
+.tip__steps {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.tip__caution {
+  margin: 0;
+  font-size: 12px;
+  color: #b4532a;
+}
+.tip__sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+.tip__sources .link-btn {
+  padding: 2px 0;
+  font-size: 11.5px;
+  color: #5b6b73;
+  text-align: left;
+}
+.intro__tip,
+.journal__tips,
+.result__tips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.result__tips > b {
+  font-size: 13px;
+}
+.journal__tips .tip {
+  padding: 6px 8px;
+}
+.journal__tips .tip__steps {
+  font-size: 12px;
+}
+
+/* ---------- 쇼호스트(사람 모습) 애니메이션 ---------- */
+.host__ai {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e8f1ff;
+  color: #2c5fb8;
+  font-size: 10.5px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.host__avatar {
+  width: 124px;
+  flex: 0 0 124px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16), inset 0 0 0 2px rgba(255, 255, 255, 0.7);
+  animation: host-breathe 3.6s ease-in-out infinite;
+}
+@keyframes host-breathe {
+  50% {
+    transform: translateY(-1.5px);
+  }
+}
+.host__head {
+  transform-origin: 100px 130px;
+  animation: host-tilt 6.5s ease-in-out infinite;
+}
+@keyframes host-tilt {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  35% {
+    transform: rotate(-1.6deg);
+  }
+  70% {
+    transform: rotate(1.2deg);
+  }
+}
+.host__lid {
+  transform-origin: center 84px;
+  transform: scaleY(0);
+  animation: host-blink 4.4s infinite;
+}
+.host__eye:nth-of-type(2) .host__lid {
+  animation-delay: 0.02s;
+}
+@keyframes host-blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(0);
+  }
+  95.5% {
+    transform: scaleY(1);
+  }
+}
+.host__brows {
+  transition: transform 0.25s ease;
+}
+.host__avatar.is-emph .host__brows {
+  transform: translateY(-2.2px);
+}
+.host__mouth-open {
+  opacity: 0;
+  transform-origin: 100px 110px;
+}
+.host__avatar.is-talking .host__mouth-closed {
+  animation: host-mouth-closed 0.26s steps(1) infinite alternate;
+}
+.host__avatar.is-talking .host__mouth-open {
+  animation: host-mouth-open 0.26s ease-in-out infinite alternate;
+}
+@keyframes host-mouth-closed {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes host-mouth-open {
+  from {
+    opacity: 0;
+    transform: scaleY(0.35);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+.host-rec__avatar,
+.live__item .host-rec__avatar {
+  border-radius: 50%;
+  overflow: hidden;
 }

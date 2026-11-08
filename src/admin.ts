@@ -517,7 +517,7 @@ function renderHost(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
     const f = new FormData(e.target as HTMLFormElement);
     saveHostConfig({
       enabled: Boolean(f.get('enabled')),
-      name: String(f.get('name') || '반디'),
+      name: String(f.get('name') || '민서'),
       introCooldownMin: Number(f.get('introCooldownMin') || 0),
       introFromStage: Number(f.get('introFromStage') || 1),
       struggleAfterTries: Number(f.get('struggleAfterTries') || 2),

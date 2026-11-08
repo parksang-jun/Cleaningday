@@ -169,6 +169,23 @@ try {
   await page.screenshot({ path: resolve(shots, '09-hint.png') });
   await page.click('[data-testid="journal-modal"] [data-act="close"]');
 
+  // 3단계(안내 단계): 인트로에 진짜 꿀팁 카드(출처 링크 포함)
+  await page.click('[data-testid="back"]');
+  await page.click('[data-testid="stage-3"]');
+  await page.waitForSelector('[data-testid="intro-tip"]');
+  const introTip = await page.locator('[data-testid="intro-tip"]').innerText();
+  assert(introTip.includes('rubber glove') && introTip.includes('GQ Korea'), 'guided intro shows a real, sourced cleaning tip (damp rubber glove for pet hair)');
+  assert((await page.locator('[data-testid="intro-tip"] [data-url^="https://"]').count()) >= 2, 'tip card links to its sources');
+  await page.click('[data-testid="start"]');
+  await closeHostIfOpen(page);
+  await page.waitForSelector('[data-testid="item-rubberglove"]');
+  await page.click('[data-testid="item-rubberglove"]');
+  await sweep(page, 1, 10, 5);
+  assert((await page.evaluate(() => window.__sparkle.journal())).some((k) => k.startsWith('hair|lintroller')), 'rubber glove really lifts hair (recipe discovered)');
+  await page.click('[data-testid="journal"]');
+  await page.waitForSelector('[data-testid="tip-hair-glove"]');
+  await page.click('[data-testid="journal-modal"] [data-act="close"]');
+
   // 4단계(안내 끝): 미끼 도구가 섞이고, 힌트 버튼이 없다
   await page.click('[data-testid="back"]');
   await page.click('[data-testid="stage-4"]');
@@ -364,7 +381,7 @@ try {
   // 실제 제품 몰 탭: 마켓 칩, 종류별 링크, 제휴 고지
   await page.click('[data-testid="tab-mall"]');
   await page.waitForSelector('[data-testid="mall"]');
-  assert((await page.locator('[data-testid^="mallcat-"]').count()) === 33, 'mall lists all 33 product categories');
+  assert((await page.locator('[data-testid^="mallcat-"]').count()) === 43, 'mall lists all 43 product categories (incl. household tip items)');
   assert((await page.locator('[data-testid="market-amazon_us"].is-on').count()) === 1, 'English UI defaults to Amazon');
   await page.click('[data-testid="market-coupang"]');
   await page.waitForTimeout(100);

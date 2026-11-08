@@ -68,7 +68,7 @@ export interface Store {
 
 const KEY = 'sparkle-clean-v1';
 
-export const DEFAULT_HOST: HostConfig = { enabled: true, name: '반디', introCooldownMin: 8, introFromStage: 2, struggleAfterTries: 2, result: true };
+export const DEFAULT_HOST: HostConfig = { enabled: true, name: '민서', introCooldownMin: 8, introFromStage: 2, struggleAfterTries: 2, result: true };
 
 const DEFAULTS: Store = {
   settings: { sound: true, music: true, haptics: true, hostVoice: true, lang: 'auto' },

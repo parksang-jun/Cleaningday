@@ -19,7 +19,8 @@ describe('live host pitch', () => {
     expect(lines.some((l) => l.startsWith('✔'))).toBe(true)
     expect(lines.some((l) => l.includes('12,480'))).toBe(true)
     expect(lines.some((l) => l.includes('원목') || l.includes('도장'))).toBe(true) // 주의 재질
-    expect(lines[lines.length - 1]).toContain('무료')
+    expect(lines[1]).toContain('알칼리') // 전문가 원리 설명 (진짜 꿀팁)
+    expect(lines[lines.length - 1]).toContain('이번 판')
   })
   it('custom operator lines replace the auto pitch but cautions stay', () => {
     setLang('en')

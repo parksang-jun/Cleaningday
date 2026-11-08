@@ -75,6 +75,16 @@ export const CATEGORY_QUERY: Record<ToolId | DetergentId, { ko: string; en: stri
   interior: { ko: '자동차 실내 클리너', en: 'car interior cleaner', ja: '車 内装 クリーナー' },
   heavydegreaser: { ko: '강력 기름때 제거제', en: 'heavy duty degreaser', ja: '強力 油汚れ 洗剤' },
   limescalegel: { ko: '물때 젤 세정제', en: 'limescale gel cleaner', ja: '水垢 ジェル 洗剤' },
+  rubberglove: { ko: '고무장갑', en: 'rubber gloves', ja: 'ゴム手袋' },
+  toothbrush: { ko: '틈새 청소솔 칫솔', en: 'grout cleaning brush', ja: '隙間 掃除 ブラシ' },
+  newspaper: { ko: '유리 청소 극세사', en: 'glass cleaning microfiber', ja: 'ガラス クロス マイクロファイバー' },
+  claybar: { ko: '클레이바 세차', en: 'clay bar kit', ja: 'クレイバー 洗車' },
+  bakingsoda: { ko: '베이킹소다 청소용', en: 'baking soda cleaning', ja: '重曹 掃除用' },
+  citric: { ko: '구연산 청소용', en: 'citric acid cleaner', ja: 'クエン酸 掃除用' },
+  percarbonate: { ko: '과탄산소다', en: 'sodium percarbonate oxygen bleach', ja: '過炭酸ナトリウム' },
+  vinegar: { ko: '청소용 식초', en: 'cleaning vinegar', ja: '掃除用 お酢' },
+  toothpaste: { ko: '헤드라이트 복원제', en: 'headlight restoration kit', ja: 'ヘッドライト 黄ばみ取り' },
+  cookingoil: { ko: '타르 제거제', en: 'tar remover', ja: 'タール 除去剤' },
 };
 
 /** 오염 → 그 오염에 맞는 아이템 계열 (결과 화면 추천용) */

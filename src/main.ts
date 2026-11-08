@@ -10,6 +10,7 @@ import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, 
 import { activeSponsors, allItems, countryFor, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
 import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type StageMode, type WorldInfo } from './game/levels';
 import { mulberry32 } from './game/rng';
+import { tipForCombo, tipsFor, type CleaningTip } from './game/tips';
 import { performanceRatios, REFERENCE_REMOVAL, type SponsorProduct } from './game/sponsor';
 import { closeHost, hostAvatarSvg, hostOpen, showHost, type Placement } from './host';
 import { detectLang, getLang, setLang, t, type Lang } from './i18n';
@@ -74,6 +75,35 @@ function owns(id: string): boolean {
 }
 
 /** 외부 링크 — 네이티브는 인앱 브라우저, 웹은 새 탭 */
+/** 발견한 조합(도구군·세정제군)에 해당하는 실제 꿀팁 */
+function tipForFamilies(dirt: DirtType, tool: ToolFamily, cleaner: CleanerFamily | null, surface?: SurfaceType): CleaningTip | undefined {
+  return tipForCombo(dirt, surface, familyItem(tool), cleaner ? familyItem(cleaner) : null);
+}
+
+/** 꿀팁 카드 HTML — 제목·단계(compact 면 2개)·주의·출처 버튼 */
+function tipHtml(tip: CleaningTip, compact = false): string {
+  const lang = getLang();
+  const steps = compact ? tip.steps[lang].slice(0, 2) : tip.steps[lang];
+  return `<div class="tip" data-testid="tip-${esc(tip.id)}">
+    <div class="tip__title">💡 ${esc(tip.title[lang])}</div>
+    <ol class="tip__steps">${steps.map((x) => `<li>${esc(x)}</li>`).join('')}${compact && tip.steps[lang].length > 2 ? '<li class="muted">…</li>' : ''}</ol>
+    ${tip.caution && !compact ? `<p class="tip__caution">⚠ ${esc(tip.caution[lang])}</p>` : ''}
+    <div class="tip__sources">${tip.sources.map((src) => `<button class="link-btn small" data-url="${esc(src.url)}">${src.kind === 'youtube' ? '▶' : '🔗'} ${esc(src.name)}</button>`).join('')}</div>
+  </div>`;
+}
+
+/** 꿀팁 카드 안의 출처 링크 버튼 연결 */
+function bindTipLinks(root: HTMLElement) {
+  root.querySelectorAll<HTMLButtonElement>('[data-url]').forEach((b) =>
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const url = b.dataset.url!;
+      track('tip_source_click', { url });
+      openExternal(url);
+    }),
+  );
+}
+
 function openExternal(url: string) {
   if (!isSafeUrl(url)) return;
   if (Capacitor.isNativePlatform()) {
@@ -207,6 +237,10 @@ const SCRUB_PROFILE: Record<ToolId, ScrubProfile> = {
   drillbrush: 'brush',
   steamer: 'steam',
   magiceraser: 'sponge',
+  rubberglove: 'mitt',
+  toothbrush: 'brush',
+  newspaper: 'cloth',
+  claybar: 'mitt',
 };
 const MODE_ICON: Record<StageMode, string> = { clean: '', spots: '🎯', rush: '🐾', spread: '🦠', fragile: '⚠️', dark: '🔦' };
 const SPAWN_ICON: Partial<Record<DirtType, string>> = { hair: '🐈', mud: '🐾', stain: '🧃', grease: '🍳', tar: '🪰', dust: '🌼' };
@@ -305,8 +339,8 @@ function sponsorFor(dirt: DirtType | undefined, placement: Placement, surface?: 
 /** 쇼호스트 이름 — 기본 이름 '반디'는 언어별 표기, 운영자가 바꾼 이름은 그대로 */
 function hostName(): string {
   const n = hostConfig().name;
-  if (n !== '반디') return n;
-  return getLang() === 'ko' ? '반디' : getLang() === 'ja' ? 'バンディ' : 'Bandi';
+  if (n !== '민서' && n !== '반디') return n;
+  return getLang() === 'ko' ? '민서' : getLang() === 'ja' ? 'ミンソ' : 'Minseo';
 }
 
 /** 쇼호스트 등장 조건: 켜져 있고, 같은 판에서 같은 제품을 다시 보여주지 않고, 소개(intro)·결과(result)는 제품별 재노출 간격을 지킨다 */
@@ -345,6 +379,7 @@ function presentHost(entry: ItemEntry, placement: Placement, dirt?: DirtType) {
     lang: getLang(),
     hostName: hostName(),
     dirt,
+    surface: dirt ? (mainSurfaceOf(dirt) as SurfaceType) : undefined,
     speak: st.settings.hostVoice,
     trialLabel: nextStage ? t('hostTrialNext') : undefined,
     onTrial: async () => {
@@ -599,6 +634,11 @@ function startLevel(id: number) {
     .filter((e): e is ItemEntry => Boolean(e))
     .map((e) => `<span class="kit__item${e.spec.premium ? ' is-premium' : ''}">${iconFor(e.spec.base)}<span>${esc(e.sponsor ? e.sponsor.brand : t(`item_${e.spec.base}`))}</span></span>`)
     .join('');
+  // 안내 단계: 이 판의 도구로 할 수 있는 진짜 꿀팁 하나를 알려 준다 (그 뒤로는 직접 찾아야 수첩에 쌓인다)
+  const kitSet = game.kit;
+  const introTip = guided(level)
+    ? session.dirtKinds.map((d) => tipsFor(d, mainSurfaceOf(d) as SurfaceType).find((tp) => tp.items.some((i) => kitSet.has(i)))).find(Boolean)
+    : undefined;
   modal(
     `<div class="intro" data-testid="intro">
       <div class="intro__mode">${MODE_ICON[level.mode]} ${esc(t(`mode_${level.mode}`))} · <span class="muted">${t('stage', { n: id })} · T${level.tier}</span></div>
@@ -609,10 +649,12 @@ function startLevel(id: number) {
       ${id === GUIDED_UNTIL + 1 && !st.progress.stars[id] ? `<p class="intro__rule">🔍 ${esc(t('hintsOver', { n: GUIDED_UNTIL }))}</p>` : ''}
       ${level.hint ? `<p class="small muted">${esc(t(level.hint))}</p>` : ''}
       <div class="kit"><span class="small muted">${guided(level) ? t('kitNote') : t('kitNoteFind')}</span><div class="kit__row">${kitIcons}</div></div>
+      ${introTip ? `<div class="intro__tip" data-testid="intro-tip"><span class="small muted">${t('tipToday')}</span>${tipHtml(introTip, true)}</div>` : ''}
       <button class="btn btn--primary btn--block" data-act="ok" data-testid="start">${t('start')}</button>
     </div>`,
     (root, close) => {
       root.parentElement!.dataset.dismiss = 'no';
+      bindTipLinks(root);
       root.querySelector('[data-act="ok"]')!.addEventListener('click', () => {
         close();
         unlockAudio();
@@ -904,7 +946,8 @@ function onDiscovered(dirt: DirtType, tool: ToolFamily, cleaner: CleanerFamily |
     persist();
     g.discoveries.push({ dirt, tool, cleaner });
     const combo = cleaner ? `${familyName(cleaner)} + ${familyName(tool)}` : familyName(tool);
-    toast(`${dirtSwatch(dirt)} ${esc(t('discovered', { dirt: t(`dirt_${dirt}`), combo }))}`, 'good');
+    const realTip = tipForFamilies(dirt, tool, cleaner, mainSurfaceOf(dirt) as SurfaceType);
+    toast(`${dirtSwatch(dirt)} ${esc(t('discovered', { dirt: t(`dirt_${dirt}`), combo }))}${realTip ? ` · 💡 ${esc(t('tipMatched'))}` : ''}`, 'good');
     g.renderer.celebrate(24);
     sfx.discover();
     haptic('medium');
@@ -1159,9 +1202,13 @@ function openJournal() {
           body += `<div class="journal__hint"><span class="small muted">${esc(t('hintsOver', { n: GUIDED_UNTIL }))}</span>${sp ? `<button class="btn btn--sm btn--ad" data-host="${d}" data-testid="host-hint-${d}">${t('journalHostHint')}</button>` : ''}</div>`;
         }
       }
+      // 진짜 꿀팁: 안내 단계는 이 오염의 팁 전부, 그 뒤로는 직접 발견한 조합에 해당하는 팁만
+      const surf = mainSurfaceOf(d) as SurfaceType;
+      const tips = guided(g.level) ? tipsFor(d, surf) : [...new Set(known.map((k) => tipForFamilies(d, k.tool, k.cleaner, surf)).filter((x): x is CleaningTip => Boolean(x)))];
+      const tipsHtml = tips.length ? `<div class="journal__tips">${tips.map((tp) => tipHtml(tp, true)).join('')}</div>` : '';
       return `<li class="journal__row${left <= 0 ? ' is-done' : ''}" data-testid="journal-${d}">
         <div class="journal__dirt">${dirtSwatch(d)}<b>${esc(t(`dirt_${d}`))}</b>${left <= 0 ? ' ✓' : ''}</div>
-        <div class="journal__body">${body}</div>
+        <div class="journal__body">${body}${tipsHtml}</div>
       </li>`;
     })
     .join('');
@@ -1173,6 +1220,7 @@ function openJournal() {
       <button class="btn btn--block" data-act="close">${t('close')}</button>
     </div>`,
     (root, close) => {
+      bindTipLinks(root);
       root.querySelector('[data-act="close"]')!.addEventListener('click', close);
       const reveal = (d: DirtType) => {
         if (!game) return;
@@ -1237,6 +1285,8 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
     ? `<div class="result__found"><b>${t('discoveries')}</b>${discoveries.map((d) => `<span class="recipe">${dirtSwatch(d.dirt)}${esc(t(`dirt_${d.dirt}`))} = ${esc(d.cleaner ? `${familyName(d.cleaner)} + ${familyName(d.tool)}` : familyName(d.tool))}</span>`).join('')}</div>`
     : '';
   const polish = r.polish > 0 ? `<p class="result__polish" data-testid="polish">${esc(t('polishLine', { pct: Math.round(r.polish * 100), c: r.polishBonus }))}</p>` : '';
+  const foundTips = [...new Set(discoveries.map((d) => tipForFamilies(d.dirt, d.tool, d.cleaner, mainSurfaceOf(d.dirt) as SurfaceType)).filter((x): x is CleaningTip => Boolean(x)))];
+  const tipsBlock = foundTips.length ? `<div class="result__tips" data-testid="result-tips"><b>${t('tipMatched')}</b>${foundTips.map((tp) => tipHtml(tp, true)).join('')}</div>` : '';
   const hostEntry = mainDirt ? sponsorFor(mainDirt, 'result') : null;
   const hostCard = hostEntry
     ? `<button class="host-rec" data-act="host" data-testid="result-host"><span class="host-rec__avatar">${hostAvatarSvg()}</span><span class="host-rec__body"><b>${esc(t('hostTitle', { name: hostName() }))}</b><span class="small">${esc(hostEntry.sponsor!.brand)} ${esc(hostEntry.sponsor!.name)} <span class="tag-ad">${t('sponsored')}</span></span></span></button>`
@@ -1250,6 +1300,7 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
       <p class="result__coins" data-el="coins">${t('reward', { c: coinsShown })}</p>
       ${polish}
       ${found}
+      ${tipsBlock}
       <button class="btn btn--ad btn--block" data-act="double" data-testid="double">${t('doubleAd')}</button>
       ${hasNext ? `<button class="btn btn--primary btn--block" data-act="next" data-testid="next">${t('next')}</button>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry">${t('retry')}</button><button class="btn" data-act="menu" data-testid="to-menu">${t('menu')}</button></div>
@@ -1283,6 +1334,7 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
         track('mall_click', { from: 'result', base: recBase!, market });
         openExternal(searchUrl(recBase!, market));
       });
+      bindTipLinks(root);
       if (mallCard && !hostCard) track('mall_impression', { from: 'result', base: recBase!, market });
       root.querySelector('[data-act="host"]')?.addEventListener('click', () => {
         if (hostEntry) {
