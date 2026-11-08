@@ -390,18 +390,23 @@ export function wood(ctx: Ctx, w: number, h: number, rnd: Rnd, o: WoodOpts): voi
         const kx = x0 + pw * (0.15 + rnd() * 0.7);
         const ky = y + ph * (0.3 + rnd() * 0.4);
         const kr = ph * (0.08 + rnd() * 0.1);
+        // 나무색 그대로 조금 어두운 정도 — 검게 그리면 얼룩(오염)으로 오해한다
         const kg = ctx.createRadialGradient(kx, ky, 0, kx, ky, kr * 1.6);
-        kg.addColorStop(0, shade(o.base, -0.6));
-        kg.addColorStop(0.5, shade(o.base, -0.35));
+        kg.addColorStop(0, shade(o.base, -0.3));
+        kg.addColorStop(0.45, shade(o.base, -0.18));
         kg.addColorStop(1, rgba(o.base, 0));
         ctx.fillStyle = kg;
         ellipsePath(ctx, kx, ky, kr * 1.7, kr * 1.1, rnd() * 0.6);
         ctx.fill();
-        ctx.strokeStyle = withAlpha(dark, 0.25);
-        for (let k = 1; k <= 3; k++) {
+        // 결이 옹이를 감싸는 동심 타원 — 옹이임을 알려 주는 건 색이 아니라 이 결이다
+        ctx.strokeStyle = withAlpha(dark, 0.3);
+        for (let k = 0; k <= 3; k++) {
           ellipsePath(ctx, kx, ky, kr * 1.7 * (1 + k * 0.35), kr * 1.1 * (1 + k * 0.4));
           ctx.stroke();
         }
+        ctx.strokeStyle = 'rgba(255,240,220,0.18)';
+        ellipsePath(ctx, kx, ky, kr * 1.7 * 1.18, kr * 1.1 * 1.2);
+        ctx.stroke();
       }
       // 이음매(끝단): 어두운 선 + 하이라이트
       if (j > 0) {
