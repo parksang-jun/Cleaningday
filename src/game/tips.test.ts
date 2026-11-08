@@ -1,7 +1,7 @@
 // 진짜 꿀팁 ↔ 게임 조합 정합성: 팁의 아이템은 실제 존재하고, 팁이 말하는 오염을 그 아이템 조합으로 실제로 지울 수 있어야 한다
 import { describe, expect, it } from 'vitest'
-import { BASE_DETERGENTS, BASE_TOOLS, isHazardMix, matchRecipe, SURFACES, type DetergentSpec, type SurfaceType, type ToolSpec } from './catalog'
-import { expertLine, TIPS, tipForCombo, tipsFor } from './tips'
+import { BASE_DETERGENTS, BASE_TOOLS, findMix, isHazardMix, matchRecipe, MIXES, SURFACES, type DetergentSpec, type SurfaceType, type ToolSpec } from './catalog'
+import { cautionTipFor, expertLine, TIPS, tipForCombo, tipForItems, tipsFor } from './tips'
 
 describe('real cleaning tips', () => {
   it('every tip has 3 languages, at least one source link and existing items', () => {
@@ -19,6 +19,7 @@ describe('real cleaning tips', () => {
 
   it('each tip is playable: its items form a working recipe for each of its dirts on a listed surface', () => {
     for (const tip of TIPS) {
+      if (tip.caution_only) continue
       const tools = tip.items.filter((i) => i in BASE_TOOLS).map((i) => BASE_TOOLS[i as keyof typeof BASE_TOOLS] as ToolSpec)
       const dets = tip.items.filter((i) => i in BASE_DETERGENTS).map((i) => BASE_DETERGENTS[i as keyof typeof BASE_DETERGENTS] as DetergentSpec)
       const surfaces: SurfaceType[] = tip.surfaces ?? SURFACES
@@ -31,6 +32,11 @@ describe('real cleaning tips', () => {
             if (tool.onlyOn && !tool.onlyOn.includes(surface)) continue
             if (tool.harms.includes(surface)) continue
             if (dets.length) for (const d of dets) if (!d.harms.includes(surface) && matchRecipe(dirt, surface, tool, d.family)) ok = true
+          // 섞어 쓰는 팁: 두 재료의 혼합물로도 레시피가 있어야 한다
+          for (const a of dets) for (const b of dets) {
+            const m = findMix(a.family, b.family)
+            if (m && !m.neutralized && matchRecipe(dirt, surface, tool, m.det.family)) ok = true
+          }
             if (!dets.length && matchRecipe(dirt, surface, tool, null)) ok = true
           }
           if (ok) break
@@ -50,6 +56,26 @@ describe('real cleaning tips', () => {
     expect(tipForCombo('film', 'glass', 'newspaper', 'vinegar')?.id).toBe('glass-vinegar')
     expect(tipsFor('scale', 'steel').map((t) => t.id)).toContain('sink-grain')
     expect(expertLine('grease', 'ko')).toContain('알칼리')
+    // 섞어 쓰기 팁은 두 재료를 다 썼을 때만, "섞지 마세요" 팁은 조합 발견에 붙지 않는다
+    expect(tipForItems('grease', 'steel', ['bakingsoda', 'dishsoap'])?.id).toBe('soapsoda-paste')
+    expect(tipForItems('film', 'glass', ['vinegar', 'dishsoap'])?.id).toBe('soapvinegar-glass')
+    expect(tipForCombo('film', 'glass', 'squeegee', 'dishsoap')?.id).toBe('soapvinegar-glass') // 세제 단독 팁은 없으니 섞어 쓰기 팁이 붙는다
+    expect(cautionTipFor(['bakingsoda', 'vinegar'])?.id).toBe('fizz-myth')
+    expect(cautionTipFor(['bakingsoda', 'citric'])?.id).toBe('fizz-myth')
+    expect(cautionTipFor(['bakingsoda', 'dishsoap'])).toBeUndefined()
+  })
+
+  it('mixtures: soda+soap and vinegar+soap are real recipes, soda+acid neutralizes, chlorine mixes stay hazards', () => {
+    expect(findMix('bakingsoda', 'dishsoap')?.id).toBe('soapsoda')
+    expect(findMix('dishsoap', 'vinegar')?.id).toBe('soapvinegar')
+    expect(findMix('bakingsoda', 'vinegar')?.neutralized).toBe(true)
+    expect(findMix('bakingsoda', 'descaler')?.neutralized).toBe(true)
+    expect(findMix('bakingsoda', 'bakingsoda')).toBeUndefined()
+    expect(findMix('mold', 'vinegar')).toBeUndefined() // 위험 조합은 혼합물이 아니라 hazard
+    const soapsoda = MIXES.find((m) => m.id === 'soapsoda')!.det
+    expect(matchRecipe('grease', 'steel', BASE_TOOLS.sponge, soapsoda.family)!.speed).toBeGreaterThan(matchRecipe('grease', 'steel', BASE_TOOLS.sponge, 'bakingsoda')!.speed)
+    expect(matchRecipe('film', 'glass', BASE_TOOLS.squeegee, 'soapvinegar')!.speed).toBeGreaterThan(matchRecipe('film', 'glass', BASE_TOOLS.squeegee, 'vinegar')!.speed)
+    expect(matchRecipe('grease', 'steel', BASE_TOOLS.sponge, 'fizz')).toBeNull()
   })
 
   it('household chemistry hazards follow the real warnings: bleach with acid (vinegar, citric) or oxygen bleach', () => {

@@ -193,10 +193,12 @@ try {
   const intro4 = await page.locator('[data-testid="intro"]').innerText();
   assert(intro4.includes('Hints end after stage 3'), 'stage 4 intro explains that hints are over');
   assert(intro4.includes('only some of them work'), 'stage 4 intro says only some tools work');
+  assert((await page.locator('[data-testid="intro-mix"]').count()) === 1, 'stage 4 intro mentions that two cleaners in the kit can be mixed (vinegar + dish soap)');
   await page.click('[data-testid="start"]');
   await page.waitForSelector('[data-testid="item-squeegee"]');
   const kit4 = await page.evaluate(() => window.__sparkle.kit());
   assert(kit4.includes('squeegee') && kit4.includes('glass') && kit4.length >= 5, `stage 4 kit mixes decoys in (${kit4.join(',')})`);
+  assert(kit4.includes('vinegar') && kit4.includes('dishsoap'), `stage 4 kit holds both halves of the glass-cleaner mix (${kit4.join(',')})`);
   await page.click('[data-testid="item-vacuum"]');
   await sweep(page, 1, 8, 4);
   await page.click('[data-testid="item-cloth"]');
@@ -250,6 +252,24 @@ try {
   assert((await page.locator('[data-testid="host"]').count()) === 0, 'host closes after the rewarded trial');
   assert(!(await page.evaluate(() => window.__sparkle.paused())), 'clock resumes after the host closes');
   assert((await page.locator('[data-testid="item-sp:brightmax-degreaser"] .tool__ad').count()) === 1, 'sponsored degreaser joins the toolbar as a free trial');
+  // 섞어 쓰기: 베이킹소다를 뿌린 자리에 주방세제를 겹쳐 뿌리면 "베이킹소다 + 주방세제" 페이스트가 된다 → 수세미로 기름때가 지워진다
+  assert(kit25.includes('bakingsoda') && kit25.includes('dishsoap'), `stove kit holds both halves of the soda + dish-soap paste (${kit25.join(',')})`);
+  assert((await page.locator('[data-testid="item-mix:soapsoda"]').count()) === 0, 'the mixture itself is not a toolbar item — it only exists where both are sprayed');
+  await page.click('[data-testid="item-bakingsoda"]');
+  await sweep(page, 1, 10, 3);
+  assert((await page.evaluate(() => window.__sparkle.mixes())).length === 0, 'one cleaner alone does not mix');
+  await page.click('[data-testid="item-dishsoap"]');
+  await sweep(page, 1, 10, 3);
+  const mixes = await page.evaluate(() => window.__sparkle.mixes());
+  assert(mixes.includes('soapsoda'), `spraying dish soap over baking soda makes the paste (${mixes.join(',')})`);
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: resolve(shots, '05b-stove-mix.png') });
+  const greaseMix0 = await page.evaluate(() => window.__sparkle.session().remainingOf('grease'));
+  await page.click('[data-testid="item-scrubpad"]');
+  await sweep(page, 1, 20, 4);
+  const greaseMix1 = await page.evaluate(() => window.__sparkle.session().remainingOf('grease'));
+  assert(greaseMix1 < greaseMix0, `scouring pad over the paste removes grease (${greaseMix0.toFixed(1)} → ${greaseMix1.toFixed(1)})`);
+  assert((await page.evaluate(() => window.__sparkle.journal())).includes('grease|scrubpad|soapsoda'), 'the mixed recipe is recorded in the notebook as its own discovery');
   for (let round = 0; round < 3; round++) {
     await page.click('[data-testid="item-degreaser"]');
     await sweep(page, 1, 12, 3);
@@ -381,7 +401,7 @@ try {
   // 실제 제품 몰 탭: 마켓 칩, 종류별 링크, 제휴 고지
   await page.click('[data-testid="tab-mall"]');
   await page.waitForSelector('[data-testid="mall"]');
-  assert((await page.locator('[data-testid^="mallcat-"]').count()) === 43, 'mall lists all 43 product categories (incl. household tip items)');
+  assert((await page.locator('[data-testid^="mallcat-"]').count()) === 44, 'mall lists all 44 product categories (incl. household tip items)');
   assert((await page.locator('[data-testid="market-amazon_us"].is-on').count()) === 1, 'English UI defaults to Amazon');
   await page.click('[data-testid="market-coupang"]');
   await page.waitForTimeout(100);

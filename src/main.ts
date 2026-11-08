@@ -9,8 +9,9 @@ import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES,
 import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
 import { activeSponsors, allItems, countryFor, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
 import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type StageMode, type WorldInfo } from './game/levels';
+import { findMix, MIXES, mixParts } from './game/catalog';
 import { mulberry32 } from './game/rng';
-import { tipForCombo, tipsFor, type CleaningTip } from './game/tips';
+import { cautionTipFor, tipForCombo, tipForItems, tipsFor, type CleaningTip } from './game/tips';
 import { performanceRatios, REFERENCE_REMOVAL, type SponsorProduct } from './game/sponsor';
 import { closeHost, hostAvatarSvg, hostOpen, showHost, type Placement } from './host';
 import { detectLang, getLang, setLang, t, type Lang } from './i18n';
@@ -53,7 +54,15 @@ function itemName(e: ItemEntry | undefined): string {
 }
 
 function familyName(f: ToolFamily | CleanerFamily): string {
+  const mix = MIXES.find((m) => m.det.family === f);
+  if (mix) return t(`mix_${mix.id}`);
   return t(`item_${familyItem(f)}`);
+}
+
+/** 혼합물(섞어 쓰는 세정제)이면 두 재료를 플레이어가 모두 가졌는지 */
+function ownsMix(f: CleanerFamily, ownedDets: { spec: DetergentSpec }[]): boolean {
+  const parts = mixParts(f);
+  return Boolean(parts && parts.every((id) => ownedDets.some((e) => e.spec.id === id)));
 }
 
 function dirtSwatch(d: DirtType): string {
@@ -77,8 +86,13 @@ function owns(id: string): boolean {
 /** 외부 링크 — 네이티브는 인앱 브라우저, 웹은 새 탭 */
 /** 발견한 조합(도구군·세정제군)에 해당하는 실제 꿀팁 */
 function tipForFamilies(dirt: DirtType, tool: ToolFamily, cleaner: CleanerFamily | null, surface?: SurfaceType): CleaningTip | undefined {
+  const parts = cleaner ? mixParts(cleaner) : null;
+  if (parts) return tipForItems(dirt, surface, parts); // 섞어 쓴 조합 → 두 재료가 다 들어 있는 팁
   return tipForCombo(dirt, surface, familyItem(tool), cleaner ? familyItem(cleaner) : null);
 }
+
+/** 중화(베이킹소다+산) 설명은 한 번만 — 그 뒤로는 토스트만 */
+let fizzExplained = false;
 
 /** 꿀팁 카드 HTML — 제목·단계(compact 면 2개)·주의·출처 버튼 */
 function tipHtml(tip: CleaningTip, compact = false): string {
@@ -293,7 +307,7 @@ function stageKit(session: CleanSession): Set<string> {
   const fragile = session.level.mode === 'fragile';
   for (const [d, surfaces] of pairs) {
     for (const sf of surfaces) {
-      const rs = (fragile ? RECIPES[d] : recipesFor(d, sf)).filter((r) => ownedTools.some((e) => r.tools.some((f) => e.spec.families.includes(f))) && (!r.cleaner || ownedDets.some((e) => e.spec.family === r.cleaner)));
+      const rs = (fragile ? RECIPES[d] : recipesFor(d, sf)).filter((r) => ownedTools.some((e) => r.tools.some((f) => e.spec.families.includes(f))) && (!r.cleaner || ownedDets.some((e) => e.spec.family === r.cleaner) || ownsMix(r.cleaner, ownedDets)));
       const fast = rs.filter((r) => r.speed >= 0.85);
       for (const r of fast.length ? fast : rs) {
         r.tools.forEach((f) => toolFams.add(f));
@@ -304,6 +318,8 @@ function stageKit(session: CleanSession): Set<string> {
   const kit = new Set<string>();
   for (const e of ownedTools) if (e.spec.families.some((f) => toolFams.has(f))) kit.add(e.spec.id);
   for (const e of ownedDets) if (cleanerFams.has(e.spec.family)) kit.add(e.spec.id);
+  // 섞어 쓰는 레시피면 두 재료를 모두 챙긴다
+  for (const f of cleanerFams) for (const id of mixParts(f) ?? []) if (ownedDets.some((e) => e.spec.id === id)) kit.add(id);
   // 염소계 + 산성 → 헹굼 필수
   const chems = new Set(ownedDets.filter((e) => kit.has(e.spec.id)).map((e) => e.spec.chemistry));
   if (chems.has('chlorine') && chems.has('acid')) for (const e of ownedTools) if (e.spec.families.includes('rinse') && !e.spec.outdoorOnly) kit.add(e.spec.id);
@@ -473,6 +489,8 @@ interface GameState {
   hints: Map<DirtType, number>;
   hintNudged: Set<DirtType>;
   noEffects: number;
+  /** 이 판에서 만들어진 혼합물 (테스트·통계용) */
+  mixes: string[];
   kit: Set<string>;
   spawnToastAt: number;
   lastTick: number;
@@ -585,6 +603,7 @@ function startLevel(id: number) {
     hints: new Map(),
     hintNudged: new Set(),
     noEffects: 0,
+    mixes: [],
     kit: new Set(),
     spawnToastAt: -10,
     lastTick: -1,
@@ -639,6 +658,11 @@ function startLevel(id: number) {
   const introTip = guided(level)
     ? session.dirtKinds.map((d) => tipsFor(d, mainSurfaceOf(d) as SurfaceType).find((tp) => tp.items.some((i) => kitSet.has(i)))).find(Boolean)
     : undefined;
+  // 섞어 쓰기 규칙 안내: 가져온 세정제 둘이 섞이는 조합이면 알려 준다 — 어떤 조합인지는 말하지 않는다(힌트 아님).
+  // 섞어 쓴 레시피를 하나라도 수첩에 적고 나면 더 이상 보여 주지 않는다.
+  const kitDets = [...kitSet].map((id) => findItem(id, items)?.spec).filter((sp): sp is DetergentSpec => Boolean(sp && sp.kind === 'detergent'));
+  const mixKnown = st.journal.some((k) => MIXES.some((m) => k.endsWith(`|${m.det.family}`)));
+  const mixAvailable = !mixKnown && kitDets.some((a) => kitDets.some((b) => a !== b && findMix(a.family, b.family)));
   modal(
     `<div class="intro" data-testid="intro">
       <div class="intro__mode">${MODE_ICON[level.mode]} ${esc(t(`mode_${level.mode}`))} · <span class="muted">${t('stage', { n: id })} · T${level.tier}</span></div>
@@ -649,6 +673,7 @@ function startLevel(id: number) {
       ${id === GUIDED_UNTIL + 1 && !st.progress.stars[id] ? `<p class="intro__rule">🔍 ${esc(t('hintsOver', { n: GUIDED_UNTIL }))}</p>` : ''}
       ${level.hint ? `<p class="small muted">${esc(t(level.hint))}</p>` : ''}
       <div class="kit"><span class="small muted">${guided(level) ? t('kitNote') : t('kitNoteFind')}</span><div class="kit__row">${kitIcons}</div></div>
+      ${mixAvailable ? `<p class="intro__rule" data-testid="intro-mix">🧪 ${esc(t('mixHint'))}</p>` : ''}
       ${introTip ? `<div class="intro__tip" data-testid="intro-tip"><span class="small muted">${t('tipToday')}</span>${tipHtml(introTip, true)}</div>` : ''}
       <button class="btn btn--primary btn--block" data-act="ok" data-testid="start">${t('start')}</button>
     </div>`,
@@ -894,6 +919,29 @@ function handleEvents(events: SessionEvent[]) {
     } else if (ev.kind === 'blocked') {
       sfx.warn();
       toast(t('blocked', { item: itemName(findItem(ev.item, items)) }), 'warn');
+    } else if (ev.kind === 'mixed') {
+      const name = familyName(ev.family);
+      g.mixes.push(ev.neutralized ? `${ev.mix}!` : ev.mix);
+      g.renderer.fizz(ev.cells, ev.neutralized);
+      if (ev.neutralized) {
+        sfx.fizz();
+        toast(esc(t('mixNeutral', { mix: name })), 'warn');
+        const caution = cautionTipFor(mixParts(ev.family) ?? []);
+        if (caution && !fizzExplained) {
+          fizzExplained = true;
+          stopScrub();
+          g.pointer = null;
+          modal(`<div data-testid="fizz-tip"><h2>🧪 ${esc(t('mixNeutralTitle'))}</h2>${tipHtml(caution)}<button class="btn btn--primary btn--block" data-act="ok">${t('ok')}</button></div>`, (root, close) => {
+            bindTipLinks(root);
+            root.querySelector('[data-act=ok]')!.addEventListener('click', close);
+          });
+        }
+      } else {
+        sfx.fizz();
+        toast(esc(t('mixed', { mix: name })), 'good');
+        haptic('light');
+      }
+      track('mixed', { level: g.level.id, mix: ev.mix, neutralized: ev.neutralized });
     } else if (ev.kind === 'hazard') {
       sfx.warn();
       stopScrub();
@@ -1164,7 +1212,7 @@ function hintRecipe(d: DirtType): { tool: ToolFamily; cleaner: CleanerFamily | n
   for (const r of recipesFor(d, surface)) {
     const tool = ownedTools.find((tl) => !tl.premium && r.tools.some((f) => tl.families.includes(f)));
     if (!tool) continue;
-    if (r.cleaner && !ownedDets.some((c) => c.kind === 'detergent' && c.family === r.cleaner)) continue;
+    if (r.cleaner && !ownedDets.some((c) => c.kind === 'detergent' && c.family === r.cleaner) && !ownsMix(r.cleaner, ownedDets.map((d) => ({ spec: d as DetergentSpec })))) continue;
     return { tool: r.tools.find((f) => tool.families.includes(f))!, cleaner: r.cleaner ?? null };
   }
   return null;
@@ -1685,6 +1733,7 @@ declare global {
       journal: () => string[];
       tries: (d: string) => number;
       noEffects: () => number;
+      mixes: () => string[];
       kit: () => string[];
       audio: () => ReturnType<typeof audioDebug>;
       polish: () => number;
@@ -1715,6 +1764,7 @@ function exposeDebug() {
     journal: () => [...getStore().journal],
     tries: (d: string) => game?.session.triesOn(d as DirtType) ?? 0,
     noEffects: () => game?.noEffects ?? 0,
+    mixes: () => [...(game?.mixes ?? [])],
     kit: () => [...(game?.kit ?? [])],
     audio: () => audioDebug(),
     polish: () => game?.session.polish ?? 0,

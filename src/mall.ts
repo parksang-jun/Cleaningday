@@ -85,6 +85,7 @@ export const CATEGORY_QUERY: Record<ToolId | DetergentId, { ko: string; en: stri
   vinegar: { ko: '청소용 식초', en: 'cleaning vinegar', ja: '掃除用 お酢' },
   toothpaste: { ko: '헤드라이트 복원제', en: 'headlight restoration kit', ja: 'ヘッドライト 黄ばみ取り' },
   cookingoil: { ko: '타르 제거제', en: 'tar remover', ja: 'タール 除去剤' },
+  dishsoap: { ko: '주방세제', en: 'dish soap', ja: '食器用洗剤' },
 };
 
 /** 오염 → 그 오염에 맞는 아이템 계열 (결과 화면 추천용) */

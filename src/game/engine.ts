@@ -5,9 +5,12 @@ import {
   DIRT_RESIST,
   PRO_BUDGET_MUL,
   TAIL_AMOUNT,
+  findMix,
+  type MixDef,
   DIRT_SURFACES,
   DIRT_TYPES,
   isHazardMix,
+  mixHasPart,
   matchRecipe,
   SURFACES,
   type Chemistry,
@@ -31,6 +34,7 @@ export interface Soak {
 export type SessionEvent =
   | { kind: 'harm'; item: string; surface: SurfaceType }
   | { kind: 'hazard'; a: Chemistry; b: Chemistry }
+  | { kind: 'mixed'; mix: string; family: CleanerFamily; cells: number[]; neutralized: boolean }
   | { kind: 'blocked'; item: string; surface: SurfaceType }
   | { kind: 'empty'; item: string }
   | { kind: 'noeffect'; reason: NoEffectReason; dirt: DirtType; surface: SurfaceType; item: string }
@@ -95,6 +99,7 @@ export class CleanSession {
   private lastHarmAt = -10
   private lastBlockedAt = -10
   private lastEmptyAt = -10
+  private lastMixAt = -10
   private lastNoEffectAt = new Map<string, number>()
   private remaining: number
   private perType: Float32Array // 종류별 남은 양 (윗층+아래층)
@@ -652,9 +657,30 @@ export class CleanSession {
     this.engaged = true
     this.applyHarm(det, cx, cy, dt, events)
     let mixed: Chemistry | null = null
+    let mix: MixDef | undefined
+    const mixCells: number[] = []
     this.forEachInRadius(cx, cy, det.radius, (i) => {
       const prev = this.soak[i]
-      if (prev && prev.until > this.time && isHazardMix(prev.det.chemistry, det.chemistry)) mixed = prev.det.chemistry
+      const live = prev && prev.until > this.time ? prev : null
+      if (live && isHazardMix(live.det.chemistry, det.chemistry)) mixed = live.det.chemistry
+      // 이미 혼합물인 칸에 그 재료를 더 뿌리면 혼합물이 그대로 남는다(시간만 연장) — 다른 세정제를 뿌리면 새 세정제로 덮인다
+      if (live && live.det.id.startsWith('mix:') && mixHasPart(live.det.family, det.family)) {
+        this.soak[i] = { det: live.det, until: this.time + live.det.soakSec }
+        return
+      }
+      // 다른 세정제가 아직 남아 있는 칸에 겹쳐 뿌리면 혼합물
+      const m = live && !live.det.id.startsWith('mix:') ? findMix(live.det.family, det.family) : undefined
+      if (m) {
+        mix = m
+        mixCells.push(i)
+        this.soak[i] = { det: m.det, until: this.time + m.det.soakSec }
+        if (this.amount[i] > 0) {
+          const set = this.tried.get(this.dirtAt(i)) ?? new Set<string>()
+          set.add(m.det.id)
+          this.tried.set(this.dirtAt(i), set)
+        }
+        return
+      }
       this.soak[i] = { det, until: this.time + det.soakSec }
       if (this.amount[i] > 0) {
         const set = this.tried.get(this.dirtAt(i)) ?? new Set<string>()
@@ -665,6 +691,10 @@ export class CleanSession {
     if (mixed && !this.hazard) {
       this.hazard = true
       events.push({ kind: 'hazard', a: mixed, b: det.chemistry })
+    }
+    if (mix && mixCells.length && this.time - this.lastMixAt > 1.2) {
+      this.lastMixAt = this.time
+      events.push({ kind: 'mixed', mix: mix.id, family: mix.det.family, cells: mixCells, neutralized: Boolean(mix.neutralized) })
     }
     return events
   }

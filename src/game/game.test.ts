@@ -218,6 +218,53 @@ describe('engine', () => {
     expect(tub2.spray(BASE_DETERGENTS.descaler, 20, 20, 0.1).some((e) => e.kind === 'hazard')).toBe(false)
   })
 
+  it('layering two cleaners makes a mixture: soda + dish soap cleans grease, soda + vinegar fizzes and neutralizes', () => {
+    const stove = new CleanSession(LEVELS.find((l) => l.scene === 'stove')!)
+    stove.limitSec = undefined
+    // 기름때 칸 하나 고르기
+    let cell = -1
+    for (let i = 0; i < stove.w * stove.h && cell < 0; i++) if (stove.amount[i] > 0 && stove.dirtAt(i) === 'grease') cell = i
+    expect(cell).toBeGreaterThanOrEqual(0)
+    const cx = (cell % stove.w) + 0.5
+    const cy = Math.floor(cell / stove.w) + 0.5
+    expect(stove.spray(BASE_DETERGENTS.bakingsoda, cx, cy, 0.1).some((e) => e.kind === 'mixed')).toBe(false)
+    const ev = stove.spray(BASE_DETERGENTS.dishsoap, cx, cy, 0.1)
+    const mixed = ev.find((e) => e.kind === 'mixed')
+    expect(mixed && mixed.kind === 'mixed' && mixed.mix).toBe('soapsoda')
+    expect(mixed && mixed.kind === 'mixed' && mixed.neutralized).toBe(false)
+    expect(stove.activeSoak(cell)?.family).toBe('soapsoda')
+    // 같은 재료(주방세제·베이킹소다)를 더 뿌려도 페이스트는 그대로 — 쓸어 뿌리다 겹쳐도 깨지지 않는다
+    stove.spray(BASE_DETERGENTS.dishsoap, cx, cy, 0.1)
+    stove.spray(BASE_DETERGENTS.bakingsoda, cx, cy, 0.1)
+    expect(stove.activeSoak(cell)?.family).toBe('soapsoda')
+    // 혼합물 위에 세 번째 세제를 뿌리면 새 세제로 덮인다 (혼합물끼리 또 섞이지 않음)
+    expect(stove.spray(BASE_DETERGENTS.vinegar, cx, cy, 0.1).some((e) => e.kind === 'mixed')).toBe(false)
+    expect(stove.activeSoak(cell)?.family).toBe('vinegar')
+    // 페이스트 + 수세미 = 기름때가 지워진다 (베이킹소다 단독보다 빠르게)
+    const before = stove.remainingOf('grease')
+    const paste = new CleanSession(LEVELS.find((l) => l.scene === 'stove')!)
+    paste.limitSec = undefined
+    paste.spray(BASE_DETERGENTS.bakingsoda, cx, cy, 0.1)
+    paste.spray(BASE_DETERGENTS.dishsoap, cx, cy, 0.1)
+    const evs = []
+    for (let i = 0; i < 30; i++) evs.push(...paste.scrub(BASE_TOOLS.scrubpad, cx, cy, 1 / 30))
+    expect(paste.remainingOf('grease')).toBeLessThan(before)
+    expect(evs.some((e) => e.kind === 'discovered' && e.dirt === 'grease' && e.tool === 'scrubpad' && e.cleaner === 'soapsoda')).toBe(true)
+
+    // 베이킹소다 + 식초 → 거품(중화): 그 자리는 세정력 0, 위험 경고는 아니다
+    const fizz = new CleanSession(LEVELS.find((l) => l.scene === 'stove')!)
+    fizz.limitSec = undefined
+    fizz.spray(BASE_DETERGENTS.bakingsoda, cx, cy, 0.1)
+    const ev2 = fizz.spray(BASE_DETERGENTS.vinegar, cx, cy, 0.1)
+    const fz = ev2.find((e) => e.kind === 'mixed')
+    expect(fz && fz.kind === 'mixed' && fz.neutralized).toBe(true)
+    expect(ev2.some((e) => e.kind === 'hazard')).toBe(false)
+    expect(fizz.activeSoak(cell)?.family).toBe('fizz')
+    const g0 = fizz.remainingOf('grease')
+    for (let i = 0; i < 30; i++) fizz.scrub(BASE_TOOLS.scrubpad, cx, cy, 1 / 30)
+    expect(fizz.remainingOf('grease')).toBe(g0)
+  })
+
   it('scores stars from time, damage and hazards', () => {
     expect(scoreSession({ time: 20, damage: 0, hazard: false }, 30).stars).toBe(3)
     expect(scoreSession({ time: 40, damage: 0, hazard: false }, 30).stars).toBe(2)

@@ -294,6 +294,34 @@ export class Renderer {
     if (this.debris.length > 520) this.debris.splice(0, this.debris.length - 520);
   }
 
+  /** 세정제가 섞였을 때 — 거품이 솟는다 (중화면 더 요란하게 거품만) */
+  fizz(cells: number[], neutralized = false) {
+    const s = this.session!;
+    const sample = Math.min(cells.length, neutralized ? 40 : 24);
+    for (let k = 0; k < sample; k++) {
+      const i = cells[Math.floor(Math.random() * cells.length)];
+      const n = neutralized ? 3 : 2;
+      for (let q = 0; q < n; q++) {
+        this.debris.push({
+          x: (i % s.w) + Math.random(),
+          y: Math.floor(i / s.w) + Math.random(),
+          vx: (Math.random() - 0.5) * 2,
+          vy: -3 - Math.random() * 5,
+          g: -4,
+          life: 0.6 + Math.random() * 0.6,
+          max: 1.1,
+          size: 0.18 + Math.random() * 0.3,
+          rot: 0,
+          spin: 0,
+          color: neutralized ? 'rgba(255,255,255,0.85)' : 'rgba(225,245,255,0.9)',
+          shape: 'bubble',
+          suck: false,
+        });
+      }
+    }
+    if (this.debris.length > 520) this.debris.splice(0, this.debris.length - 520);
+  }
+
   /** 큰 반짝임 (종류 완료·발견) */
   celebrate(count = 40) {
     const s = this.session!;
@@ -411,11 +439,14 @@ export class Renderer {
       const o = i * 4;
       const sl = s.soakLevel(i);
       if (sl > 0) {
-        const c = FOAM[s.soak[i]!.det.chemistry] ?? FOAM.neutral;
+        const det = s.soak[i]!.det;
+        // 혼합물은 색으로 구분: 페이스트는 크림색, 식초+세제는 연두, 중화 거품은 흰색
+        const c = det.family === 'soapsoda' ? [255, 236, 200] : det.family === 'soapvinegar' ? [214, 255, 214] : det.family === 'fizz' ? [255, 255, 255] : (FOAM[det.chemistry] ?? FOAM.neutral);
         f[o] = c[0];
         f[o + 1] = c[1];
         f[o + 2] = c[2];
-        f[o + 3] = 200 * sl * (0.6 + 0.4 * s.grain[i]);
+        // 반투명: 거품 아래 오염이 비쳐 보여야 어디를 문지를지 안다 (중화 거품만 더 하얗게)
+        f[o + 3] = Math.min(255, (det.family === 'fizz' ? 225 : 120) * sl * (0.65 + 0.35 * s.grain[i]));
         any = true;
       } else f[o + 3] = 0;
     }
@@ -427,14 +458,15 @@ export class Renderer {
     t.clearRect(0, 0, this.tmp.width, this.tmp.height);
     t.imageSmoothingEnabled = true;
     t.drawImage(this.foamMask, 0, 0, this.tmp.width, this.tmp.height);
+    // 거품 질감은 뿌린 자리 안에서만 (바깥까지 번지면 화면 전체가 뿌옇게 보인다)
     t.globalCompositeOperation = 'destination-in';
     t.drawImage(this.foamTex, 0, 0);
-    t.globalCompositeOperation = 'lighter';
-    t.globalAlpha = 0.55;
+    t.globalCompositeOperation = 'source-atop';
+    t.globalAlpha = 0.45;
     t.drawImage(this.foamTex, 0, 0);
     t.globalAlpha = 1;
     t.globalCompositeOperation = 'source-over';
-    this.ctx.globalAlpha = 0.9;
+    this.ctx.globalAlpha = 0.88;
     this.ctx.drawImage(this.tmp, 0, 0, W, H);
     this.ctx.globalAlpha = 1;
   }
@@ -742,6 +774,26 @@ export class Renderer {
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    if (wet) {
+      // 젖은 자국은 한 번의 획으로 — 점마다 겹쳐 그리면 밝기가 쌓여 뿌연 흰 덩어리가 된다
+      const age = pts.reduce((a, p) => a + (now - p.t) / life, 0) / pts.length;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = `rgba(205,236,255,${(0.2 * (1 - age)).toFixed(3)})`;
+      ctx.lineWidth = pts[0].r * cw * 1.6;
+      ctx.beginPath();
+      let open = false;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[i - 1];
+        if (!b || Math.hypot(a.x - b.x, a.y - b.y) > 6) {
+          ctx.moveTo(a.x * cw, a.y * cw);
+          open = true;
+        } else ctx.lineTo(a.x * cw, a.y * cw);
+      }
+      if (open) ctx.stroke();
+      ctx.restore();
+      return;
+    }
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i];

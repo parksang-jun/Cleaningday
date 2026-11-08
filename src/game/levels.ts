@@ -313,7 +313,7 @@ const WORLD_SEEDS: WorldSeed[] = [
           { scene: 'floor', dirt: ['dust'], grants: ['cloth', 'vacuum', 'sponge', 'allpurpose'], hint: 'hintDust', theme: 'morning' },
           { scene: 'floor', dirt: ['stain', 'dust'], hint: 'hintTry', theme: 'kids' },
           { scene: 'sofa', dirt: ['hair', 'dust'], grants: ['lintroller', 'rubberglove'], hint: 'hintHair', mode: 'rush', spawnType: 'hair', theme: 'cat' },
-          { scene: 'window', dirt: ['film', 'dust'], grants: ['glass', 'squeegee', 'vinegar', 'newspaper'], hint: 'hintFilm', theme: 'pollen' },
+          { scene: 'window', dirt: ['film', 'dust'], grants: ['glass', 'squeegee', 'vinegar', 'newspaper', 'dishsoap'], hint: 'hintFilm', theme: 'pollen' },
           { scene: 'rug', dirt: ['mud', 'hair', 'dust'], hint: 'hintRug', mode: 'rush', spawnType: 'mud', theme: 'pet' },
           { scene: 'shelf', dirt: ['film', 'stain'], hint: 'hintJournal', mode: 'spots', theme: 'movein' },
           { scene: 'floor', dirt: ['mud', 'stain', 'dust'], hint: 'hintMud', theme: 'rain' },

@@ -33,7 +33,7 @@ export type Chemistry = 'neutral' | 'alkaline' | 'acid' | 'chlorine' | 'solvent'
 /** 도구군 — 레시피는 도구군으로 판정하고, 프리미엄 도구는 여러 군을 겸한다 */
 export type ToolFamily = 'cloth' | 'vacuum' | 'lintroller' | 'sponge' | 'scrubpad' | 'tilebrush' | 'squeegee' | 'deckbrush' | 'hose' | 'washer' | 'mitt' | 'wheelbrush' | 'rinse' | 'steam' | 'eraser' | 'claybar';
 /** 세정제군 */
-export type CleanerFamily = 'allpurpose' | 'glass' | 'degreaser' | 'descaler' | 'bathroom' | 'mold' | 'fabric' | 'deck' | 'moss' | 'carshampoo' | 'wheel' | 'tar' | 'interior' | 'bakingsoda' | 'oxy' | 'vinegar' | 'polish';
+export type CleanerFamily = 'allpurpose' | 'glass' | 'degreaser' | 'descaler' | 'bathroom' | 'mold' | 'fabric' | 'deck' | 'moss' | 'carshampoo' | 'wheel' | 'tar' | 'interior' | 'bakingsoda' | 'oxy' | 'vinegar' | 'polish' | 'dishsoap' | 'soapsoda' | 'soapvinegar' | 'fizz';
 
 export type ToolId =
   | 'cloth'
@@ -81,6 +81,7 @@ export type DetergentId =
   | 'vinegar'
   | 'toothpaste'
   | 'cookingoil'
+  | 'dishsoap'
   // 프리미엄
   | 'heavydegreaser'
   | 'limescalegel';
@@ -251,12 +252,67 @@ export const BASE_DETERGENTS: Record<DetergentId, DetergentSpec> = {
   vinegar: { id: 'vinegar', base: 'vinegar', kind: 'detergent', family: 'vinegar', radius: 4.2, soakSec: 12, mult: flat(1), chemistry: 'acid', harms: ['stone'], cost: 0 },
   /** 치약(흰색 불투명) — 고운 연마제: 헤드라이트 황변·플라스틱 유막. 도장면은 흠집 */
   toothpaste: { id: 'toothpaste', base: 'toothpaste', kind: 'detergent', family: 'polish', radius: 2.6, soakSec: 10, mult: flat(1), chemistry: 'neutral', harms: ['paint'], cost: 0 },
+  /** 주방세제(물 10:1 희석) — 계면활성제: 가벼운 기름기·유리. 베이킹소다·식초와 섞어 쓰는 것이 진짜 레시피 */
+  dishsoap: { id: 'dishsoap', base: 'dishsoap', kind: 'detergent', family: 'dishsoap', radius: 4.2, soakSec: 14, mult: flat(1), chemistry: 'neutral', harms: [], cost: 0 },
   /** 식용유 — 타르·스티커 자국을 불려 떼어낸다 (WD-40 과 같은 원리). 패브릭엔 기름 얼룩 */
   cookingoil: { id: 'cookingoil', base: 'cookingoil', kind: 'detergent', family: 'tar', radius: 3.2, soakSec: 24, mult: effect(1, { tar: 0.6 }), chemistry: 'neutral', harms: ['fabric'], dissolves: { tar: 0.012 }, cost: 0 },
   // ---- 프리미엄 세정제 ----
   heavydegreaser: { id: 'heavydegreaser', base: 'heavydegreaser', kind: 'detergent', family: 'degreaser', radius: 4.8, soakSec: 10, mult: effect(1, { grease: 1.8, stain: 1.3 }), chemistry: 'alkaline', harms: ['wood', 'vinyl', 'fabric'], cost: 400, premium: true, pro: true },
   limescalegel: { id: 'limescalegel', base: 'limescalegel', kind: 'detergent', family: 'descaler', radius: 4.2, soakSec: 24, mult: effect(1, { scale: 1.8, soap: 1.3 }), chemistry: 'acid', harms: ['stone', 'wood', 'fabric'], dissolves: { scale: 0.025 }, cost: 400, premium: true, pro: true },
 };
+
+/**
+ * 섞어 쓰는 세정제 — 한 칸에 두 세정제를 겹쳐 뿌리면 혼합물이 된다.
+ *  · 실제 레시피(섞어야 제맛): 베이킹소다 + 주방세제 = 연마 페이스트(욕조·싱크·변기·오븐), 식초 + 주방세제 소량 = 유리·거울 세정제
+ *  · 유명하지만 틀린 조합: 베이킹소다 + 식초(산) = 거품만 나고 서로 중화 — 세정력 0 (배수구 뚫기에만 쓰는 조합)
+ *  · 위험한 조합은 isHazardMix (염소계 + 산성/산소계)
+ */
+export interface MixDef {
+  id: 'soapsoda' | 'soapvinegar' | 'fizz'
+  parts: [CleanerFamily, CleanerFamily]
+  /** 섞인 뒤의 성질 — family 로 레시피에 걸린다 */
+  det: DetergentSpec
+  /** 서로 중화돼 세정력이 사라지는 조합 */
+  neutralized?: boolean
+}
+export const MIXES: MixDef[] = [
+  {
+    id: 'soapsoda',
+    parts: ['bakingsoda', 'dishsoap'],
+    det: { id: 'mix:soapsoda', base: 'bakingsoda', kind: 'detergent', family: 'soapsoda', radius: 4, soakSec: 20, mult: flat(1), chemistry: 'alkaline', harms: [], cost: 0 },
+  },
+  {
+    id: 'soapvinegar',
+    parts: ['vinegar', 'dishsoap'],
+    det: { id: 'mix:soapvinegar', base: 'vinegar', kind: 'detergent', family: 'soapvinegar', radius: 4, soakSec: 14, mult: flat(1), chemistry: 'acid', harms: ['stone'], cost: 0 },
+  },
+  {
+    id: 'fizz',
+    parts: ['bakingsoda', 'vinegar'],
+    det: { id: 'mix:fizz', base: 'bakingsoda', kind: 'detergent', family: 'fizz', radius: 4, soakSec: 8, mult: flat(0), chemistry: 'neutral', harms: [], cost: 0 },
+    neutralized: true,
+  },
+  {
+    id: 'fizz',
+    parts: ['bakingsoda', 'descaler'],
+    det: { id: 'mix:fizz', base: 'bakingsoda', kind: 'detergent', family: 'fizz', radius: 4, soakSec: 8, mult: flat(0), chemistry: 'neutral', harms: [], cost: 0 },
+    neutralized: true,
+  },
+]
+export function findMix(a: CleanerFamily, b: CleanerFamily): MixDef | undefined {
+  if (a === b) return undefined
+  return MIXES.find((m) => (m.parts[0] === a && m.parts[1] === b) || (m.parts[0] === b && m.parts[1] === a))
+}
+/** 혼합물 family → 원래 두 세정제 아이템 */
+export function mixParts(f: CleanerFamily): [DetergentId, DetergentId] | null {
+  const m = MIXES.find((x) => x.det.family === f)
+  return m ? [familyItem(m.parts[0]) as DetergentId, familyItem(m.parts[1]) as DetergentId] : null
+}
+
+/** 혼합물 mixFamily 가 part 세정제군을 재료로 쓰는가 — 같은 재료를 더 뿌려도 혼합물은 그대로 남는다 */
+export function mixHasPart(mixFamily: CleanerFamily, part: CleanerFamily): boolean {
+  return MIXES.some((m) => m.det.family === mixFamily && m.parts.includes(part))
+}
 
 /** 같은 칸에 섞이면 위험한 조합 — 염소계(락스) + 산성(식초·구연산·물때 제거제) → 염소가스, 염소계 + 산소계(과탄산소다) → 유해가스 */
 export function isHazardMix(a: Chemistry, b: Chemistry): boolean {
@@ -305,6 +361,8 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
   grease: [
     { tools: ['scrubpad', 'sponge'], cleaner: 'degreaser', not: ['wood', 'vinyl', 'fabric'], speed: 1.0 },
     { tools: ['scrubpad', 'sponge'], cleaner: 'bakingsoda', not: ['wood', 'vinyl', 'fabric'], speed: 0.8 }, // 꿀팁: 베이킹소다 반죽을 발라 20~30분 불린 뒤
+    { tools: ['scrubpad', 'sponge'], cleaner: 'soapsoda', not: ['wood', 'vinyl', 'fabric'], speed: 1.05 }, // 섞어 쓰기: 베이킹소다 + 주방세제 페이스트 (전용 세제급)
+    { tools: ['sponge'], cleaner: 'dishsoap', on: ['ceramic', 'glass', 'steel', 'plastic', 'metal'], speed: 0.6 }, // 주방세제 물 — 가벼운 기름기만
     { tools: ['scrubpad', 'tilebrush'], cleaner: 'oxy', on: ['steel', 'metal'], speed: 0.85 }, // 꿀팁: 삼발이는 과탄산소다 따뜻한 물에 담갔다가
     { tools: ['cloth'], cleaner: 'allpurpose', on: ['wood'], speed: 0.6 }, // 원목엔 알칼리 금지 → 중성세제로 천천히
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 0.9 },
@@ -314,6 +372,7 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
   stain: [
     { tools: ['cloth', 'sponge'], cleaner: 'allpurpose', not: ['fabric', 'glass'], speed: 1.0 },
     { tools: ['cloth', 'sponge'], cleaner: 'bakingsoda', on: ['steel', 'ceramic', 'tile'], speed: 0.85 }, // 꿀팁: 싱크대·컵 얼룩은 베이킹소다로
+    { tools: ['cloth', 'sponge', 'tilebrush'], cleaner: 'soapsoda', on: ['steel', 'ceramic', 'tile'], speed: 1.1 }, // 섞어 쓰기: 베이킹소다 + 주방세제 (욕조·싱크·변기 레시피)
     { tools: ['sponge', 'tilebrush'], cleaner: 'descaler', on: ['ceramic'], speed: 0.8 }, // 꿀팁: 변기 얼룩은 구연산 10분
     { tools: ['sponge', 'tilebrush', 'cloth'], cleaner: 'fabric', on: ['fabric'], speed: 1.0 },
     { tools: ['cloth', 'squeegee'], cleaner: 'glass', on: ['glass'], speed: 1.0 },
@@ -337,6 +396,7 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['sponge'], cleaner: 'descaler', speed: 0.6 },
     { tools: ['sponge', 'tilebrush'], cleaner: 'bakingsoda', speed: 0.7 }, // 꿀팁: 비누때·물자국엔 베이킹소다 연마
     { tools: ['sponge', 'squeegee'], cleaner: 'vinegar', speed: 0.6 },
+    { tools: ['sponge', 'tilebrush', 'squeegee'], cleaner: 'soapsoda', speed: 1.05 }, // 섞어 쓰기: 베이킹소다 + 주방세제 (욕조 레시피)
     { tools: ['eraser'], speed: 1.0 },
     { tools: ['steam'], speed: 1.0 },
   ],
@@ -365,6 +425,8 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['squeegee'], cleaner: 'glass', on: ['glass'], speed: 1.5 },
     { tools: ['cloth'], cleaner: 'glass', on: ['glass'], speed: 0.9 },
     { tools: ['squeegee', 'cloth'], cleaner: 'vinegar', on: ['glass'], speed: 1.1 }, // 꿀팁: 식초물 + 신문지/스퀴지
+    { tools: ['squeegee', 'cloth'], cleaner: 'soapvinegar', on: ['glass'], speed: 1.4 }, // 섞어 쓰기: 식초 + 주방세제 한 방울 + 물 = 유리·거울 세정제
+    { tools: ['squeegee', 'cloth'], cleaner: 'dishsoap', on: ['glass'], speed: 0.8 },
     { tools: ['cloth', 'sponge', 'eraser'], cleaner: 'polish', on: ['plastic'], speed: 0.8 }, // 꿀팁: 헤드라이트 황변은 흰 치약으로 5~10분
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 1.0 },
     { tools: ['cloth', 'sponge'], cleaner: 'allpurpose', not: ['glass', 'fabric'], speed: 0.9 },

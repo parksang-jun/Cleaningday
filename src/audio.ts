@@ -310,6 +310,12 @@ export const sfx = {
     tone(base * 1.5, 0.45, 'sine', 0.2, 0.22);
     tone(base * 2, 0.6, 'triangle', 0.14, 0.3);
   },
+  /** 세정제 혼합 — 치익 하는 거품 소리 */
+  fizz(): void {
+    noise(0.7, 0.3, { type: 'highpass', from: 2500, to: 5500, q: 0.6 });
+    noise(0.35, 0.16, { type: 'bandpass', from: 900, to: 1400, q: 1.2 }, 0.05);
+    for (let i = 0; i < 6; i++) tone(1800 + Math.random() * 1600, 0.06, 'sine', 0.05, 0.1 + i * 0.07);
+  },
   /** 틀린 도구 — 둔탁한 "툭" */
   thud(): void {
     tone(150, 0.1, 'square', 0.16, 0, 90);

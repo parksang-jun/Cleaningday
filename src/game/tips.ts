@@ -14,6 +14,10 @@ export interface TipSource {
 export interface CleaningTip {
   id: string;
   dirts: DirtType[];
+  /** 조합이 아니라 "하지 말 것"을 알려 주는 팁 (게임 레시피 없음) */
+  caution_only?: boolean;
+  /** 두 재료를 섞어 써야 하는 팁 (게임에서는 겹쳐 뿌리면 혼합물이 된다) */
+  mix?: 'soapsoda' | 'soapvinegar';
   /** 비우면 모든 표면 */
   surfaces?: SurfaceType[];
   /** 이 팁을 이루는 게임 아이템 — 수첩·결과에서 조합과 맞춰 보여준다 */
@@ -46,6 +50,9 @@ const JALOPNIK_TAR: TipSource = { name: 'Jalopnik — How to get tar off your ca
 const WD40_TAR: TipSource = { name: 'WD-40 — How to remove tar from a car', url: 'https://wd40.com.au/how-to/how-to-remove-tar-from-a-car', kind: 'guide' };
 const DANAWA_CLAY: TipSource = { name: '다나와 DPG — 셀프세차 #5 클레이바', url: 'https://dpg.danawa.com/mobile/news/view?boardSeq=62&listSeq=2716142', kind: 'guide', date: '2014-08-19' };
 const HB_DECK: TipSource = { name: 'Homebuilding & Renovating — Fastest way to remove algae from decking', url: 'https://www.homebuilding.co.uk/advice/fastest-way-to-remove-algae-from-decking', kind: 'article', date: '2025-04-11' };
+const BELLEVUE: TipSource = { name: 'City of Bellevue — 친환경 청소 레시피 (한국어, 공공기관)', url: 'https://bellevuewa.gov/sites/default/files/media/pdf_document/2024/utl-24-114132-cleangreenrecipes-ko.pdf', kind: 'official' };
+const KHAN_VS: TipSource = { name: '레이디경향 — 식초 vs 베이킹소다, 진정한 청소 강자는?', url: 'https://lady.khan.co.kr/living/article/202601131039001', kind: 'article', date: '2026-01-13' };
+const WIKITREE_TRACK: TipSource = { name: '위키트리 — 창틀 먼지, 휴지와 주방세제 물', url: 'https://www.wikitree.co.kr/articles/1147300', kind: 'article', date: '2026-07-20' };
 const HUNKER_OXY: TipSource = { name: 'Hunker — Green algae on concrete: oxygen bleach', url: 'https://www.hunker.com/1971953/how-to-get-rid-of-green-algae-concrete-cement-oxygen-bleach/', kind: 'article' };
 
 export const TIPS: CleaningTip[] = [
@@ -255,6 +262,51 @@ export const TIPS: CleaningTip[] = [
     expert: { ko: '세 가루를 다 뿌리는 집이 많은데, 산과 알칼리를 섞으면 거품만 나고 서로 중화돼요. 오염이 산성인지 알칼리성인지 보고 하나만 고르는 게 전문가 방식이에요.', en: 'Plenty of people throw all three at a stain, but acid plus alkali just fizzes and cancels out. The pro move is to read whether the dirt is acidic or alkaline and pick one.', ja: '酸とアルカリを混ぜると泡が出て中和するだけ。汚れの性質を見て1つ選ぶのがプロのやり方。' },
     sources: [YT_MIX, YT_DIFF, YT_EIGHT, WIKITREE_STOVE],
   },
+  {
+    id: 'soapsoda-paste',
+    mix: 'soapsoda',
+    dirts: ['grease', 'stain', 'soap'],
+    surfaces: ['steel', 'ceramic', 'tile', 'glass', 'metal'],
+    items: ['bakingsoda', 'dishsoap', 'sponge', 'tilebrush'],
+    title: { ko: '섞어 쓰기: 베이킹소다 + 주방세제 = 욕조·싱크·변기 연마 페이스트', en: 'Mix it: baking soda + liquid soap = scrub paste for tub, sink, toilet', ja: '混ぜて使う：重曹＋食器用洗剤＝浴槽・シンク・便器のペースト' },
+    steps: {
+      ko: ['도자기·법랑 표면에 베이킹소다를 뿌리고 젖은 천으로 닦는다', '천에 액체 비누(주방세제)를 조금 묻히면 닦는 힘이 세진다 — 그다음 잘 헹군다', '변기: 베이킹소다를 뿌리고 세제 몇 방울 → 변기솔', '오븐: 바닥을 적시고 베이킹소다를 하얗게 덮어 하룻밤 → 남은 건 비눗물 스펀지로'],
+      en: ['Sprinkle baking soda on ceramic fixtures and wipe with a damp cloth', 'Add a little liquid soap to the cloth for extra scrubbing power, then rinse well', 'Toilet: baking soda in the bowl, a few drops of soap, scrub with the brush', 'Oven: wet the floor, cover it white with soda overnight, finish with a soapy sponge'],
+      ja: ['陶器に重曹をふり、濡れた布で拭く', '布に液体石けんを少し付けると落ちやすい。よくすすぐ', '便器：重曹＋洗剤数滴→ブラシ'],
+    },
+    expert: { ko: '베이킹소다 혼자는 연마만 하고 주방세제 혼자는 기름만 띄우는데, 둘을 합치면 띄운 기름을 긁어내는 페이스트가 돼요. 이건 섞어야 제맛인 조합이에요.', en: 'Soda alone only abrades and soap alone only lifts grease; together they make a paste that lifts and scrubs at once. This is a combo that has to be mixed.', ja: '重曹は研磨だけ、洗剤は油を浮かすだけ。合わせると浮かせて削るペーストになります。' },
+    sources: [BELLEVUE, KHAN_VS],
+  },
+  {
+    id: 'soapvinegar-glass',
+    mix: 'soapvinegar',
+    dirts: ['film'],
+    surfaces: ['glass'],
+    items: ['vinegar', 'dishsoap', 'squeegee', 'cloth'],
+    title: { ko: '섞어 쓰기: 식초 3큰술 + 주방세제 1/4작은술 + 물 2컵 = 유리·거울 세정제', en: 'Mix it: 3 tbsp vinegar + ¼ tsp liquid soap + 2 cups water = window & mirror cleaner', ja: '混ぜて使う：酢大さじ3＋洗剤小さじ1/4＋水2カップ＝ガラス用' },
+    steps: {
+      ko: ['분무기에 물 2컵, 식초 3큰술, 주방세제(액체 비누) 1/4작은술을 넣고 흔든다 — 라벨을 붙인다', '유리에 뿌리고 스퀴지를 한 방향으로, 또는 극세사·신문지로 닦는다', '세제 한 방울이 전에 쓰던 제품의 기름기 잔여물을 녹여 줄 자국을 막는다'],
+      en: ['Shake 2 cups water, 3 tbsp vinegar and ¼ tsp liquid soap in a labeled spray bottle', 'Spray the glass, pull a squeegee one way or wipe with microfiber or newspaper', 'The drop of soap dissolves oily residue from previous products so it dries streak-free'],
+      ja: ['水2カップ・酢大さじ3・洗剤小さじ1/4を混ぜる', '吹いてスキージーを一方向に', '洗剤ひと滴が油膜の残りを溶かす'],
+    },
+    expert: { ko: '식초만 쓰면 유막이 남고 세제만 쓰면 줄이 가요. 식초에 세제를 딱 한 방울만 섞는 게 유리 전문가들 레시피예요.', en: 'Vinegar alone leaves film, soap alone leaves streaks. One drop of soap in the vinegar water is the glass cleaner recipe pros use.', ja: '酢だけだと膜が残り、洗剤だけだと筋。酢に洗剤をひと滴だけが正解。' },
+    sources: [BELLEVUE, GQ_WINDOW],
+  },
+  {
+    id: 'fizz-myth',
+    caution_only: true,
+    dirts: ['grease', 'scale', 'soap', 'stain'],
+    items: ['bakingsoda', 'vinegar', 'citric'],
+    title: { ko: '섞지 마세요: 베이킹소다 + 식초(구연산) = 거품만 나고 서로 중화', en: 'Don’t mix: baking soda + vinegar (or citric) = fizz, then they cancel out', ja: '混ぜないで：重曹＋酢（クエン酸）＝泡が出て中和' },
+    steps: {
+      ko: ['기름때·냄새는 베이킹소다(알칼리), 물때·석회는 식초·구연산(산) — 각자 잘 듣는 데 따로 쓴다', '둘을 한 번에 섞으면 거품이 나면서 중화돼 세정력이 사라진다', '예외는 배수구: 베이킹소다 1/2컵 → 식초 1/2컵 → 몇 분 거품 → 끓는 물 — 거품이 찌꺼기를 밀어낸다', '알루미늄 창틀엔 산이 부식을 일으키니 세제 물(10:1)로'],
+      en: ['Baking soda (alkali) for grease and odor, vinegar or citric acid for limescale — use each where it works', 'Mixed at once they fizz and neutralize, so the cleaning power is gone', 'Exception — drains: ½ cup soda, ½ cup vinegar, let it fizz a few minutes, then boiling water', 'On aluminum window tracks acid corrodes the frame — use 10:1 soapy water instead'],
+      ja: ['重曹は油・臭い、酢・クエン酸は水垢。別々に使う', '同時に混ぜると泡が出て中和し洗浄力が消える', '例外は排水口：重曹→酢→数分→熱湯'],
+    },
+    caution: { ko: '게임에서도 둘을 겹쳐 뿌리면 거품만 나고 그 자리는 세정력이 0이 돼요.', en: 'In the game too, layering them just fizzes and leaves zero cleaning power on that spot.', ja: 'ゲームでも重ねると泡だけで洗浄力ゼロになります。' },
+    expert: { ko: '베이킹소다와 식초를 같이 뿌리면 거품 쇼는 멋지지만 산과 알칼리가 서로 중화돼 남는 게 없어요. 배수구 뚫을 때만 그 거품을 쓰세요.', en: 'Soda plus vinegar makes a great fizz show, but acid and alkali cancel each other and nothing is left to clean. Save that fizz for drains.', ja: '重曹と酢を一緒に吹くと泡は派手ですが中和して何も残りません。排水口だけで。' },
+    sources: [KHAN_VS, WIKITREE_TRACK, BELLEVUE],
+  },
 ];
 
 export function tipsFor(dirt: DirtType, surface?: SurfaceType): CleaningTip[] {
@@ -263,10 +315,26 @@ export function tipsFor(dirt: DirtType, surface?: SurfaceType): CleaningTip[] {
 
 /** 발견한 조합(도구·세정제)에 해당하는 팁 — 아이템이 팁에 들어 있으면 그 팁 */
 export function tipForCombo(dirt: DirtType, surface: SurfaceType | undefined, toolId: string, cleanerId?: string | null): CleaningTip | undefined {
-  const cands = tipsFor(dirt, surface);
+  // "하지 말 것" 팁은 조합 발견에 붙이지 않는다
+  const cands = tipsFor(dirt, surface).filter((t) => !t.caution_only);
   // 세정제를 썼으면 그 세정제가 들어 있는 팁만 (수세미 하나 겹친다고 베이킹소다 팁을 붙이지 않는다)
-  if (cleanerId) return cands.find((t) => t.items.includes(cleanerId as ItemId));
+  // 단일 세정제 팁이 섞어 쓰기 팁보다 먼저 — 섞어 쓰기 팁은 두 재료를 다 썼을 때 tipForItems 로 붙는다
+  if (cleanerId) {
+    const hits = cands.filter((t) => t.items.includes(cleanerId as ItemId));
+    return hits.find((t) => !t.mix) ?? hits[0];
+  }
   return cands.find((t) => t.items.includes(toolId as ItemId));
+}
+
+/** 여러 재료를 함께 쓴 조합(섞어 쓰기)에 해당하는 팁 — 재료가 모두 팁에 들어 있어야 한다 */
+export function tipForItems(dirt: DirtType, surface: SurfaceType | undefined, itemIds: string[]): CleaningTip | undefined {
+  const cands = tipsFor(dirt, surface).filter((t) => !t.caution_only);
+  return cands.find((t) => itemIds.every((i) => t.items.includes(i as ItemId)));
+}
+
+/** 섞으면 안 되는 조합을 설명하는 팁 (예: 베이킹소다 + 식초 중화) */
+export function cautionTipFor(itemIds: string[]): CleaningTip | undefined {
+  return TIPS.find((t) => t.caution_only && itemIds.every((i) => t.items.includes(i as ItemId)));
 }
 
 /** 쇼호스트용 전문가 한 줄 (이 오염에 대해) */
