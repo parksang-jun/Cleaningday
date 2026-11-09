@@ -35,17 +35,17 @@ DEST = os.path.join(ROOT, 'src', 'assets', 'host')
 
 # ---------- 좌표 (600 기준) ----------
 HEAD_C = (300.0, 262.0)
-HEAD_A, HEAD_B = 100.0, 113.0  # 얼굴 타원 반경 (아래로 갈수록 좁아지는 V 라인)
+HEAD_A, HEAD_B = 98.0, 114.0  # 얼굴 타원 반경 (아래로 갈수록 좁아지는 V 라인)
 SKULL_C = (300.0, 246.0)
 SKULL_A, SKULL_B = 106.0, 146.0  # 두피(머리카락 뿌리) 타원
-EYE_Y = 276.0
+EYE_Y = 278.0
 EYE_L, EYE_R = 262.0, 338.0
-EYE_W = 26.0
+EYE_W = 27.0
 NOSE_TIP = (300.0, 309.0)
-MOUTH_Y = 337.0
-MOUTH_HW = 19.0
+MOUTH_Y = 335.0
+MOUTH_HW = 19.5
 NECK_HW = 30.0
-HAIRLINE = 190.0  # 이마 헤어라인(가운데)
+HAIRLINE = 188.0  # 이마 헤어라인(가운데)
 
 Yg, Xg = np.mgrid[0:S, 0:S].astype(np.float32)
 Xf = Xg / K
@@ -108,7 +108,7 @@ def ellipse_mask(cx, cy, a, b, taper=0.0):
 
 # ---------- 피부 ----------
 def face_height():
-    m, r = ellipse_mask(*HEAD_C, HEAD_A, HEAD_B, taper=0.52)
+    m, r = ellipse_mask(*HEAD_C, HEAD_A, HEAD_B, taper=0.62)
     h = np.sqrt(np.clip(1 - r * r, 0, 1)) * 120.0
     for ex in (EYE_L, EYE_R):
         h = h - gauss(ex, EYE_Y - 1, 24, 12, 5)
@@ -125,7 +125,7 @@ def face_height():
     return h, m
 
 
-def shade(albedo, h, key=(-0.4, -0.5, 0.77), fill=(0.6, 0.1, 0.8), amb=0.74, kd=0.27, kf=0.08, spec=0.03, shin=70):
+def shade(albedo, h, key=(-0.4, -0.5, 0.77), fill=(0.6, 0.1, 0.8), amb=0.77, kd=0.25, kf=0.08, spec=0.03, shin=70):
     gy, gx = np.gradient(h)
     gx = gx * K
     gy = gy * K
@@ -148,11 +148,12 @@ def shade(albedo, h, key=(-0.4, -0.5, 0.77), fill=(0.6, 0.1, 0.8), amb=0.74, kd=
 
 
 def skin_albedo():
-    base = np.array([1.0, 0.915, 0.87], np.float32)
+    base = np.array([1.0, 0.925, 0.885], np.float32)
     alb = np.ones((S, S, 3), np.float32) * base
     # 볼 홍조(복숭아빛) · 코끝 아주 살짝 · 눈가 약간
-    cheek = gauss(250, 310, 27, 16, 1.0) + gauss(350, 310, 27, 16, 1.0)
-    alb += cheek[..., None] * np.array([0.0, -0.10, -0.06])
+    # 복숭아빛 블러셔: 광대에서 콧등까지 넓고 옅게
+    cheek = gauss(252, 308, 30, 15, 1.0, rot=0.25) + gauss(348, 308, 30, 15, 1.0, rot=-0.25) + 0.4 * gauss(300, 300, 22, 6, 1.0)
+    alb += cheek[..., None] * np.array([0.0, -0.085, -0.05])
     nose = gauss(*NOSE_TIP, 9, 7, 1.0)
     alb += nose[..., None] * np.array([0.0, -0.03, -0.025])
     return np.clip(alb, 0, 1)
@@ -163,14 +164,14 @@ def hairline_y(x):
 
 
 # ---------- 머리카락 ----------
-HAIR_DARK = (60, 40, 32)
-HAIR_MID = (92, 62, 50)
+HAIR_DARK = (36, 28, 30)
+HAIR_MID = (64, 50, 50)
 
 
 def hair_color(lum, a=1.0):
-    r = int(min(255, 52 + 160 * lum))
-    g = int(min(255, 34 + 110 * lum))
-    b = int(min(255, 28 + 86 * lum))
+    r = int(min(255, 34 + 165 * lum))
+    g = int(min(255, 26 + 125 * lum))
+    b = int(min(255, 28 + 125 * lum))
     return (r, g, b, int(255 * a))
 
 
@@ -226,7 +227,7 @@ def draw_front_hair():
         poly = []
         for y in np.linspace(230, 600, 24):
             dyn = (y - HEAD_C[1]) / HEAD_B
-            tap = 1 - 0.52 * min(1.0, max(0.0, dyn)) ** 2
+            tap = 1 - 0.62 * min(1.0, max(0.0, dyn)) ** 2
             face_x = HEAD_A * tap * math.sqrt(max(0.0, 1 - dyn * dyn)) if abs(dyn) < 1 else 0.0
             # 얼굴 안쪽으로 살짝(10px) 겹쳐 얼굴 옆선을 덮고, 턱 아래로는 목 옆을 따라 내려간다
             inner_x = (300 + sgn * (face_x - 2 + 2 * math.sin((y - 230) / 22))) if y < 362 else 300 + sgn * (26 + (y - 362) * 0.1)
@@ -280,29 +281,52 @@ def draw_front_hair():
             y = 340 + rng.uniform(-14, 14) + abs(x - 300 - sgn * 98) * 0.5
             gd.line([P(x, y - 18), P(x + sgn * 1.2, y + 18)], fill=hair_color(rng.uniform(0.45, 0.8), rng.uniform(0.12, 0.3)), width=max(1, int(K * rng.uniform(0.5, 1.0))))
     hair.alpha_composite(with_mask(blur(gl, 0.6), total))
-    # 시스루 뱅: 이마 위로 가늘게 떨어지는 앞머리 (피부가 비쳐 보이게 성글게)
-    bang = new_layer()
-    bd = ImageDraw.Draw(bang)
-    # 뱅 바탕: 반투명 페더링 면 (피부가 비치는 시스루)
-    bfill = new_layer()
-    bfd = ImageDraw.Draw(bfill)
-    top = [P(x, hairline_y(x) - 12) for x in np.linspace(232, 368, 40)]
-    bottom = [P(x, hairline_y(x) + 32 + 7 * math.sin((x - 232) / 9.0) * (1 - abs(x - 300) / 80)) for x in np.linspace(368, 232, 40)]
-    bfd.polygon(top + bottom, fill=hair_color(0.12, 0.5))
-    hair.alpha_composite(blur(bfill, 2.2))
-    clusters = [rng.uniform(232, 368) for _ in range(14)]
-    for i in range(130):
-        c = rng.choice(clusters)
-        x0 = c + rng.gauss(0, 2.2)
-        y0 = hairline_y(x0) - 10
-        sway = (x0 - 300) / 55
+    # 옆으로 넘긴 앞머리(사이드 스웹 프린지): 왼쪽 가르마(x≈272)에서 오른쪽 아래로 쓸어 넘겨 이마 오른쪽을 비스듬히 덮는다
+    fringe = new_layer()
+    frd = ImageDraw.Draw(fringe)
+    under = new_layer()
+    und = ImageDraw.Draw(under)
+    sweep = []
+    for k in range(40):
+        t = k / 39
+        x = 268 + 112 * t
+        y = hairline_y(268) - 8 + 78 * t ** 1.1 + 4 * math.sin(t * 3.0)
+        sweep.append((x, y))
+    # 밑면(반투명) — 가르마에서 시작해 쓸어 넘긴 머리의 두께
+    poly = [P(x, hairline_y(x) - 12) for x in np.linspace(268, 380, 30)] + [P(*pt) for pt in sweep[::-1]]
+    und.polygon(poly, fill=hair_color(0.1, 0.9))
+    fringe.alpha_composite(blur(under, 1.2))
+    for i in range(260):
+        t0 = rng.random() ** 0.8
+        x0 = 268 + 16 * t0 + rng.uniform(-3, 3)
+        y0 = hairline_y(x0) - 12 + rng.uniform(-4, 2)
+        reach = rng.uniform(0.55, 1.0)
         pts3 = [P(x0, y0)]
-        length = rng.uniform(36, 58) * (1 - 0.3 * abs(x0 - 300) / 70) + rng.gauss(0, 2)
-        for k in range(1, 9):
-            t = k / 8
-            pts3.append(P(x0 + sway * 14 * t * t + rng.uniform(-0.25, 0.25), y0 + length * t))
-        bd.line(pts3, fill=hair_color(rng.uniform(0.0, 0.2), rng.uniform(0.55, 0.95)), width=max(1, int(K * rng.uniform(0.7, 1.5))))
-    hair.alpha_composite(blur(bang, 0.3))
+        for k in range(1, 12):
+            t = k / 11 * reach
+            x = x0 + 112 * t + rng.uniform(-0.3, 0.3)
+            y = y0 + 4 + 78 * t ** 1.1 + 4 * math.sin(t * 3.0) + rng.uniform(-0.3, 0.3) + 10 * t0
+            pts3.append(P(x, y))
+        frd.line(pts3, fill=hair_color(rng.uniform(0.0, 0.3), rng.uniform(0.6, 0.95)), width=max(1, int(K * rng.uniform(0.7, 1.5))))
+    # 왼쪽으로 짧게 넘어가는 몇 가닥 (관자놀이 덮기)
+    for i in range(40):
+        x0 = 268 + rng.uniform(-4, 4)
+        y0 = hairline_y(x0) - 10 + rng.uniform(-3, 3)
+        pts3 = [P(x0, y0)]
+        for k in range(1, 8):
+            t = k / 7
+            pts3.append(P(x0 - 48 * t - rng.uniform(0, 0.4), y0 + 2 + 26 * t ** 1.4 + rng.uniform(-0.3, 0.3)))
+        frd.line(pts3, fill=hair_color(rng.uniform(0.0, 0.3), rng.uniform(0.6, 0.95)), width=max(1, int(K * rng.uniform(0.7, 1.4))))
+    hair.alpha_composite(blur(fringe, 0.25))
+    baby = new_layer()
+    bbd = ImageDraw.Draw(baby)
+    for i in range(80):
+        x0 = rng.uniform(214, 386)
+        y0 = hairline_y(x0) + rng.uniform(-1, 3)
+        dirx = (x0 - 300) / 90 + rng.uniform(-0.5, 0.5)
+        pts3 = [P(x0, y0), P(x0 + dirx * 3, y0 - 3 - rng.uniform(0, 3)), P(x0 + dirx * 7, y0 - 6 - rng.uniform(0, 5))]
+        bbd.line(pts3, fill=hair_color(rng.uniform(0.05, 0.3), rng.uniform(0.25, 0.6)), width=max(1, int(K * 0.6)))
+    hair.alpha_composite(blur(baby, 0.2))
     # 윤곽 밖 잔머리
     fly = new_layer()
     fd = ImageDraw.Draw(fly)
@@ -329,7 +353,7 @@ def draw_base():
     neck_mask = (np.abs(nx) < 1) & (Yf > 330) & (Yf < 470)
     nh = np.where(neck_mask, np.sqrt(np.clip(1 - nx * nx, 0, 1)) * 40, 0)
     neck_rgb = shade(skin_albedo() * 0.985, nh, amb=0.74, kd=0.2)
-    shadow = 1 - 0.30 * np.clip(1 - (Yf - 384) / 26, 0, 1) * (Yf > 372)
+    shadow = 1 - 0.20 * np.clip(1 - (Yf - 378) / 34, 0, 1) * (Yf > 366)
     neck_rgb *= shadow[..., None]
     layer.alpha_composite(to_img(neck_rgb, neck_mask.astype(np.float32)))
     # --- 블라우스 + 앞치마 (어깨는 좁고 둥글게) ---
@@ -361,11 +385,14 @@ def draw_base():
     sd.rounded_rectangle([P(298, 539), P(308, 541)], radius=1 * K, fill=(170, 180, 185, 255))
     # --- 얼굴 피부 ---
     h, m = face_height()
-    _, r_face = ellipse_mask(*HEAD_C, HEAD_A, HEAD_B, taper=0.52)
+    _, r_face = ellipse_mask(*HEAD_C, HEAD_A, HEAD_B, taper=0.62)
     rgb = shade(skin_albedo(), h)
     # 앞머리·옆머리 그늘 (이마 윗부분, 얼굴 양옆)
     hl = hairline_y(Xf)
-    rgb *= (1 - 0.14 * np.clip((hl + 18 - Yf) / 18, 0, 1) * (Yf > hl - 2))[..., None]
+    rgb *= (1 - 0.10 * np.clip((hl + 12 - Yf) / 12, 0, 1) * (Yf > hl - 2))[..., None]
+    # 쓸어 넘긴 앞머리 아래 그늘 (이마 오른쪽, 비스듬히)
+    fr_y = hairline_y(268) - 8 + 78 * np.clip((Xf - 268) / 112, 0, 1) ** 1.1
+    rgb *= (1 - 0.12 * np.clip((fr_y + 10 - Yf) / 10, 0, 1) * (Yf > fr_y - 30) * (Xf > 272))[..., None]
     side_sh = np.clip((np.abs(Xf - 300) - 62) / 36, 0, 1) * (Yf < 372) * (Yf > 200)
     rgb *= (1 - 0.12 * side_sh)[..., None]
     # 턱선 둥글게: 얼굴 아래쪽 가장자리로 갈수록 살짝 어둡게
@@ -385,12 +412,14 @@ def draw_base():
     for sgn in (-1, 1):
         nd.ellipse([P(300 + sgn * 6.5 - 1.6, 314.5), P(300 + sgn * 6.5 + 1.6, 316.7)], fill=(170, 110, 105, 110))
     layer.alpha_composite(blur(nos, 0.7))
-    # 볼 하이라이트(촉촉함)
+    # 물광 하이라이트: 광대·콧등·이마·턱
     hi = new_layer()
     hd = ImageDraw.Draw(hi)
-    hd.ellipse([P(238, 296), P(256, 304)], fill=(255, 250, 248, 70))
-    hd.ellipse([P(344, 296), P(362, 304)], fill=(255, 250, 248, 70))
-    layer.alpha_composite(blur(hi, 2.0))
+    hd.ellipse([P(234, 292), P(260, 306)], fill=(255, 250, 248, 40))
+    hd.ellipse([P(340, 292), P(366, 306)], fill=(255, 250, 248, 40))
+    hd.line([P(300, 266), P(300, 298)], fill=(255, 250, 246, 34), width=int(2 * K))
+    hd.ellipse([P(293, 360), P(307, 366)], fill=(255, 248, 244, 55))
+    layer.alpha_composite(blur(hi, 3.2))
     # --- 앞머리 ---
     layer.alpha_composite(draw_front_hair())
     return layer
@@ -400,17 +429,17 @@ def draw_base():
 def eye_curves(cx, side, o):
     """o=뜬 정도 0..1. side -1 왼눈 +1 오른눈(바깥쪽 방향). 바깥 끝이 살짝 올라간 아몬드형"""
     w = EYE_W
-    hu = 15.0 * o
-    hl = 7.5 * (0.5 + 0.5 * o)
-    inner = (cx - w * side, EYE_Y + 2.5)
-    outer = (cx + w * side, EYE_Y - 1.5 - 1.0 * o)
+    hu = 13.5 * o
+    hl = 7.0 * (0.5 + 0.5 * o)
+    inner = (cx - w * side, EYE_Y + 3.0)
+    outer = (cx + w * side, EYE_Y - 3.0 - 1.0 * o)
     up, lo = [], []
     for k in range(41):
         t = k / 40
         u = -1 + 2 * t
         x = inner[0] + (outer[0] - inner[0]) * t
         base_y = inner[1] + (outer[1] - inner[1]) * t
-        f = max(0.0, 1 - u * u) ** 0.7 * (1 + 0.12 * u)
+        f = max(0.0, 1 - u * u) ** 0.65 * (1 + 0.16 * u)
         up.append((x, base_y - hu * f))
         g = max(0.0, 1 - u * u) ** 0.85
         lo.append((x, base_y + hl * g))
@@ -432,7 +461,7 @@ def draw_eyes(o):
         sc *= (0.94 + 0.06 * np.clip(1 - np.abs(Xf - cx) / EYE_W, 0, 1))[..., None]
         layer.alpha_composite(to_img(sc, ca))
         # 홍채: 크게(눈 폭의 60%), 따뜻한 갈색, 아래쪽이 밝은 그라데이션
-        icx, icy, r = cx + 0.4 * side, EYE_Y + 1.0, 15.6
+        icx, icy, r = cx + 0.6 * side, EYE_Y + 1.2, 15.2
         dx, dy = Xf - icx, Yf - icy
         rr = np.sqrt(dx * dx + dy * dy) / r
         ang = np.arctan2(dy, dx)
@@ -442,9 +471,9 @@ def draw_eyes(o):
         lum = lum * (0.85 + 0.3 * fibers * np.clip(1 - np.abs(rr - 0.6) / 0.4, 0, 1))
         lum *= 1 - 0.6 * smoothstep(0.86, 1.0, rr)  # 테두리 어둡게
         lum *= 1 - 0.3 * np.clip(1 - (Yf - (icy - r)) / 7, 0, 1)  # 윗꺼풀 그늘
-        iris = np.stack([0.50 * lum * 1.15, 0.30 * lum * 1.0, 0.20 * lum * 0.95], -1)
-        # 홍채 아래쪽에 호박빛 반사
-        iris += (np.clip(dy / r - 0.2, 0, 1) * 0.35 * inside)[..., None] * np.array([0.45, 0.30, 0.12])
+        iris = np.stack([0.34 * lum * 1.1, 0.21 * lum * 1.0, 0.17 * lum * 1.0], -1)
+        # 홍채 아래쪽에 갈색 반사
+        iris += (np.clip(dy / r - 0.25, 0, 1) * 0.30 * inside)[..., None] * np.array([0.40, 0.24, 0.12])
         ir = to_img(np.clip(iris, 0, 1), inside * ca)
         pd = ImageDraw.Draw(ir)
         pr = 6.2
@@ -457,13 +486,13 @@ def draw_eyes(o):
         # 속눈썹 라인(부드러운 다크 브라운) + 바깥쪽 긴 속눈썹 몇 가닥
         lash = new_layer()
         ld = ImageDraw.Draw(lash)
-        ld.line([P(*p) for p in up], fill=(58, 34, 30, 235), width=int(1.9 * K))
+        ld.line([P(*p) for p in up], fill=(48, 30, 30, 240), width=int(1.9 * K))
         ld.line([P(*up[-1]), P(up[-1][0] + 4.5 * side, up[-1][1] - 2.4)], fill=(58, 34, 30, 220), width=int(1.5 * K))
         for k in range(14, 40, 3):
             x, y = up[k]
             u = -1 + 2 * (k / 40)
             ang2 = math.radians(-90 + side * (20 + 42 * u))
-            ln = (4.0 + 5.0 * max(0.0, u)) * (0.5 + 0.5 * o)
+            ln = (4.5 + 6.0 * max(0.0, u)) * (0.5 + 0.5 * o)
             xm = x + math.cos(ang2) * ln * 0.5
             ym = y + math.sin(ang2) * ln * 0.55
             x2 = x + math.cos(ang2) * ln + side * 0.8
@@ -511,19 +540,19 @@ def draw_brows():
         for k in range(31):
             t = k / 30
             x = cx + side * (-20 + 46 * t)
-            y = EYE_Y - 25 - 4.5 * math.sin(math.pi * min(1, t * 1.1)) + 4 * max(0, t - 0.75) * 4
+            y = EYE_Y - 26 - 3.0 * math.sin(math.pi * min(1, t * 1.1)) + 4 * max(0, t - 0.75) * 3
             pts.append((x, y))
         under = new_layer()
         ud = ImageDraw.Draw(under)
         for k in range(30):
             w = (3.2 - 1.6 * max(0, (k / 30) - 0.5) * 2) * K
-            ud.line([P(*pts[k]), P(*pts[k + 1])], fill=(118, 84, 70, 185), width=max(1, int(w)))
+            ud.line([P(*pts[k]), P(*pts[k + 1])], fill=(96, 68, 60, 200), width=max(1, int(w)))
         layer.alpha_composite(blur(under, 1.1))
         d = ImageDraw.Draw(layer)
         for i in range(120):
             t = rng.random() ** 0.9
             x = cx + side * (-20 + 46 * t) + rng.uniform(-0.6, 0.6)
-            y = EYE_Y - 25 - 4.5 * math.sin(math.pi * min(1, t * 1.1)) + 4 * max(0, t - 0.75) * 4 + rng.uniform(-1.2, 1.2)
+            y = EYE_Y - 26 - 3.0 * math.sin(math.pi * min(1, t * 1.1)) + 4 * max(0, t - 0.75) * 3 + rng.uniform(-1.2, 1.2)
             ang = math.radians((-70 + 80 * t) if t < 0.5 else (8 + 14 * (t - 0.5)))
             if side < 0:
                 ang = math.pi - ang
@@ -540,7 +569,7 @@ def draw_mouth(state):
     gap = {'closed': 0.0, 'mid': 4.0, 'open': 8.5}[state]
     hw = MOUTH_HW + (0 if state == 'closed' else 1.0)
     cy = MOUTH_Y
-    corner_up = 3.2 if state == 'closed' else 2.0
+    corner_up = 3.4 if state == 'closed' else 2.2
     lc = (300 - hw, cy - corner_up)
     rc = (300 + hw, cy - corner_up)
     up_top, up_bot, lo_top, lo_bot = [], [], [], []
@@ -576,8 +605,8 @@ def draw_mouth(state):
     # 입술: 코랄 핑크, 글로시
     lips = new_layer()
     ld = ImageDraw.Draw(lips)
-    ld.polygon([P(*p) for p in (up_top + up_bot[::-1])], fill=(226, 118, 128, 255))
-    ld.polygon([P(*p) for p in (lo_top + lo_bot[::-1])], fill=(240, 140, 148, 255))
+    ld.polygon([P(*p) for p in (up_top + up_bot[::-1])], fill=(238, 142, 140, 255))
+    ld.polygon([P(*p) for p in (lo_top + lo_bot[::-1])], fill=(246, 160, 156, 255))
     la = np.asarray(lips).astype(np.float32)
     upper = Yf < cy - gap * 0.2
     sh = np.where(upper, 1 - 0.14 * np.clip((Yf - (cy - 6)) / 6, 0, 1), 1.0)
@@ -585,7 +614,13 @@ def draw_mouth(state):
     sh = sh * (1 + 0.40 * low_hi * (~upper)) * np.where(~upper, 1 - 0.22 * np.clip((Yf - (cy + 5 + gap * 0.45)) / 5, 0, 1), 1)
     sh = sh * (1 - 0.30 * np.clip((np.abs(Xf - 300) - hw * 0.6) / (hw * 0.4), 0, 1))
     la[..., :3] *= sh[..., None]
-    lips = blur(Image.fromarray(np.clip(la, 0, 255).astype(np.uint8), 'RGBA'), 0.45)
+    # 그라데이션 립: 안쪽(입선 근처)은 진한 코랄, 바깥은 피부로 번지듯
+    core = np.exp(-0.5 * (((Xf - 300) / (hw * 0.55)) ** 2 + ((Yf - cy - gap * 0.2) / 4.5) ** 2))
+    la[..., 0] = la[..., 0] * (1 - 0.02 * core)
+    la[..., 1] = la[..., 1] * (1 - 0.30 * core)
+    la[..., 2] = la[..., 2] * (1 - 0.28 * core)
+    la[..., 3] *= 1 - 0.35 * np.clip((np.abs(Xf - 300) - hw * 0.7) / (hw * 0.3), 0, 1)
+    lips = blur(Image.fromarray(np.clip(la, 0, 255).astype(np.uint8), 'RGBA'), 0.8)
     layer.alpha_composite(lips)
     line = new_layer()
     lnd = ImageDraw.Draw(line)
