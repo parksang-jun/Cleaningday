@@ -357,8 +357,9 @@ function sponsorFor(dirt: DirtType | undefined, placement: Placement, surface?: 
 /** 쇼호스트 이름 — 기본 이름 '반디'는 언어별 표기, 운영자가 바꾼 이름은 그대로 */
 function hostName(): string {
   const n = hostConfig().name;
-  if (n !== '민서' && n !== '반디') return n;
-  return getLang() === 'ko' ? '민서' : getLang() === 'ja' ? 'ミンソ' : 'Minseo';
+  // 기본 이름(이전 기본값 포함)은 언어별로 — 운영자가 바꾼 이름은 그대로
+  if (n !== '뽀득이' && n !== '민서' && n !== '반디') return n;
+  return getLang() === 'ko' ? '뽀득이' : getLang() === 'ja' ? 'ピカリン' : 'Squeaky';
 }
 
 /** 쇼호스트 등장 조건: 켜져 있고, 같은 판에서 같은 제품을 다시 보여주지 않고, 소개(intro)는 제품별 재노출 간격을 지킨다.

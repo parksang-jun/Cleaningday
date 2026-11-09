@@ -635,7 +635,7 @@ function renderHost(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
     const url = String(f.get('photo') || '').trim();
     saveHostConfig({
       enabled: Boolean(f.get('enabled')),
-      name: String(f.get('name') || '민서'),
+      name: String(f.get('name') || '뽀득이'),
       introCooldownMin: Number(f.get('introCooldownMin') || 0),
       introFromStage: Number(f.get('introFromStage') || 1),
       struggleAfterTries: Number(f.get('struggleAfterTries') || 2),

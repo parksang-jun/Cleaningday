@@ -1597,7 +1597,7 @@ button {
   aspect-ratio: 1;
   border-radius: 50%;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 32%, #f4faf8 0%, #d2e7e2 70%, #c3dcd6 100%);
+  background: radial-gradient(circle at 50% 30%, #f6fbfa 0%, #d6ebe6 70%, #c6dfd9 100%);
   isolation: isolate;
 }
 .hav__fig {
@@ -1623,9 +1623,9 @@ button {
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
-  /* 초상은 반신이라 원 안에서 얼굴이 크게 보이도록 살짝 확대 */
-  transform: scale(1.22);
-  transform-origin: 50% 44%;
+  /* 마스코트가 원을 꽉 채우도록 살짝 확대 */
+  transform: scale(1.1);
+  transform-origin: 50% 52%;
 }
 .hav__eyes,
 .hav__mouth {

@@ -1,7 +1,7 @@
 // 쇼호스트 얼굴 — 세 가지 소스
 //  1) 운영자가 올린 실사 영상(제품별 소개 영상, HeyGen/D-ID 같은 AI 아바타 서비스나 실제 촬영본) → <video>
 //  2) 운영자가 올린 실사 사진 → <img> + 말할 때 링 펄스
-//  3) 내장 초상(tools/host-portrait.py 로 그린 페인팅, 레이어 9장) → 깜빡임·입 모양·눈썹 강조를 레이어 교체로 애니메이션
+//  3) 내장 마스코트 '뽀득이'(tools/host-portrait.py 로 그린 청소 거품 캐릭터, 레이어 9장) → 깜빡임·입 모양·눈썹 강조를 레이어 교체로 애니메이션
 import base from './assets/host/base.webp';
 import brows from './assets/host/brows.webp';
 import eyesClosed from './assets/host/eyes-closed.webp';
