@@ -9,6 +9,7 @@ import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES,
 import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
 import { activeSponsors, allItems, countryFor, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
 import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type MessKind, type StageMode, type WorldInfo } from './game/levels';
+import { dominantDirt, GEAR_COOLDOWN_MS, GEAR_MESS_COUNT, GEAR_SLOW_AT, GEAR_SLOW_CLEAN, GEAR_TIP_SEC, premiumFor, type GearPick, type GearReason } from './gear';
 import { findMix, MIXES, mixParts } from './game/catalog';
 import { mulberry32 } from './game/rng';
 import { cautionTipFor, tipForCombo, tipForItems, tipsFor, type CleaningTip } from './game/tips';
@@ -551,6 +552,9 @@ interface GameState {
   spawnToastAt: number;
   /** 재오염 예고 배너가 떠 있는 동안(초) */
   messWarnLeft: number;
+  /** 장비 추천 카드: 이 판에서 이미 보여 줬나 / 남은 표시 시간(초) */
+  gearShown: boolean;
+  gearLeft: number;
   lastTick: number;
   /** 쇼호스트가 떠 있는 동안 시계를 멈춤 */
   paused: boolean;
@@ -627,7 +631,7 @@ function startLevel(id: number) {
         <button class="icon-btn hud__journal" data-act="journal" aria-label="${t('journal')}" data-testid="journal">📖<span class="badge" data-el="unknown"></span></button>
       </header>
       <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : goalText(level))}</div>
-      <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><div class="combo" data-el="combo" hidden></div><div class="scan" data-el="scan" hidden></div><div class="mess-warn" data-el="mess-warn" data-testid="mess-warn" hidden></div></div>
+      <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><div class="combo" data-el="combo" hidden></div><div class="scan" data-el="scan" hidden></div><div class="mess-warn" data-el="mess-warn" data-testid="mess-warn" hidden></div><div class="gear" data-el="gear" data-testid="gear-tip" hidden></div></div>
       <div class="boosters" data-el="boosters" data-testid="boosters"></div>
       <nav class="toolbar" data-el="toolbar"></nav>
     </div>`;
@@ -665,6 +669,8 @@ function startLevel(id: number) {
     hints: new Map(),
     scanLeft: 0,
     messWarnLeft: 0,
+    gearShown: false,
+    gearLeft: 0,
     hintNudged: new Set(),
     noEffects: 0,
     mixes: [],
@@ -945,6 +951,106 @@ function updateModeHud() {
   }
 }
 
+// ---------- 장비 추천: "이런 도구를 쓰면 청소가 더 빨라지고 깨끗해져요" ----------
+let lastGearTipAt = 0;
+
+/** 지금 상황에 맞는 프리미엄 장비 하나를 골라 뽀득이 카드로 설명한다. 한 판에 한 번, 판 사이 쿨다운 */
+function maybeGearTip(reason: GearReason, dirtHint?: DirtType): boolean {
+  const g = game;
+  if (!g || g.finished || g.failed || g.gearShown || g.level.id <= 3) return false;
+  if (hostOpen() || app.querySelector('.modal') || Date.now() - lastGearTipAt < GEAR_COOLDOWN_MS) return false;
+  const dirt = dirtHint ?? dominantDirt(g.session.dirtKinds, (d) => g.session.remainingOf(d));
+  if (!dirt) return false;
+  const pick = premiumFor(dirt, mainSurfaceOf(dirt) as SurfaceType, [...getStore().owned, ...g.trials]);
+  if (!pick) return false;
+  g.gearShown = true;
+  lastGearTipAt = Date.now();
+  showGearTip(pick, reason);
+  track('gear_tip', { level: g.level.id, item: pick.spec.id, reason, dirt });
+  return true;
+}
+
+function gearBadges(pick: GearPick): string {
+  const out: string[] = [];
+  if (pick.x > 1.05) out.push(t('premiumFaster', { x: pick.x }));
+  if (pick.noCleaner) out.push(t('premiumNoCleaner'));
+  if (pick.wide) out.push(t('premiumWide'));
+  return out.map((b) => `<span class="pill pill--premium">${esc(b)}</span>`).join('');
+}
+
+function showGearTip(pick: GearPick, reason: GearReason) {
+  const g = game;
+  const el = app.querySelector<HTMLElement>('[data-el="gear"]');
+  if (!g || !el) return;
+  const st = getStore();
+  const name = t(`item_${pick.spec.base}`);
+  const dirtName = t(`dirt_${pick.dirt}`);
+  const can = st.coins >= pick.spec.cost;
+  el.innerHTML = `
+    <button class="gear__close" data-act="gear-close" aria-label="close">×</button>
+    <div class="gear__head"><span class="host-rec__avatar">${hostAvatarSmall({ photo: hostConfig().photo })}</span><b>${esc(t('gearTitle', { name: hostName() }))}</b></div>
+    <div class="gear__item"><span class="gear__icon">${iconFor(pick.spec.base)}</span><span class="gear__name">${esc(name)}</span>${gearBadges(pick)}</div>
+    <p class="gear__line">${esc(t(`gearLine_${reason}`, { item: name, dirt: dirtName, x: pick.x }))}</p>
+    <div class="gear__act">
+      ${can ? `<button class="btn btn--sm btn--primary" data-act="gear-buy" data-testid="gear-buy">${esc(t('gearBuy', { c: pick.spec.cost }))}</button>` : `<button class="btn btn--sm btn--ad" data-act="gear-ad" data-testid="gear-ad" ${adCoinsLeft(st) > 0 ? '' : 'disabled'}>${esc(t('gearPoor', { c: pick.spec.cost, a: AD_COINS }))}</button>`}
+      <button class="btn btn--sm" data-act="gear-shop" data-testid="gear-shop">${t('shop')}</button>
+    </div>`;
+  el.dataset.item = pick.spec.id;
+  el.hidden = false;
+  g.gearLeft = GEAR_TIP_SEC;
+  sfx.warn();
+  el.querySelector('[data-act="gear-close"]')?.addEventListener('click', () => hideGearTip());
+  el.querySelector('[data-act="gear-shop"]')?.addEventListener('click', () => {
+    hideGearTip();
+    openShop(true);
+  });
+  el.querySelector('[data-act="gear-buy"]')?.addEventListener('click', () => {
+    const st2 = getStore();
+    if (st2.coins < pick.spec.cost) {
+      toast(t('needCoins'), 'warn');
+      return;
+    }
+    st2.coins -= pick.spec.cost;
+    st2.owned.push(pick.spec.id);
+    persist();
+    track('shop_buy', { item: pick.spec.id, premium: true, via: 'gear_tip' });
+    sfx.buy();
+    hideGearTip();
+    if (game) {
+      game.selected = pick.spec.id; // 바로 손에 쥐어 준다
+      renderToolbar();
+      toast(esc(t('gearEquipped', { item: name })), 'good');
+    }
+  });
+  el.querySelector<HTMLButtonElement>('[data-act="gear-ad"]')?.addEventListener('click', async (e) => {
+    const b = e.currentTarget as HTMLButtonElement;
+    if (adCoinsLeft(getStore()) <= 0) return;
+    b.disabled = true;
+    if (await watchCoinAd()) {
+      if (game && !game.finished && !game.failed) showGearTip(pick, reason); // 코인이 늘었으니 구매 버튼으로 다시
+    } else b.disabled = false;
+  });
+}
+
+function hideGearTip() {
+  const el = app.querySelector<HTMLElement>('[data-el="gear"]');
+  if (el) el.hidden = true;
+  if (game) game.gearLeft = 0;
+}
+
+/** 광고 보고 코인 받기 (상점·장비 추천 공용) — 성공하면 true */
+async function watchCoinAd(): Promise<boolean> {
+  if (adCoinsLeft(getStore()) <= 0) return false;
+  if (!(await ads.showRewarded('coins'))) return false;
+  const st = getStore();
+  daily(st).adCoins++;
+  st.coins += AD_COINS;
+  persist();
+  track('coins_ad', { coins: AD_COINS, left: adCoinsLeft(st) });
+  for (let i = 0; i < 4; i++) setTimeout(() => sfx.coin(i), i * 70);
+  return true;
+}
+
 /** 재오염 HUD: 다음 발생까지 초 / 차단 중 / 끝 */
 function updateMessHud() {
   const g = game;
@@ -1072,6 +1178,7 @@ function handleEvents(events: SessionEvent[]) {
       updateMessHud();
       updateUnknownBadge();
       track('mess', { level: g.level.id, kind: ev.mess, n: ev.count });
+      if (ev.count === GEAR_MESS_COUNT) setTimeout(() => maybeGearTip('mess', ev.dirt), 900);
     } else if (ev.kind === 'spawned') {
       updateModeHud();
       sfx.plop();
@@ -1269,6 +1376,12 @@ function step(dt: number) {
     }
   }
   if (g.level.mode === 'fragile' || g.level.mode === 'rush') updateModeHud();
+  if (g.gearLeft > 0) {
+    g.gearLeft -= dt;
+    if (g.gearLeft <= 0) hideGearTip();
+  } else if (!g.gearShown && g.session.engaged && g.session.time >= g.timing.parSec * GEAR_SLOW_AT && g.session.cleanliness < GEAR_SLOW_CLEAN) {
+    maybeGearTip('slow');
+  }
   if (g.level.mess) {
     updateMessHud();
     if (g.messWarnLeft > 0) {
@@ -1329,15 +1442,23 @@ function failLevel(reason: 'time' | 'ruined' = 'time') {
   closeHost();
   sfx.fail();
   track('level_fail', { level: g.level.id, clean: Math.round(g.session.cleanliness * 100), reason });
+  // 다음엔 이 장비로 — 남은 오염 중 가장 많은 것에 맞는 프리미엄 장비
+  const failDirt = reason === 'time' ? dominantDirt(g.session.dirtKinds, (d) => g.session.remainingOf(d)) : null;
+  const failGear = failDirt && g.level.id > 3 ? premiumFor(failDirt, mainSurfaceOf(failDirt) as SurfaceType, [...getStore().owned, ...g.trials]) : null;
   modal(
     `<div class="result" data-testid="fail">
       <h2>${reason === 'ruined' ? `💔 ${t('ruinedTitle')}` : `⏱ ${t('failTitle')}`}</h2>
       <p class="muted">${esc(reason === 'ruined' ? t('ruinedText') : t('failText'))} · ${Math.floor(g.session.cleanliness * 100)}% / ${Math.round(g.level.passClean * 100)}%</p>
       ${reason === 'ruined' ? '' : `<button class="btn btn--ad btn--block" data-act="extend" data-testid="extend">${t('extendAd')}</button><button class="btn btn--block" data-act="extend-coins" data-testid="extend-coins" ${getStore().coins < CONTINUE_COINS ? 'disabled' : ''}>${esc(t('extendCoins', { c: CONTINUE_COINS, s: BOOSTERS.time.amount }))}</button>`}
+      ${failGear ? `<p class="result__gear" data-testid="fail-gear">${iconFor(failGear.spec.base)} ${esc(t('gearLine_fail', { item: t(`item_${failGear.spec.base}`), dirt: t(`dirt_${failGear.dirt}`), x: failGear.x }))} <button class="link-btn small" data-act="fail-shop">${t('shop')} ›</button></p>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry" data-testid="fail-retry">${t('retry')}</button><button class="btn" data-act="menu">${t('menu')}</button></div>
     </div>`,
     (root, close) => {
       root.parentElement!.dataset.dismiss = 'no';
+      root.querySelector('[data-act="fail-shop"]')?.addEventListener('click', () => {
+        track('gear_tip', { level: g.level.id, item: failGear!.spec.id, reason: 'fail', dirt: failGear!.dirt });
+        openShop(true);
+      });
       root.querySelector('[data-act="extend"]')?.addEventListener('click', async (e) => {
         const b = e.currentTarget as HTMLButtonElement;
         b.disabled = true;
@@ -1763,13 +1884,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
         const b = e.currentTarget as HTMLButtonElement;
         if (adCoinsLeft(getStore()) <= 0) return;
         b.disabled = true;
-        if (await ads.showRewarded('coins')) {
-          const st2 = getStore();
-          daily(st2).adCoins++;
-          st2.coins += AD_COINS;
-          persist();
-          track('coins_ad', { coins: AD_COINS, left: adCoinsLeft(st2) });
-          for (let i = 0; i < 4; i++) setTimeout(() => sfx.coin(i), i * 70);
+        if (await watchCoinAd()) {
           close();
           openShop(inGame);
         } else b.disabled = false;
@@ -2022,6 +2137,8 @@ declare global {
       mess: () => { count: number; next: number | undefined; shield: number; kind: string | undefined };
       forceMess: () => void;
       setShield: (sec: number) => void;
+      gearTip: (reason: 'slow' | 'mess' | 'fail', dirt?: string) => boolean;
+      setCoins: (n: number) => void;
       useBooster: (id: string) => boolean;
       resultPick: () => { id: string; context: string; usedItem?: string } | null;
       kit: () => string[];
@@ -2061,6 +2178,15 @@ function exposeDebug() {
     mess: () => ({ count: game?.session.messCount ?? 0, next: game?.session.messIn, shield: game?.session.shieldLeft ?? 0, kind: game?.level.mess?.kind }),
     setShield: (sec: number) => {
       if (game) game.session.shieldUntil = game.session.time + sec;
+    },
+    setCoins: (n: number) => {
+      getStore().coins = n;
+      persist();
+    },
+    gearTip: (reason, dirt) => {
+      lastGearTipAt = 0;
+      if (game) game.gearShown = false;
+      return maybeGearTip(reason, dirt as DirtType | undefined);
     },
     forceMess: () => {
       if (!game?.level.mess) return;

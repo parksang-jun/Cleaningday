@@ -233,6 +233,22 @@ try {
   const clean1 = await page.evaluate(() => window.__sparkle.session().cleanliness);
   assert(clean1 < clean0, `progress drops when the mess lands (${(clean0 * 100).toFixed(0)}% → ${(clean1 * 100).toFixed(0)}%)`);
   await page.screenshot({ path: resolve(shots, '05b-mess.png') });
+  // 뽀득이의 장비 추천 카드 — 느리게 가는 중(목표시간 절반 지나고 반도 못 닦음)이거나 두 번째 재오염 때 뜬다
+  const slowTip = (await page.locator('[data-testid="gear-tip"]:not([hidden])').count()) === 1;
+  if (!slowTip) {
+    await page.evaluate(() => window.__sparkle.forceMess());
+    await page.waitForSelector('[data-testid="gear-tip"]:not([hidden])', { timeout: 3000 });
+  }
+  const gear4 = await page.locator('[data-testid="gear-tip"]').innerText();
+  assert(gear4.includes('gear tip') && gear4.includes('Steam cleaner') && gear4.includes('faster'), `host's gear tip recommends the steam cleaner for the window film (${slowTip ? 'slow pace' : 'second mess'}: "${gear4.split('\n')[1]}")`);
+  assert(gear4.includes('taking a while') || gear4.includes('Getting messed up again'), 'gear tip explains itself in context (slow pace / re-soiling)');
+  assert((await page.locator('[data-testid="gear-buy"]').innerText()).includes('1,200') || (await page.locator('[data-testid="gear-buy"]').innerText()).includes('1200'), 'with enough coins the tip offers "Buy now · 1200 coins"');
+  await page.screenshot({ path: resolve(shots, '05c-gear-tip.png') });
+  await page.click('[data-testid="gear-shop"]');
+  await page.waitForSelector('[data-testid="shop"]');
+  assert((await page.locator('[data-testid="gear-tip"]:not([hidden])').count()) === 0, 'gear tip closes when the shop opens from it');
+  await page.click('[data-testid="shop"] [data-act="close"]');
+  await page.waitForTimeout(150);
   await page.click('[data-testid="journal"]');
   await page.waitForSelector('[data-testid="journal-modal"]');
   assert((await page.locator('[data-testid^="hint-coins-"]').count()) === 0 && (await page.locator('[data-testid^="hint-ad-"]').count()) === 0, 'no hint buttons after stage 3');
@@ -380,8 +396,25 @@ try {
   await page.click('[data-testid="booster-bomb"]');
   await page.waitForTimeout(300);
   const cleanAfter = await page.evaluate(() => window.__sparkle.session().cleanliness);
-  assert(cleanAfter >= cleanBefore + 0.15, `foam bomb wipes ~20% of the remaining grime at once (${(cleanBefore * 100).toFixed(0)}% → ${(cleanAfter * 100).toFixed(0)}%)`);
+  assert(cleanAfter >= cleanBefore + 0.2 * (1 - cleanBefore) - 0.02, `foam bomb wipes ~20% of the remaining grime at once (${(cleanBefore * 100).toFixed(0)}% → ${(cleanAfter * 100).toFixed(0)}%)`);
   await page.screenshot({ path: resolve(shots, '08c-foam-bomb.png') });
+  // 장비 추천(느리게 가는 중) — 코인이 모자라면 "광고 보고 +80", 채워지면 바로 구매 → 툴바에 장착되고 선택됨
+  const coinsG1 = await page.evaluate(() => window.__sparkle.coins());
+  await page.evaluate(() => window.__sparkle.setCoins(750));
+  assert(await page.evaluate(() => window.__sparkle.gearTip('slow', 'grease')), 'gear tip can be raised for the stove grease');
+  const gear25 = await page.locator('[data-testid="gear-tip"]').innerText();
+  assert(gear25.includes('Drill brush') && gear25.includes('taking a while'), `slow-going tip recommends the drill brush for stove grease ("${gear25.replace(/\n+/g, ' | ')}")`);
+  assert((await page.locator('[data-testid="gear-ad"]').count()) === 1 && (await page.locator('[data-testid="gear-buy"]').count()) === 0, '750 coins < 800 → the tip offers "watch ad +80" instead of buy');
+  await page.click('[data-testid="gear-ad"]');
+  await page.waitForTimeout(1600);
+  assert((await page.evaluate(() => window.__sparkle.coins())) === 830, 'gear tip ad pays +80 coins');
+  assert((await page.locator('[data-testid="gear-buy"]').count()) === 1, 'card re-renders with a buy button once affordable');
+  await page.click('[data-testid="gear-buy"]');
+  await page.waitForTimeout(200);
+  assert((await page.evaluate(() => window.__sparkle.coins())) === 30, 'drill brush bought from the tip for 800 coins');
+  assert((await page.locator('[data-testid="item-drillbrush"].is-on').count()) === 1, 'bought gear lands in the toolbar already selected');
+  assert((await page.locator('[data-testid="gear-tip"]:not([hidden])').count()) === 0, 'tip closes after buying');
+  await page.evaluate((n) => window.__sparkle.setCoins(n), coinsG1 + 80 - 800); // 실제 흐름과 같은 잔액으로
   // 재오염 차단: 25초 동안 기름이 안 튄다
   await page.evaluate(() => window.__sparkle.setShield(0));
   await page.waitForTimeout(100);
