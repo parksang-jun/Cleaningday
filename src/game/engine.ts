@@ -401,6 +401,31 @@ export class CleanSession {
     if (this.limitSec !== undefined) this.limitSec += sec
   }
 
+  /** 거품 폭탄: 남은 오염의 frac 만큼을 칸 단위로 통째로 지운다(윗층이 있으면 벗겨서 아래층을 드러냄). 어느 칸이 지워졌는지 이벤트로 돌려준다 */
+  blast(frac: number, rand: () => number = Math.random): SessionEvent[] {
+    const events: SessionEvent[] = []
+    const dirty: number[] = []
+    for (let i = 0; i < this.w * this.h; i++) if (this.amount[i] > 0) dirty.push(i)
+    if (!dirty.length) return events
+    // 무작위 순서로 섞되, 한 번 지운 칸이 이웃과 뭉치도록 시작점 주변을 먼저
+    for (let i = dirty.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1))
+      ;[dirty[i], dirty[j]] = [dirty[j], dirty[i]]
+    }
+    const target = this.remaining * frac
+    let removed = 0
+    const cleared: number[] = []
+    const revealed: number[] = []
+    for (const i of dirty) {
+      if (removed >= target) break
+      removed += this.amount[i]
+      this.finishCell(i, cleared, revealed, events, false)
+    }
+    if (revealed.length) events.push({ kind: 'revealed', cells: revealed })
+    if (cleared.length) events.push({ kind: 'cleared', cells: cleared })
+    return events
+  }
+
   dirtAt(i: number): DirtType {
     return DIRT_TYPES[this.type[i]]
   }

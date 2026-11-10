@@ -167,6 +167,22 @@ describe('engine', () => {
     expect(s.budgetOf(det)).toBeGreaterThan(5)
   })
 
+  it('foam bomb blasts a fraction of the remaining grime cell by cell and reports the cleared cells', () => {
+    const s = new CleanSession(LEVELS[0])
+    const before = s.cleanliness
+    let seed = 7
+    const rand = () => ((seed = (seed * 48271) % 2147483647) / 2147483647)
+    const evs = s.blast(0.2, rand)
+    const cleared = evs.filter((e) => e.kind === 'cleared').flatMap((e) => (e.kind === 'cleared' ? e.cells : []))
+    expect(cleared.length).toBeGreaterThan(0)
+    expect(s.cleanliness).toBeGreaterThan(before + 0.15)
+    expect(s.cleanliness).toBeLessThan(0.35)
+    for (const i of cleared) expect(s.amount[i]).toBe(0)
+    // 다 지운 뒤엔 아무것도 안 함
+    s.clearAll()
+    expect(s.blast(0.5, rand)).toEqual([])
+  })
+
   it('layered dirt reveals the under layer when the top is wiped; clearing a kind fires typecleared', () => {
     const lv = LEVELS.find((l) => l.patches.some((p) => p.under))!
     const s = new CleanSession(lv)

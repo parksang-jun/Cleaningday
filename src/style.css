@@ -1742,3 +1742,100 @@ button {
   border-radius: 50%;
   overflow: hidden;
 }
+
+/* ---------- 코인 경제: 부스터 바 · 스캔 패널 · 상점 ---------- */
+.coins--btn {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.boosters {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px 0;
+}
+.booster {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(18, 181, 166, 0.35);
+  background: rgba(255, 255, 255, 0.85);
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink, #1b2a2e);
+  cursor: pointer;
+}
+.booster.is-empty {
+  opacity: 0.6;
+  border-style: dashed;
+}
+.booster:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.booster__icon {
+  font-size: 16px;
+}
+.booster__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.booster__n {
+  font-weight: 800;
+  color: #0e9488;
+}
+.scan {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(16, 32, 36, 0.86);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  animation: scan-in 0.25s ease-out;
+}
+.scan__title {
+  font-weight: 800;
+  margin-bottom: 4px;
+  color: #8be0d6;
+}
+.scan__row svg {
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+}
+@keyframes scan-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.shop__icon--emoji {
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+}
+.shop__item.is-booster {
+  background: rgba(18, 181, 166, 0.06);
+}
+.coin-ad {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 6px 0 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff7e0;
+}

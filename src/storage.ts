@@ -66,6 +66,10 @@ export interface Store {
   ads: AdState;
   progress: Progress;
   coins: number;
+  /** 부스터 보유 개수 (economy.ts) */
+  boosters: { time: number; bomb: number; scan: number };
+  /** 일일 카운터: 광고 코인·광고 부스터 횟수, 접속 보너스 */
+  daily: { day: string; adCoins: number; adBoosters: number; bonusDay: string; streak: number };
   owned: string[]; // 보유 아이템 id
   journal: string[]; // 발견한 조합 키 "dirt|tool|cleaner" (recipeKey)
   ops: Ops;
@@ -81,6 +85,8 @@ const DEFAULTS: Store = {
   ads: { lastInterstitialAt: 0, gamesSinceInterstitial: 0 },
   progress: { unlocked: 1, stars: {}, bestTime: {} },
   coins: 0,
+  boosters: { time: 0, bomb: 0, scan: 0 },
+  daily: { day: '', adCoins: 0, adBoosters: 0, bonusDay: '', streak: 0 },
   owned: [],
   journal: [],
   ops: { sponsors: [], overrides: {}, host: { ...DEFAULT_HOST }, counters: {}, lastHostAt: {}, lastIntroAt: {} },
@@ -121,6 +127,8 @@ export async function loadStore(): Promise<Store> {
         ads: { ...DEFAULTS.ads, ...p.ads },
         progress: { ...DEFAULTS.progress, ...p.progress, stars: { ...(p.progress?.stars ?? {}) }, bestTime: { ...(p.progress?.bestTime ?? {}) } },
         coins: typeof p.coins === 'number' ? p.coins : 0,
+        boosters: { ...DEFAULTS.boosters, ...(p.boosters ?? {}) },
+        daily: { ...DEFAULTS.daily, ...(p.daily ?? {}) },
         owned: Array.isArray(p.owned) ? p.owned : [],
         journal: Array.isArray(p.journal) ? p.journal : [],
         ops: {
