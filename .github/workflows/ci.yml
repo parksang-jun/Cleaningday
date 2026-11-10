@@ -12,7 +12,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci            # postinstall → tools/assets-b64 복원
+      - run: npm ci
       - run: npm run build
       - run: npm test
       - run: npx playwright install --with-deps chromium

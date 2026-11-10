@@ -225,5 +225,5 @@ src/
 
 ## 저장소·CI (GitHub `parksang-jun/Cleaningday`)
 
-- 바이너리(아이콘·스플래시 PNG, 마스코트 WebP, gradle-wrapper.jar)는 GitHub 에 올리지 않는다. 클론 후 `npm install` 이 `tools/assets-b64/`(base64) 를 풀어 WebP·jar 를 복원하고, `npm run assets` 가 `public/favicon.svg` 에서 아이콘·스플래시 PNG 를 다시 만든다(`scripts/make-icons.mjs` + `@capacitor/assets`). 마스코트 그림을 바꿨으면 `npm run assets:pack` 으로 b64 를 갱신한다.
+- 저장소에는 네이티브 프로젝트(`android/`, `ios/`)와 아이콘·스플래시·마스코트 이미지까지 그대로 들어 있다. 아이콘을 바꾸면 `public/favicon.svg` 를 고치고 `npm run assets`(`scripts/make-icons.mjs` + `@capacitor/assets`), 마스코트를 바꾸면 `python3 tools/host-portrait.py`.
 - CI(`.github/workflows/ci.yml`): push·PR 마다 `npm ci → build → vitest → Playwright e2e`.
