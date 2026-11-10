@@ -1,9 +1,9 @@
 // 난이도 검증 — 숙련자 봇이 96단계를 모두 깰 수 있고(보유 아이템·레시피로), 단계·구역 평균 시간이 올라가는지
 import { appendFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { premiumKitFor, resolveTiming, simulateBot } from './bot'
+import { kitFor, premiumKitFor, resolveTiming, simulateBot } from './bot'
 import { BASE_DETERGENTS, BASE_TOOLS, DIRT_SURFACES, DIRT_TYPES, recipesFor } from './catalog'
-import { LEVELS, TIERS, WORLDS } from './levels'
+import { LEVELS, MESS_FROM, TIERS, WORLDS } from './levels'
 
 describe('recipes', () => {
   it('every dirt on every allowed surface has a recipe using basic (non-premium) items', () => {
@@ -59,6 +59,40 @@ describe('difficulty curve', () => {
     for (let i = 1; i < areaAvg.length; i++) expect(areaAvg[i], `area ${i + 1} harder than ${i}`).toBeGreaterThan(areaAvg[i - 1])
     expect(tierAvg[tierAvg.length - 1]).toBeGreaterThan(tierAvg[0] * 2)
   }, 60_000)
+
+  it('re-soiling: every stage from 4 (except rush) gets a themed mess-maker; it costs the basic-gear bot real time and premium gear cuts most of it', () => {
+    let withMess = 0
+    const kinds = new Set<string>()
+    let base = 0
+    let messy = 0
+    let pro = 0
+    for (const lv of LEVELS) {
+      if (lv.id < MESS_FROM || lv.mode === 'rush') {
+        expect(lv.mess, `level ${lv.id} stays quiet`).toBeUndefined()
+        continue
+      }
+      expect(lv.mess, `level ${lv.id} has a mess-maker`).toBeDefined()
+      expect(lv.patches.flatMap((p) => [p.type, ...(p.under ? [p.under] : [])]), `level ${lv.id} mess dirt is one the stage already has`).toContain(lv.mess!.type)
+      expect(['mold', 'moss', 'iron']).not.toContain(lv.mess!.type)
+      withMess++
+      kinds.add(lv.mess!.kind)
+      const off = simulateBot(lv, 900, kitFor(lv), { mess: false })
+      const on = simulateBot(lv, 900, kitFor(lv), { mess: true })
+      const premium = simulateBot(lv, 900, premiumKitFor(lv), { mess: true })
+      expect(on.passed && !on.stuck, `level ${lv.id} still clearable while being messed up`).toBe(true)
+      if (off.time > lv.mess!.after + 1) expect(on.messCount, `level ${lv.id} actually got messed up`).toBeGreaterThanOrEqual(1)
+      expect(on.messCount).toBeLessThanOrEqual(Math.ceil(lv.mess!.cap / lv.mess!.amount))
+      base += off.time
+      messy += on.time
+      pro += premium.time
+    }
+    expect(withMess).toBeGreaterThan(70)
+    expect([...kinds].sort()).toEqual(['birds', 'drift', 'kids', 'leaves', 'pet', 'splash', 'splatter'])
+    // 기본 장비 봇: 재오염으로 10% 이상 느려진다. 프리미엄 장비는 재오염이 있어도 조용할 때의 기본 장비보다 빠르다.
+    expect(messy).toBeGreaterThan(base * 1.1)
+    expect(pro).toBeLessThan(base)
+    appendFileSync('/tmp/balance.txt', `mess: basic quiet ${base.toFixed(0)}s → messy ${messy.toFixed(0)}s (+${((messy / base - 1) * 100).toFixed(0)}%), premium messy ${pro.toFixed(0)}s\n`)
+  }, 120_000)
 
   it('premium gear makes stages clearly easier and leaves a polished finish (basic gear: no polish)', () => {
     // 각 구역에서 두 판씩 — 기본 지급품 vs 프리미엄 전부

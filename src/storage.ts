@@ -67,7 +67,7 @@ export interface Store {
   progress: Progress;
   coins: number;
   /** 부스터 보유 개수 (economy.ts) */
-  boosters: { time: number; bomb: number; scan: number };
+  boosters: { time: number; bomb: number; scan: number; shield: number };
   /** 일일 카운터: 광고 코인·광고 부스터 횟수, 접속 보너스 */
   daily: { day: string; adCoins: number; adBoosters: number; bonusDay: string; streak: number };
   owned: string[]; // 보유 아이템 id
@@ -85,7 +85,7 @@ const DEFAULTS: Store = {
   ads: { lastInterstitialAt: 0, gamesSinceInterstitial: 0 },
   progress: { unlocked: 1, stars: {}, bestTime: {} },
   coins: 0,
-  boosters: { time: 0, bomb: 0, scan: 0 },
+  boosters: { time: 0, bomb: 0, scan: 0, shield: 0 },
   daily: { day: '', adCoins: 0, adBoosters: 0, bonusDay: '', streak: 0 },
   owned: [],
   journal: [],

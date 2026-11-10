@@ -209,8 +209,10 @@ try {
   assert(intro4.includes('Hints end after stage 3'), 'stage 4 intro explains that hints are over');
   assert(intro4.includes('only some of them work'), 'stage 4 intro says only some tools work');
   assert((await page.locator('[data-testid="intro-mix"]').count()) === 1, 'stage 4 intro mentions that two cleaners in the kit can be mixed (vinegar + dish soap)');
+  assert((await page.locator('[data-testid="intro-mess"]').innerText()).includes('Dust keeps settling'), 'stage 4 intro warns that dust keeps settling while you clean (re-soiling starts at stage 4)');
   await page.click('[data-testid="start"]');
   await page.waitForSelector('[data-testid="item-squeegee"]');
+  assert((await page.locator('[data-testid="mess"]').innerText()).includes('⏸'), 'HUD shows the mess-maker paused until cleaning starts');
   const kit4 = await page.evaluate(() => window.__sparkle.kit());
   assert(kit4.includes('squeegee') && kit4.includes('glass') && kit4.length >= 5, `stage 4 kit mixes decoys in (${kit4.join(',')})`);
   assert(kit4.includes('vinegar') && kit4.includes('dishsoap'), `stage 4 kit holds both halves of the glass-cleaner mix (${kit4.join(',')})`);
@@ -219,6 +221,18 @@ try {
   await page.click('[data-testid="item-cloth"]');
   await sweep(page, 1, 8, 4);
   assert((await page.evaluate(() => window.__sparkle.tries('film'))) >= 2, 'two failed tools tried on the window film');
+  // 재오염: 먼지가 다시 내려앉음 — 예고 배너, 진행률 하락, 수첩 배지
+  const mess0 = await page.evaluate(() => window.__sparkle.mess());
+  assert(mess0.kind === 'drift' && mess0.next > 0 && mess0.count === 0, `HUD counts down to the next dust drift (${mess0.next.toFixed(1)}s)`);
+  const clean0 = await page.evaluate(() => window.__sparkle.session().cleanliness);
+  await page.evaluate(() => window.__sparkle.forceMess());
+  await page.waitForTimeout(120);
+  const mess1 = await page.evaluate(() => window.__sparkle.mess());
+  assert(mess1.count === 1, 'dust drifted onto the window (1 wave)');
+  assert((await page.locator('[data-testid="mess-warn"]:not([hidden])').count()) === 1 && (await page.locator('[data-testid="mess-warn"]').innerText()).includes('settled'), 'a banner announces the fresh mess');
+  const clean1 = await page.evaluate(() => window.__sparkle.session().cleanliness);
+  assert(clean1 < clean0, `progress drops when the mess lands (${(clean0 * 100).toFixed(0)}% → ${(clean1 * 100).toFixed(0)}%)`);
+  await page.screenshot({ path: resolve(shots, '05b-mess.png') });
   await page.click('[data-testid="journal"]');
   await page.waitForSelector('[data-testid="journal-modal"]');
   assert((await page.locator('[data-testid^="hint-coins-"]').count()) === 0 && (await page.locator('[data-testid^="hint-ad-"]').count()) === 0, 'no hint buttons after stage 3');
@@ -232,6 +246,7 @@ try {
   await page.click('[data-testid="stage-25"]');
   await page.waitForSelector('[data-testid="intro"]');
   await page.click('[data-testid="start"]');
+  await page.evaluate(() => window.__sparkle.setShield(600)); // 이 구간은 세정제·도구 효과를 재는 곳 — 재오염(기름 튐)은 아래 차단 부스터 검사에서 다시 켠다
   await page.waitForSelector('[data-testid="host"][data-placement="intro"]', { timeout: 4000 });
   assert((await page.locator('[data-testid="host"]').innerText()).includes('BrightMax'), 'live host introduces the sponsored degreaser at stage start');
   await page.waitForTimeout(1500);
@@ -320,11 +335,11 @@ try {
   assert(extended === limit + 30, `limit extended ${limit} → ${extended}`);
 
   // 코인 경제: HUD 부스터 바 → 상점(광고 코인·부스터 구매) → 판 안에서 사용 → 코인으로 이어하기
-  assert((await page.locator('[data-testid="boosters"] [data-booster]').count()) === 3, 'HUD shows the 3 booster slots (extra time, foam bomb, grime scan)');
+  assert((await page.locator('[data-testid="boosters"] [data-booster]').count()) === 4, 'HUD shows the 4 booster slots (extra time, foam bomb, grime scan, mess shield)');
   assert((await page.locator('[data-testid="booster-time"].is-empty').count()) === 1, 'booster slots start empty');
   await page.click('[data-testid="booster-time"]');
   await page.waitForSelector('[data-testid="shop"]');
-  assert((await page.locator('[data-testid="booster-list"] .shop__item').count()) === 3, 'tapping an empty slot opens the shop with the 3 boosters listed');
+  assert((await page.locator('[data-testid="booster-list"] .shop__item').count()) === 4, 'tapping an empty slot opens the shop with the boosters listed');
   assert((await page.locator('[data-testid="ad-coins"]').innerText()).includes('+80'), 'shop offers "watch ad → +80 coins"');
   assert((await page.locator('[data-testid="shop"] .coin-ad').innerText()).includes('5/5'), 'coin ads show the daily allowance (5/5)');
   const coinsA = await page.evaluate(() => window.__sparkle.coins());
@@ -347,6 +362,10 @@ try {
   await page.waitForTimeout(1600);
   await page.waitForSelector('[data-testid="shop"]');
   assert((await page.evaluate(() => window.__sparkle.boosters())).bomb === 1, 'watching an ad grants a foam bomb for free');
+  assert((await page.locator('[data-testid="booster-list"] .shop__item').count()) === 4, 'shop lists the mess shield as the 4th booster');
+  await page.click('[data-testid="shop-booster-shield"] [data-buy-booster]');
+  await page.waitForSelector('[data-testid="shop"]');
+  assert((await page.evaluate(() => window.__sparkle.boosters())).shield === 1, 'mess shield bought (80 coins)');
   await page.screenshot({ path: resolve(shots, '08b-shop-boosters.png'), fullPage: true });
   await page.click('[data-testid="shop"] [data-act="close"]');
   await page.waitForTimeout(200);
@@ -363,6 +382,16 @@ try {
   const cleanAfter = await page.evaluate(() => window.__sparkle.session().cleanliness);
   assert(cleanAfter >= cleanBefore + 0.15, `foam bomb wipes ~20% of the remaining grime at once (${(cleanBefore * 100).toFixed(0)}% → ${(cleanAfter * 100).toFixed(0)}%)`);
   await page.screenshot({ path: resolve(shots, '08c-foam-bomb.png') });
+  // 재오염 차단: 25초 동안 기름이 안 튄다
+  await page.evaluate(() => window.__sparkle.setShield(0));
+  await page.waitForTimeout(100);
+  assert((await page.evaluate(() => window.__sparkle.mess())).shield === 0, 'stove splatter is live again');
+  await page.click('[data-testid="booster-shield"]');
+  await page.waitForTimeout(150);
+  const shield = await page.evaluate(() => window.__sparkle.mess());
+  assert(shield.kind === 'splatter' && shield.shield > 20, `mess shield blocks the stove splatter for ${shield.shield.toFixed(0)}s`);
+  assert((await page.locator('[data-testid="mess"]').innerText()).includes('🛡'), 'HUD shows the shield instead of the countdown');
+  assert((await page.locator('[data-testid="booster-shield"].is-empty').count()) === 1, 'shield consumed');
   // 코인으로 이어하기 (100코인, +20초)
   const coinsC = await page.evaluate(() => window.__sparkle.coins());
   await page.evaluate(() => window.__sparkle.forceExpire());

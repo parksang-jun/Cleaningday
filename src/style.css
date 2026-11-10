@@ -1839,3 +1839,90 @@ button {
   border-radius: 12px;
   background: #fff7e0;
 }
+
+/* ---------- 재오염: HUD 카운트다운 · 예고/발생 배너 · 결과 안내 ---------- */
+.hud__mess {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7a4b12;
+  white-space: nowrap;
+}
+.hud__mess.is-urgent {
+  color: #d9480f;
+  animation: mess-pulse 0.5s ease-in-out infinite alternate;
+}
+.hud__mess.is-shield {
+  color: #0e9488;
+}
+.hud__mess.is-done {
+  color: #8a9ba0;
+}
+@keyframes mess-pulse {
+  to {
+    transform: scale(1.12);
+  }
+}
+.mess-warn {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 244, 214, 0.95);
+  color: #7a4b12;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  animation: mess-in 0.25s ease-out;
+}
+.mess-warn.is-hit {
+  background: rgba(255, 222, 200, 0.97);
+  color: #9a2f0a;
+  animation: mess-hit 0.5s ease-out;
+}
+.mess-warn__icon {
+  font-size: 18px;
+}
+@keyframes mess-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+/* 좁은 화면: 부스터 칸은 아이콘 + 개수만 (이름은 title 로) */
+@media (max-width: 520px) {
+  .booster {
+    justify-content: center;
+    padding: 6px 4px;
+  }
+  .booster__name {
+    display: none;
+  }
+}
+@keyframes mess-hit {
+  0% {
+    transform: translate(-50%, 0) scale(1.15);
+  }
+  100% {
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+.intro__mess {
+  background: #fff4d6;
+  color: #7a4b12;
+}
+.result__mess {
+  margin: 4px 0 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #fff4d6;
+  color: #7a4b12;
+  font-size: 13px;
+  text-align: center;
+}

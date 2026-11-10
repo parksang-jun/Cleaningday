@@ -322,6 +322,38 @@ export class Renderer {
     if (this.debris.length > 520) this.debris.splice(0, this.debris.length - 520);
   }
 
+  /** 재오염이 떨어짐 — 새로 생긴 자리에서 그 오염의 파편이 위에서 툭 떨어져 흩어진다 */
+  splat(cells: number[]) {
+    const s = this.session!;
+    if (!cells.length) return;
+    const sample = Math.min(cells.length, 36);
+    for (let k = 0; k < sample; k++) {
+      const i = cells[Math.floor(Math.random() * cells.length)];
+      const type = DIRT_TYPES[s.type[i]];
+      const st = DEBRIS[type];
+      for (let q = 0; q < 2; q++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = st.speed * (0.3 + Math.random() * 0.5);
+        this.debris.push({
+          x: (i % s.w) + Math.random(),
+          y: Math.floor(i / s.w) + Math.random() - 1.5,
+          vx: Math.cos(a) * sp,
+          vy: 4 + Math.random() * 6, // 아래로 떨어진다
+          g: 18,
+          life: 0.35 + Math.random() * 0.35,
+          max: 0.7,
+          size: st.size * (0.7 + Math.random() * 0.8),
+          rot: Math.random() * Math.PI * 2,
+          spin: (Math.random() - 0.5) * 10,
+          color: st.colors[Math.floor(Math.random() * st.colors.length)],
+          shape: st.shape,
+          suck: false,
+        });
+      }
+    }
+    if (this.debris.length > 520) this.debris.splice(0, this.debris.length - 520);
+  }
+
   /** 큰 반짝임 (종류 완료·발견) */
   celebrate(count = 40) {
     const s = this.session!;

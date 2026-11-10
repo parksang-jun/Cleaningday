@@ -183,6 +183,49 @@ describe('engine', () => {
     expect(s.blast(0.5, rand)).toEqual([])
   })
 
+  it('re-soiling: kids, pets and splatter keep dirtying the stage on a schedule, with a warning first, a shield to block it, and a cap', () => {
+    const lv = LEVELS.find((l) => l.mess?.kind === 'kids')!
+    const m = lv.mess!
+    expect(lv.id).toBeGreaterThanOrEqual(4)
+    expect(lv.patches.map((p) => p.type)).toContain(m.type) // 생기는 오염은 그 판에 이미 있는 종류 — 지울 도구가 반드시 있다
+    const s = new CleanSession(lv)
+    const total0 = s.initialTotal
+    const left0 = s.remainingOf(m.type)
+    expect(s.messIn).toBeCloseTo(m.after, 5)
+    // 예고 → 발생
+    const evs: ReturnType<CleanSession['tick']> = []
+    for (let t = 0; t < m.after + 0.2; t += 0.1) evs.push(...s.tick(0.1))
+    const warn = evs.find((e) => e.kind === 'messWarn')
+    const hit = evs.find((e) => e.kind === 'mess')
+    expect(warn && warn.kind === 'messWarn' && warn.mess).toBe('kids')
+    expect(hit && hit.kind === 'mess' && hit.cells.length).toBeGreaterThan(10)
+    expect(evs.indexOf(warn!)).toBeLessThan(evs.indexOf(hit!))
+    expect(s.messCount).toBe(1)
+    expect(s.initialTotal).toBeGreaterThan(total0 * (1 + m.amount * 0.5))
+    expect(s.remainingOf(m.type)).toBeGreaterThan(left0)
+    if (hit && hit.kind === 'mess') for (const i of hit.cells) expect(s.amount[i]).toBeGreaterThan(0)
+    // 차단: 그동안은 안 생기고, 끝난 뒤 이어진다
+    s.shield(10)
+    expect(s.shieldLeft).toBeCloseTo(10, 5)
+    let blocked = 0
+    for (let t = 0; t < 10; t += 0.1) blocked += s.tick(0.1).filter((e) => e.kind === 'mess').length
+    expect(blocked).toBe(0)
+    expect(s.messCount).toBe(1)
+    let after = 0
+    for (let t = 0; t < m.every + 3; t += 0.1) after += s.tick(0.1).filter((e) => e.kind === 'mess').length
+    expect(after).toBeGreaterThanOrEqual(1)
+    // 상한: 횟수·양 모두 끝이 있다
+    for (let t = 0; t < 600; t += 0.5) s.tick(0.5)
+    expect(s.messCount).toBeLessThanOrEqual(Math.ceil(m.cap / m.amount))
+    expect(s.messIn).toBeUndefined()
+    expect(s.initialTotal).toBeLessThanOrEqual(total0 * (1 + m.cap + m.amount)) // 마지막 한 번은 조금 넘칠 수 있다
+    // 끌 수 있다 (봇 비교용)
+    const quiet = new CleanSession(lv, undefined, lv.seed, { mess: false })
+    for (let t = 0; t < 60; t += 0.5) quiet.tick(0.5)
+    expect(quiet.messCount).toBe(0)
+    expect(quiet.messIn).toBeUndefined()
+  })
+
   it('layered dirt reveals the under layer when the top is wiped; clearing a kind fires typecleared', () => {
     const lv = LEVELS.find((l) => l.patches.some((p) => p.under))!
     const s = new CleanSession(lv)

@@ -23,8 +23,13 @@ import {
   type ToolFamily,
   type ToolSpec,
 } from './catalog'
-import { GRID_H, GRID_W, type LevelDef } from './levels'
+import { GRID_H, GRID_W, type LevelDef, type MessKind } from './levels'
 import { mulberry32 } from './rng'
+
+/** 재오염 예고 시간(초) — 경고를 보고 피할 수는 없지만 마음의 준비 */
+export const MESS_WARN = 1.2
+/** 차단이 끝난 뒤 다음 재오염까지 최소 간격(초) */
+export const MESS_SHIELD_GAP = 2
 
 export interface Soak {
   det: DetergentSpec
@@ -42,6 +47,8 @@ export type SessionEvent =
   | { kind: 'typecleared'; dirt: DirtType }
   | { kind: 'spotdone'; done: number; total: number }
   | { kind: 'spawned'; dirt: DirtType; left: number }
+  | { kind: 'messWarn'; mess: MessKind; dirt: DirtType } // 재오염 예고 (MESS_WARN 초 전)
+  | { kind: 'mess'; mess: MessKind; dirt: DirtType; cells: number[]; count: number } // 재오염 발생
   | { kind: 'revealed'; cells: number[] } // 윗층이 벗겨져 아래층이 드러남
   | { kind: 'cleared'; cells: number[] }
 
@@ -89,6 +96,16 @@ export class CleanSession {
   private readonly spawnRng: { next(): number }
   private growthAcc = 0
   private growthBudget = 0 // 번짐으로 더 생길 수 있는 양 (cap)
+  /** 재오염: 남은 예산(양), 다음 발생 시각, 예고 여부, 발생 횟수, 차단 종료 시각 */
+  private messBudget = 0
+  private messWavesLeft = 0
+  private nextMessAt = Infinity
+  private messWarned = false
+  messCount = 0
+  shieldUntil = -1
+  /** 재오염 켜짐 (봇 비교·테스트용으로 끌 수 있다) */
+  readonly messOn: boolean
+  private baseTotal = 1
   private readonly fine: Float32Array
   time = 0
   damage = 0 // 0~1
@@ -108,7 +125,9 @@ export class CleanSession {
     readonly level: LevelDef,
     timing?: Timing,
     seed = level.seed,
+    opts: { mess?: boolean } = {},
   ) {
+    this.messOn = opts.mess ?? true
     const n = this.w * this.h
     this.amount = new Float32Array(n)
     this.type = new Uint8Array(n)
@@ -228,8 +247,101 @@ export class CleanSession {
       if (this.under[i] > 0) this.perType[this.underType[i]] += this.under[i]
     }
     this.initialTotal = Math.max(total, 1e-6)
+    this.baseTotal = this.initialTotal
     this.remaining = total
     if (level.growth) this.growthBudget = this.remainingOf(level.growth.type) * (level.growth.cap - 1)
+    if (level.mess && this.messOn) {
+      this.messBudget = this.baseTotal * level.mess.cap
+      this.messWavesLeft = Math.ceil(level.mess.cap / level.mess.amount) // 양이 적게 떨어져도 횟수로는 끝이 있게
+      this.nextMessAt = level.mess.after
+      kinds.add(level.mess.type)
+      this.dirtKinds = DIRT_TYPES.filter((d) => kinds.has(d))
+    }
+  }
+
+  /** 재오염 — 남은 예산 (0 이면 더 안 생긴다) */
+  get messLeft(): number {
+    return this.level.mess && this.messOn && this.messWavesLeft > 0 ? this.messBudget / (this.baseTotal * this.level.mess.cap) : 0
+  }
+  /** 다음 재오염까지 남은 초 (없으면 undefined) */
+  get messIn(): number | undefined {
+    if (!this.level.mess || !this.messOn || this.messBudget <= 0 || this.messWavesLeft <= 0) return undefined
+    return Math.max(0, Math.max(this.nextMessAt, this.shieldUntil > this.time ? this.shieldUntil + MESS_SHIELD_GAP : 0) - this.time)
+  }
+  /** 차단 남은 초 */
+  get shieldLeft(): number {
+    return Math.max(0, this.shieldUntil - this.time)
+  }
+  /** 재오염 차단 (부스터) — sec 초 동안 아무도 어지럽히지 못한다 */
+  shield(sec: number) {
+    this.shieldUntil = Math.max(this.shieldUntil, this.time) + sec
+    this.messWarned = false
+  }
+
+  /** 재오염 한 번: 패턴대로 떨어뜨리고 바뀐 칸을 돌려준다 */
+  private messOne(): number[] {
+    const m = this.level.mess!
+    const t = DIRT_TYPES.indexOf(m.type)
+    const allowed = DIRT_SURFACES[m.type]
+    const want = Math.min(m.amount * this.baseTotal, this.messBudget)
+    if (want <= 0) return []
+    const rng = this.spawnRng
+    const cells = new Set<number>()
+    const before = this.remaining
+    const blob = (cx: number, cy: number, r: number, peak: number, soft = 0.5) => {
+      for (let y = Math.max(0, Math.floor(cy - r - 1)); y < Math.min(this.h, cy + r + 1); y++) {
+        for (let x = Math.max(0, Math.floor(cx - r - 1)); x < Math.min(this.w, cx + r + 1); x++) {
+          const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy)
+          if (d >= r) continue
+          const i = y * this.w + x
+          if (!allowed.includes(SURFACES[this.surfaceIdx[i]])) continue
+          const a = peak * (1 - Math.pow(d / r, 2) * soft) * (0.75 + 0.25 * this.fine[i])
+          const was = this.amount[i]
+          this.addDirt(i, t, a)
+          if (this.amount[i] > was + 1e-4) cells.add(i)
+        }
+      }
+    }
+    if (m.pattern === 'trail') {
+      // 발자국 줄 5~7걸음 — 아무 데서나 시작해 한 방향으로, 좌우로 번갈아 디딘다
+      const n = Math.min(9, Math.max(5, Math.round(want / (Math.PI * 1.3 * 1.3 * 0.6 * 0.7))))
+      const step = 3.2
+      const ang = rng.next() * Math.PI * 2
+      const dx = Math.cos(ang)
+      const dy = Math.sin(ang)
+      const span = n * step
+      const sx = 3 + rng.next() * (this.w - 6 - Math.max(0, dx * span)) - Math.min(0, dx * span)
+      const sy = 3 + rng.next() * (this.h - 6 - Math.max(0, dy * span)) - Math.min(0, dy * span)
+      const r = 1.3
+      const peak = Math.min(0.85, Math.max(0.35, want / (n * Math.PI * r * r * 0.6)))
+      for (let k = 0; k < n; k++) {
+        const side = (k % 2 ? 1 : -1) * 1.1
+        const cx = sx + dx * step * (k + 0.5) - dy * side
+        const cy = sy + dy * step * (k + 0.5) + dx * side
+        blob(cx, cy, r * (0.85 + rng.next() * 0.3), peak, 0.35)
+      }
+    } else if (m.pattern === 'scatter') {
+      // 한 지점 둘레에 점점이 튐 (세정제 한 번 뿌리면 대개 닿는 범위)
+      const cx = 5 + rng.next() * (this.w - 10)
+      const cy = 5 + rng.next() * (this.h - 10)
+      const n = Math.min(12, Math.max(5, Math.round(want / (Math.PI * 1.2 * 1.2 * 0.6 * 0.7))))
+      const R = 2.5 + Math.sqrt(n) * 0.9 + rng.next() * 1.5
+      const peak = Math.min(0.85, Math.max(0.4, want / (n * Math.PI * 1.2 * 1.2 * 0.6)))
+      for (let k = 0; k < n; k++) {
+        const ang = rng.next() * Math.PI * 2
+        const d = Math.sqrt(rng.next()) * R
+        blob(cx + Math.cos(ang) * d, cy + Math.sin(ang) * d, 0.7 + rng.next() * 0.9, peak, 0.4)
+      }
+    } else {
+      // 옅고 넓게 내려앉음 — 넓이는 양에 맞춰
+      const R = Math.min(14, Math.max(7, Math.sqrt(want / (Math.PI * 0.28 * 0.55)))) + rng.next() * 2
+      const cx = R + rng.next() * (this.w - 2 * R)
+      const cy = R + rng.next() * (this.h - 2 * R)
+      const peak = Math.min(0.4, Math.max(0.18, want / (Math.PI * R * R * 0.55)))
+      blob(cx, cy, R, peak, 0.7)
+    }
+    this.messBudget = Math.max(0, this.messBudget - (this.remaining - before))
+    return [...cells]
   }
 
   /** 생성 중 호출: 더 많은 오염이 생기면 총량도 늘어 진행률이 내려간다 */
@@ -458,6 +570,29 @@ export class CleanSession {
       this.nextSpawnAt = this.time + this.level.spawn.every
     }
     if (this.level.growth) this.grow(dt)
+    const m = this.level.mess
+    if (m && this.messOn && this.messBudget > 0 && this.messWavesLeft > 0) {
+      if (this.shieldUntil > this.time) {
+        // 차단 중: 다음 발생을 차단이 끝난 뒤로 민다
+        this.nextMessAt = Math.max(this.nextMessAt, this.shieldUntil + MESS_SHIELD_GAP)
+        this.messWarned = false
+      } else {
+        if (!this.messWarned && this.time >= this.nextMessAt - MESS_WARN) {
+          this.messWarned = true
+          events.push({ kind: 'messWarn', mess: m.kind, dirt: m.type })
+        }
+        if (this.time >= this.nextMessAt) {
+          const cells = this.messOne()
+          this.messWarned = false
+          this.messWavesLeft--
+          this.nextMessAt = this.time + m.every
+          if (cells.length) {
+            this.messCount++
+            events.push({ kind: 'mess', mess: m.kind, dirt: m.type, cells, count: this.messCount })
+          }
+        }
+      }
+    }
     for (let i = 0; i < this.soak.length; i++) {
       const s = this.soak[i]
       if (!s || s.until <= this.time || !s.det.dissolves) continue

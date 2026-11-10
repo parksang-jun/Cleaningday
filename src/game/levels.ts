@@ -127,6 +127,35 @@ export interface GrowthDef {
   cap: number // 처음 양 대비 최대 배수
 }
 
+/**
+ * 재오염 — 청소하는 동안 누가 자꾸 어지럽힌다. 4단계부터 (러시 모드 제외) 모든 판에 붙는다.
+ *  kids      아이들이 뛰어다님 → 발자국 줄(trail)
+ *  pet       반려동물이 지나감 → 털·발자국 줄(trail)
+ *  splatter  요리하다 기름·소스가 튐 → 점점이(scatter)
+ *  drift     창문·선반에 먼지가 내려앉음 → 옅게 넓게(haze)
+ *  splash    물·비누 거품이 튐 → 점점이(scatter)
+ *  leaves    낙엽·흙이 날려 옴 → 점점이(scatter)
+ *  birds     새똥·벌레가 떨어짐 → 점점이(scatter)
+ * 빨리 끝낼수록 덜 당한다 — 좋은 장비·부스터를 살 이유.
+ */
+export type MessKind = 'kids' | 'pet' | 'splatter' | 'drift' | 'splash' | 'leaves' | 'birds'
+export type MessPattern = 'trail' | 'scatter' | 'haze'
+export interface MessDef {
+  kind: MessKind
+  type: DirtType
+  pattern: MessPattern
+  /** 첫 발생(초, 시계 기준) */
+  after: number
+  /** 반복 간격(초) */
+  every: number
+  /** 한 번에 생기는 양 = 처음 오염량 × amount */
+  amount: number
+  /** 총 상한 = 처음 오염량 × cap */
+  cap: number
+}
+/** 재오염이 시작되는 단계 (1~3단계는 안내 단계라 조용하다) */
+export const MESS_FROM = 4
+
 export interface TierDef {
   id: number
   passClean: number
@@ -164,6 +193,8 @@ export interface LevelDef {
   theme: ThemeId
   spawn?: SpawnDef
   growth?: GrowthDef
+  /** 재오염 (4단계부터, 러시 제외) */
+  mess?: MessDef
   failDamage?: number // fragile: 이 손상 비율이면 실패
   outdoor: boolean // 실외(정원·자동차 실외) — 호스·고압세척기 사용 가능
   surface: SurfaceType // 대표 표면 (구역이 없으면 전체)
@@ -525,6 +556,52 @@ function growthFor(seed: StageSeed, t: number): GrowthDef | undefined {
   return { type, rate: round1(3 + 5 * t), cap: 1.6 }
 }
 
+/** 장면별 "누가 어지럽히나" */
+const MESS_SCENE: Record<SceneId, MessKind> = {
+  floor: 'kids', rug: 'kids', livingMix: 'kids', roomMix: 'kids', kitchenTile: 'kids', kitchenMix: 'kids', floorMat: 'kids', trunk: 'kids', entrance: 'kids', bigClean: 'kids', closet: 'drift',
+  sofa: 'pet', bed: 'pet', seat: 'pet',
+  stove: 'splatter', sink: 'splatter', grill: 'splatter', table: 'splatter', fridge: 'splatter',
+  window: 'drift', shelf: 'drift', desk: 'drift', mirror: 'drift', showerglass: 'drift', dashboard: 'drift', windshield: 'drift', headlight: 'drift', carIntMix: 'drift',
+  bathTile: 'splash', basin: 'splash', bathtub: 'splash', tub: 'splash', toilet: 'splash', bathMix: 'splash',
+  patio: 'leaves', deck: 'leaves', brickWall: 'leaves', gardenChair: 'leaves', fence: 'leaves', gardenMix: 'leaves', deckMix: 'leaves', yardMix: 'leaves',
+  car: 'birds', wheel: 'birds', carExtMix: 'birds', carFullMix: 'birds',
+}
+/** 종류별로 "새로 생기는" 오염 후보 (그 판에 이미 있는 오염 중에서 고른다 — 플레이어가 지울 도구를 반드시 갖고 있도록) */
+const MESS_DIRT: Record<MessKind, DirtType[]> = {
+  kids: ['mud', 'dust', 'stain'],
+  pet: ['hair', 'dust', 'mud'],
+  splatter: ['grease', 'stain', 'dust'],
+  drift: ['dust', 'film'],
+  splash: ['soap', 'scale', 'dust', 'stain'],
+  leaves: ['mud', 'dust', 'stain'],
+  birds: ['stain', 'mud', 'dust', 'tar'],
+}
+const MESS_PATTERN: Record<MessKind, MessPattern> = { kids: 'trail', pet: 'trail', splatter: 'scatter', drift: 'haze', splash: 'scatter', leaves: 'scatter', birds: 'scatter' }
+/** 재오염으로는 생기지 않는 오염 (곰팡이·이끼·녹은 "자라는" 것이지 "떨어지는" 것이 아니다) */
+const NEVER_FRESH: DirtType[] = ['mold', 'moss', 'iron']
+
+export function messFor(seed: StageSeed, id: number, tier: TierDef): MessDef | undefined {
+  if (id < MESS_FROM) return undefined
+  const mode = seed.mode ?? 'clean'
+  if (mode === 'rush') return undefined // 러시는 이미 계속 생긴다
+  const kind = MESS_SCENE[seed.scene]
+  const type = MESS_DIRT[kind].find((d) => seed.dirt.includes(d)) ?? seed.dirt.find((d) => !NEVER_FRESH.includes(d))
+  if (!type) return undefined
+  const t = (tier.id - 1) / (TIERS.length - 1)
+  // 이미 어려운 모드는 덜. 튀는 기름·물때처럼 세정제를 뿌려야 지워지는 오염은 한 단위당 손이 더 가니 양을 줄이고,
+  // 바깥(낙엽·흙·새)은 바람이 많이 실어 오니 더 많이 — 넓은 실외 판은 호스·솔로 금방 걷어낸다
+  const hard = (mode === 'spread' || mode === 'dark' ? 0.7 : 1) * (kind === 'splatter' ? 0.7 : kind === 'splash' ? 0.55 : kind === 'leaves' || kind === 'birds' ? 1.25 : 1)
+  return {
+    kind,
+    type,
+    pattern: MESS_PATTERN[kind],
+    after: round1(12 - 6 * t),
+    every: round1(14 - 7 * t),
+    amount: round2((0.03 + 0.03 * t) * hard),
+    cap: round2((0.2 + 0.2 * t) * hard),
+  }
+}
+
 function round1(n: number) {
   return Math.round(n * 10) / 10
 }
@@ -566,6 +643,7 @@ function build(): { levels: LevelDef[]; worlds: WorldInfo[] } {
           theme: seed.theme ?? 'morning',
           spawn: spawnFor(seed, t, a.scale),
           growth: growthFor(seed, t),
+          mess: messFor(seed, id, tier),
           failDamage: mode === 'fragile' ? 0.1 : undefined,
           outdoor: w.id === 'house' || a.id === 'exterior',
           surface: SCENE_SURFACE[seed.scene],

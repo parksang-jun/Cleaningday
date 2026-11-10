@@ -8,7 +8,7 @@ import { resolveTiming } from './game/bot';
 import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES, recipesFor, type CleanerFamily, type DetergentId, type DetergentSpec, type DirtType, type SurfaceType, type ToolFamily, type ToolId, type ToolSpec } from './game/catalog';
 import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
 import { activeSponsors, allItems, countryFor, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
-import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type StageMode, type WorldInfo } from './game/levels';
+import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type MessKind, type StageMode, type WorldInfo } from './game/levels';
 import { findMix, MIXES, mixParts } from './game/catalog';
 import { mulberry32 } from './game/rng';
 import { cautionTipFor, tipForCombo, tipForItems, tipsFor, type CleaningTip } from './game/tips';
@@ -271,6 +271,8 @@ const SCRUB_PROFILE: Record<ToolId, ScrubProfile> = {
 };
 const MODE_ICON: Record<StageMode, string> = { clean: '', spots: '🎯', rush: '🐾', spread: '🦠', fragile: '⚠️', dark: '🔦' };
 const SPAWN_ICON: Partial<Record<DirtType, string>> = { hair: '🐈', mud: '🐾', stain: '🧃', grease: '🍳', tar: '🪰', dust: '🌼' };
+/** 재오염 — 누가 어지럽히나 */
+const MESS_ICON: Record<MessKind, string> = { kids: '🧒', pet: '🐾', splatter: '🍳', drift: '🌬️', splash: '💦', leaves: '🍂', birds: '🐦' };
 
 function levelTitle(l: LevelDef): string {
   return `${t(`theme_${l.theme}`)} · ${t(`scene_${l.scene}`)}`;
@@ -547,6 +549,8 @@ interface GameState {
   mixes: string[];
   kit: Set<string>;
   spawnToastAt: number;
+  /** 재오염 예고 배너가 떠 있는 동안(초) */
+  messWarnLeft: number;
   lastTick: number;
   /** 쇼호스트가 떠 있는 동안 시계를 멈춤 */
   paused: boolean;
@@ -618,11 +622,12 @@ function startLevel(id: number) {
           <div class="hud__time" data-el="time">0s / ${fmtTime(timing.parSec)}</div>
           ${timing.limitSec ? `<div class="hud__limit" data-el="limit" data-testid="limit">⏱ ${fmtTime(timing.limitSec)}</div>` : ''}
           ${level.mode !== 'clean' ? `<div class="hud__mode" data-el="mode" data-testid="mode"></div>` : ''}
+          ${level.mess ? `<div class="hud__mess" data-el="mess" data-testid="mess" title="${esc(t(`mess_${level.mess.kind}`))}"></div>` : ''}
         </div>
         <button class="icon-btn hud__journal" data-act="journal" aria-label="${t('journal')}" data-testid="journal">📖<span class="badge" data-el="unknown"></span></button>
       </header>
       <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : goalText(level))}</div>
-      <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><div class="combo" data-el="combo" hidden></div><div class="scan" data-el="scan" hidden></div></div>
+      <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><div class="combo" data-el="combo" hidden></div><div class="scan" data-el="scan" hidden></div><div class="mess-warn" data-el="mess-warn" data-testid="mess-warn" hidden></div></div>
       <div class="boosters" data-el="boosters" data-testid="boosters"></div>
       <nav class="toolbar" data-el="toolbar"></nav>
     </div>`;
@@ -659,6 +664,7 @@ function startLevel(id: number) {
     discoveries: [],
     hints: new Map(),
     scanLeft: 0,
+    messWarnLeft: 0,
     hintNudged: new Set(),
     noEffects: 0,
     mixes: [],
@@ -731,6 +737,7 @@ function startLevel(id: number) {
       ${showTail ? `<p class="intro__rule">🧽 ${esc(t('tierRuleTail'))}</p>` : ''}
       ${id === GUIDED_UNTIL + 1 && !st.progress.stars[id] ? `<p class="intro__rule">🔍 ${esc(t('hintsOver', { n: GUIDED_UNTIL }))}</p>` : ''}
       ${level.hint ? `<p class="small muted">${esc(t(level.hint))}</p>` : ''}
+      ${level.mess ? `<p class="intro__rule intro__mess" data-testid="intro-mess">${MESS_ICON[level.mess.kind]} ${esc(t(`messIntro_${level.mess.kind}`))} <span class="muted">${esc(t('messIntroTail'))}</span></p>` : ''}
       <div class="kit"><span class="small muted">${guided(level) ? t('kitNote') : t('kitNoteFind')}</span><div class="kit__row">${kitIcons}</div></div>
       ${mixAvailable ? `<p class="intro__rule" data-testid="intro-mix">🧪 ${esc(t('mixHint'))}</p>` : ''}
       ${introTip ? `<div class="intro__tip" data-testid="intro-tip"><span class="small muted">${t('tipToday')}</span>${tipHtml(introTip, true)}</div>` : ''}
@@ -779,8 +786,8 @@ function renderBoosters() {
   const st = getStore();
   el.innerHTML = BOOSTER_IDS.map((id) => {
     const n = st.boosters[id];
-    const timeless = id === 'time' && g.session.limitSec === undefined;
-    return `<button class="booster${n ? '' : ' is-empty'}" data-booster="${id}" data-testid="booster-${id}" ${timeless ? 'disabled' : ''} title="${esc(t(`booster_${id}_desc`))}"><span class="booster__icon">${BOOSTERS[id].icon}</span><span class="booster__name">${esc(t(`booster_${id}_short`))}</span><span class="booster__n">${n ? `×${n}` : '+'}</span></button>`;
+    const useless = (id === 'time' && g.session.limitSec === undefined) || (id === 'shield' && !g.level.mess);
+    return `<button class="booster${n ? '' : ' is-empty'}" data-booster="${id}" data-testid="booster-${id}" ${useless ? 'disabled' : ''} title="${esc(t(`booster_${id}_desc`))}"><span class="booster__icon">${BOOSTERS[id].icon}</span><span class="booster__name">${esc(t(`booster_${id}_short`))}</span><span class="booster__n">${n ? `×${n}` : '+'}</span></button>`;
   }).join('');
   el.querySelectorAll<HTMLButtonElement>('[data-booster]').forEach((b) =>
     b.addEventListener('click', () => {
@@ -809,6 +816,14 @@ function useBooster(id: BoosterId): boolean {
     g.renderer.sweep();
     sfx.fizz();
     toast(esc(t('boosterUsed_bomb', { p: Math.round(def.amount * 100) })), 'good');
+  } else if (id === 'shield') {
+    if (!g.level.mess) return false;
+    g.session.shield(def.amount);
+    const banner = app.querySelector<HTMLElement>('[data-el="mess-warn"]');
+    if (banner) banner.hidden = true;
+    g.messWarnLeft = 0;
+    updateMessHud();
+    toast(esc(t('boosterUsed_shield', { s: def.amount })), 'good');
   } else {
     // 오염 스캔: 이 판의 모든 오염에 대해 도구·세정제를 알려 주고(수첩에도 기록), 잠시 패널로 보여 준다
     const rows: string[] = [];
@@ -930,6 +945,26 @@ function updateModeHud() {
   }
 }
 
+/** 재오염 HUD: 다음 발생까지 초 / 차단 중 / 끝 */
+function updateMessHud() {
+  const g = game;
+  const el = app.querySelector<HTMLElement>('[data-el="mess"]');
+  if (!g || !el || !g.level.mess) return;
+  const icon = MESS_ICON[g.level.mess.kind];
+  const shield = g.session.shieldLeft;
+  const next = g.session.messIn;
+  if (shield > 0) {
+    el.textContent = `🛡 ${Math.ceil(shield)}s`;
+    el.className = 'hud__mess is-shield';
+  } else if (next === undefined) {
+    el.textContent = `${icon} ✓`;
+    el.className = 'hud__mess is-done';
+  } else {
+    el.textContent = g.session.engaged ? `${icon} ${Math.ceil(next)}s` : `${icon} ⏸`;
+    el.className = `hud__mess${next <= 3 && g.session.engaged ? ' is-urgent' : ''}`;
+  }
+}
+
 function updateBudgets() {
   const g = game;
   if (!g || g.level.sprayBudgetSec === undefined) return;
@@ -1010,6 +1045,33 @@ function handleEvents(events: SessionEvent[]) {
       sfx.swoosh();
       haptic('medium');
       updateModeHud();
+    } else if (ev.kind === 'messWarn') {
+      // 예고 배너 — 누가 오는지 보여 주고, 차단 부스터가 있으면 막을 기회
+      const banner = app.querySelector<HTMLElement>('[data-el="mess-warn"]');
+      if (banner) {
+        banner.innerHTML = `<span class="mess-warn__icon">${MESS_ICON[ev.mess]}</span>${esc(t(`messWarn_${ev.mess}`))}`;
+        banner.hidden = false;
+        banner.classList.remove('is-hit');
+      }
+      g.messWarnLeft = 1.2;
+      sfx.warn();
+      haptic('light');
+    } else if (ev.kind === 'mess') {
+      // 재오염 발생 — 새로 생긴 자리를 흔들어 보여 주고, 진행률이 내려간 걸 HUD 에 반영
+      const banner = app.querySelector<HTMLElement>('[data-el="mess-warn"]');
+      if (banner) {
+        banner.innerHTML = `<span class="mess-warn__icon">${MESS_ICON[ev.mess]}</span>${esc(t(`mess_${ev.mess}`, { dirt: t(`dirt_${ev.dirt}`) }))}`;
+        banner.hidden = false;
+        banner.classList.add('is-hit');
+      }
+      g.messWarnLeft = 1.4;
+      g.renderer.splat(ev.cells);
+      g.renderer.shake();
+      sfx.thud();
+      haptic('medium');
+      updateMessHud();
+      updateUnknownBadge();
+      track('mess', { level: g.level.id, kind: ev.mess, n: ev.count });
     } else if (ev.kind === 'spawned') {
       updateModeHud();
       sfx.plop();
@@ -1207,6 +1269,16 @@ function step(dt: number) {
     }
   }
   if (g.level.mode === 'fragile' || g.level.mode === 'rush') updateModeHud();
+  if (g.level.mess) {
+    updateMessHud();
+    if (g.messWarnLeft > 0) {
+      g.messWarnLeft -= dt;
+      if (g.messWarnLeft <= 0) {
+        const banner = app.querySelector<HTMLElement>('[data-el="mess-warn"]');
+        if (banner) banner.hidden = true;
+      }
+    }
+  }
   if (g.session.passed) finishLevel();
   else if (g.session.ruined) failLevel('ruined');
   else if (g.session.expired) failLevel();
@@ -1455,6 +1527,7 @@ function openJournal() {
 }
 
 function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: GameState['discoveries']) {
+  const messCount = game?.session.messCount ?? 0;
   const penalties = [
     timing.parSec < r.timeSec ? t('slowPenalty') : '',
     r.damage >= 0.15 ? t('damagePenalty') : '',
@@ -1493,6 +1566,7 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
       ${penalties.length ? `<ul class="penalties">${penalties.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
       <p class="result__coins" data-el="coins">${t('reward', { c: coinsShown })}</p>
       <p class="small muted center">${esc(t('coinsUse'))} <button class="link-btn small" data-act="shop-result" data-testid="result-shop">${t('shop')} ›</button></p>
+      ${messCount > 0 && level.mess ? `<p class="result__mess" data-testid="result-mess">${MESS_ICON[level.mess.kind]} ${esc(t('messResult', { n: messCount }))}</p>` : ''}
       ${polish}
       ${found}
       ${tipsBlock}
@@ -1945,6 +2019,9 @@ declare global {
       used: () => string[];
       coins: () => number;
       boosters: () => Record<string, number>;
+      mess: () => { count: number; next: number | undefined; shield: number; kind: string | undefined };
+      forceMess: () => void;
+      setShield: (sec: number) => void;
       useBooster: (id: string) => boolean;
       resultPick: () => { id: string; context: string; usedItem?: string } | null;
       kit: () => string[];
@@ -1981,6 +2058,16 @@ function exposeDebug() {
     used: () => [...(game?.used ?? [])],
     coins: () => getStore().coins,
     boosters: () => ({ ...getStore().boosters }),
+    mess: () => ({ count: game?.session.messCount ?? 0, next: game?.session.messIn, shield: game?.session.shieldLeft ?? 0, kind: game?.level.mess?.kind }),
+    setShield: (sec: number) => {
+      if (game) game.session.shieldUntil = game.session.time + sec;
+    },
+    forceMess: () => {
+      if (!game?.level.mess) return;
+      game.session.engaged = true;
+      const next = game.session.messIn;
+      if (next !== undefined) handleEvents(game.session.tick(next + 0.01));
+    },
     useBooster: (id: string) => useBooster(id as BoosterId),
     resultPick: () => {
       const pk = resultSponsor(game, game?.session.level.patches[0]?.type);

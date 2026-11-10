@@ -4,14 +4,14 @@
 //  광고 접점: 부스터는 코인이 모자라면 "광고 보고 1개"(하루 3회) — 코인이 부족한 순간이 곧 광고를 보는 순간이다.
 import type { Store } from './storage';
 
-export type BoosterId = 'time' | 'bomb' | 'scan';
+export type BoosterId = 'time' | 'bomb' | 'scan' | 'shield';
 
 export interface BoosterDef {
   id: BoosterId;
   icon: string;
   /** 코인 가격 */
   cost: number;
-  /** 효과 수치 — time: 초, bomb: 남은 오염 비율, scan: 초 */
+  /** 효과 수치 — time: 초, bomb: 남은 오염 비율, scan: 초, shield: 재오염 차단 초 */
   amount: number;
 }
 
@@ -19,8 +19,9 @@ export const BOOSTERS: Record<BoosterId, BoosterDef> = {
   time: { id: 'time', icon: '⏱', cost: 60, amount: 20 },
   bomb: { id: 'bomb', icon: '🫧', cost: 120, amount: 0.2 },
   scan: { id: 'scan', icon: '🔎', cost: 50, amount: 12 },
+  shield: { id: 'shield', icon: '🛡', cost: 80, amount: 25 },
 };
-export const BOOSTER_IDS: BoosterId[] = ['time', 'bomb', 'scan'];
+export const BOOSTER_IDS: BoosterId[] = ['time', 'bomb', 'scan', 'shield'];
 
 /** 상점 "광고 보고 코인 받기" */
 export const AD_COINS = 80;

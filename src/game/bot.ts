@@ -41,8 +41,8 @@ export function premiumKitFor(level: LevelDef): { tools: ToolSpec[]; dets: Deter
   }
 }
 
-export function simulateBot(level: LevelDef, maxSec = 900, kit: { tools: ToolSpec[]; dets: DetergentSpec[] } = kitFor(level)): BotResult & { polish: number } {
-  const s = new CleanSession(level)
+export function simulateBot(level: LevelDef, maxSec = 900, kit: { tools: ToolSpec[]; dets: DetergentSpec[] } = kitFor(level), opts: { mess?: boolean } = {}): BotResult & { polish: number; messCount: number } {
+  const s = new CleanSession(level, undefined, level.seed, opts)
   const { tools, dets } = kit
   const usable = tools.filter((t) => s.canUse(t))
   const rinse = tools.find((t) => t.families.includes('rinse') && !t.onlyOn) ?? tools.find((t) => t.families.includes('rinse'))
@@ -231,7 +231,7 @@ export function simulateBot(level: LevelDef, maxSec = 900, kit: { tools: ToolSpe
     if (!scrubAt(best)) {
       stuck = stuck ?? `${dirt} on ${surface} with ${tool.id} (level ${level.id})`
       s.amount[best] = 0
-      if (++stuckGuard > 400) return { time: s.time, passed: false, hazard: s.hazard, damage: s.damage, stuck, polish: s.polish }
+      if (++stuckGuard > 400) return { time: s.time, passed: false, hazard: s.hazard, damage: s.damage, stuck, polish: s.polish, messCount: s.messCount }
       continue
     }
     // 세정제를 뿌렸으면 그 범위 안의 같은 오염을 마르기 전에 다 닦는다 (숙련자의 "뿌리고 쓸기")
@@ -255,17 +255,21 @@ export function simulateBot(level: LevelDef, maxSec = 900, kit: { tools: ToolSpe
       }
     }
   }
-  return { time: s.time, passed: s.passed, hazard: s.hazard, damage: s.damage, stuck, stats, polish: s.polish }
+  return { time: s.time, passed: s.passed, hazard: s.hazard, damage: s.damage, stuck, stats, polish: s.polish, messCount: s.messCount }
 }
 
 const cache = new Map<number, Timing>()
 
-/** 목표시간·제한시간 = 봇 시간 × 단계 배수 (최초 1회 계산 후 캐시) */
+/** 재오염이 목표시간에 반영되는 비율 — 절반만. 나머지 절반은 플레이어의 여유를 갉아먹는다(빨리 끝내거나 좋은 장비를 쓸 이유) */
+export const MESS_PAR_WEIGHT = 0.5
+
+/** 목표시간·제한시간 = 봇 시간 × 단계 배수 (최초 1회 계산 후 캐시). 재오염 판은 조용할 때와 어지럽힐 때의 중간을 기준으로 */
 export function resolveTiming(level: LevelDef): Timing {
   const hit = cache.get(level.id)
   if (hit) return hit
-  const bot = simulateBot(level)
-  const parSec = Math.max(15, Math.round(bot.time * level.parFactor))
+  const quiet = simulateBot(level, 900, kitFor(level), { mess: false })
+  const botSec = level.mess ? quiet.time + MESS_PAR_WEIGHT * (simulateBot(level).time - quiet.time) : quiet.time
+  const parSec = Math.max(15, Math.round(botSec * level.parFactor))
   const timing: Timing = { parSec, limitSec: level.limitFactor ? Math.round(parSec * level.limitFactor) : undefined }
   cache.set(level.id, timing)
   return timing
