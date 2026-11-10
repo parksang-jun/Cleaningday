@@ -155,6 +155,23 @@ button {
   align-items: center;
   gap: 10px;
 }
+.beta-tag {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: linear-gradient(135deg, #ff8a3d, #ff5c8a);
+  -webkit-background-clip: border-box;
+  -webkit-text-fill-color: #fff;
+}
+.beta-feedback {
+  margin-top: 6px;
+}
 .logo {
   margin: 0;
   font-size: 40px;

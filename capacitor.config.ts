@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
-// TODO(출시 전): appId 최종 확정. 변경 시 android/ios 프로젝트를 다시 생성해야 함.
+// 앱 ID 확정(2026-11-10): GitHub 도메인 기반. 스토어 등록 후에는 바꿀 수 없다.
 const config: CapacitorConfig = {
-  appId: 'com.sparkleclean.app',
+  appId: 'io.github.parksangjun.cleaningday',
   appName: 'Sparkle Clean',
   webDir: 'dist',
   backgroundColor: '#e9f7f6',

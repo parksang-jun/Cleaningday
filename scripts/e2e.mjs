@@ -77,6 +77,7 @@ page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 try {
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
   await page.waitForSelector('[data-testid="play"]');
+  assert((await page.locator('[data-testid="beta-tag"]').count()) === 1, 'home shows the BETA tag on production builds (VITE_BETA)');
   assert((await page.locator('.world').count()) === 3, '3 worlds listed (apartment, house, car)');
   assert((await page.locator('.area').count()) === 7, '7 areas listed');
   assert((await page.locator('.area.is-locked').count()) === 6, 'only the living room is unlocked at start');

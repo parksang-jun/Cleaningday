@@ -223,6 +223,14 @@ src/
   i18n.ts, audio.ts(합성 효과음·배경음악·도구별 문지르는 소리), storage.ts, analytics.ts
 ```
 
+## 출시 준비 상태 (0단계)
+
+- 앱 ID `io.github.parksangjun.cleaningday` 확정(2026-11-10), 버전 0.9.0(베타), Android `versionCode 1` / iOS 빌드 1 — 올릴 때마다 +1.
+- 기기 표시 이름: 한국어 `싹싹 클린`(`android/.../values-ko/strings.xml`, `ios/App/App/ko.lproj/InfoPlist.strings`), 영어 `Sparkle Clean`(기본), 일본어 `スパークルクリーン`. iOS 의 `*.lproj/InfoPlist.strings` 는 Xcode 에서 한 번 "Add Files to App…" 으로 프로젝트에 넣어야 번들에 들어간다.
+- 앱(Android/iOS) 빌드는 운영자 모드가 기본 숨김(`adminEnabled()`: 네이티브면 `VITE_ADMIN=on` 일 때만), 웹은 기본 켬.
+- `.env.production`(커밋됨): `VITE_BETA=true`(홈 BETA 태그 + 피드백 버튼), `VITE_ADMOB_TESTING=true`, `VITE_PRIVACY_URL`(GitHub Pages). 비밀값·실제 광고 단위 ID는 `.env.production.local` 에.
+- 개인정보처리방침 공개 URL: 저장소 `docs/` 를 GitHub Pages(Settings → Pages → main `/docs`)로 켜면 `https://parksang-jun.github.io/Cleaningday/privacy.html`.
+
 ## 저장소·CI (GitHub `parksang-jun/Cleaningday`)
 
 - 저장소에는 네이티브 프로젝트(`android/`, `ios/`)와 아이콘·스플래시·마스코트 이미지까지 그대로 들어 있다. 아이콘을 바꾸면 `public/favicon.svg` 를 고치고 `npm run assets`(`scripts/make-icons.mjs` + `@capacitor/assets`), 마스코트를 바꾸면 `python3 tools/host-portrait.py`.

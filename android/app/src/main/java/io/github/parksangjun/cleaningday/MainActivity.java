@@ -1,4 +1,4 @@
-package com.sparkleclean.app;
+package io.github.parksangjun.cleaningday;
 
 import com.getcapacitor.BridgeActivity;
 

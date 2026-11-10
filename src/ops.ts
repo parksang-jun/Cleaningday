@@ -1,5 +1,6 @@
 // 운영(관리자) 데이터 — 광고 제품 목록 관리, 쇼호스트 설정, 이벤트 집계, 설정 내보내기/가져오기
 // 실서비스: 이 JSON 을 원격 설정(CDN/Supabase)에 올리고 앱이 시작 시 받아오면 같은 구조로 그대로 동작한다.
+import { Capacitor } from '@capacitor/core';
 import { onTrack } from './analytics';
 import { BASE_DETERGENTS, BASE_TOOLS, DIRT_TYPES, type DirtType } from './game/catalog';
 import { SAMPLE_SPONSORS, validateSponsor, type SponsorProduct } from './game/sponsor';
@@ -117,9 +118,12 @@ export function importConfig(json: string): { ok: true; count: number } | { ok: 
   }
 }
 
-/** 운영자 모드 사용 가능 여부 — 빌드 환경변수로 끌 수 있음 */
+/** 운영자 모드 사용 가능 여부 — 웹은 기본 켬, 앱(Android/iOS) 빌드는 기본 숨김. VITE_ADMIN=on|off 로 강제 */
 export function adminEnabled(): boolean {
-  return import.meta.env.VITE_ADMIN !== 'off';
+  const v = import.meta.env.VITE_ADMIN;
+  if (v === 'on') return true;
+  if (v === 'off') return false;
+  return !Capacitor.isNativePlatform();
 }
 export function adminPin(): string {
   return String(import.meta.env.VITE_ADMIN_PIN ?? '1234');

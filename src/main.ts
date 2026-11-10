@@ -209,8 +209,9 @@ function renderHome() {
         </div>
       </header>
       <section class="hero">
-        <h1 class="logo">${esc(t('appName'))}</h1>
+        <h1 class="logo">${esc(t('appName'))}${import.meta.env.VITE_BETA === 'true' ? ` <span class="beta-tag" data-testid="beta-tag">BETA</span>` : ''}</h1>
         <p class="tagline">${esc(t('tagline'))}</p>
+        ${import.meta.env.VITE_BETA === 'true' && import.meta.env.VITE_FEEDBACK_URL ? `<a class="btn btn--ghost btn--sm beta-feedback" href="${esc(import.meta.env.VITE_FEEDBACK_URL)}" target="_blank" rel="noopener" data-testid="beta-feedback">💬 ${esc(t('feedback'))}</a>` : ''}
         <button class="btn btn--primary btn--big" data-act="continue" data-testid="play">${t('play')} · ${t('stage', { n: next.id })} ${esc(t(`scene_${next.scene}`))}</button>
         <p class="muted small">★ ${totalStars} / ${LEVELS.length * 3} · 📖 ${st.journal.length}</p>
       </section>
@@ -1684,7 +1685,7 @@ function openSettings() {
     <label class="setting"><span>${t('language')}</span>
       <select data-k="lang">${(['auto', 'ko', 'en', 'ja'] as const).map((l) => `<option value="${l}" ${s.lang === l ? 'selected' : ''}>${l === 'auto' ? t('auto') : l === 'ko' ? '한국어' : l === 'en' ? 'English' : '日本語'}</option>`).join('')}</select>
     </label>
-    <a class="small" href="./privacy.html" target="_blank" rel="noopener">${t('privacy')}</a>
+    <a class="small" href="${esc(import.meta.env.VITE_PRIVACY_URL || './privacy.html')}" target="_blank" rel="noopener">${t('privacy')}</a>
     <button class="btn btn--sm" data-act="reset">${t('resetProgress')}</button>
     <button class="btn btn--block" data-act="close">${t('close')}</button>`,
     (root, close) => {
