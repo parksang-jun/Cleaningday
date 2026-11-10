@@ -12,7 +12,11 @@
     "e2e": "node scripts/e2e.mjs",
     "cap:sync": "npm run build && cap sync",
     "cap:android": "npm run cap:sync && cap open android",
-    "cap:ios": "npm run cap:sync && cap open ios"
+    "cap:ios": "npm run cap:sync && cap open ios",
+    "postinstall": "node scripts/unpack-assets.mjs",
+    "assets:unpack": "node scripts/unpack-assets.mjs --force",
+    "assets:pack": "node scripts/pack-assets.mjs",
+    "assets": "node scripts/unpack-assets.mjs --force && node scripts/make-icons.mjs && npx @capacitor/assets generate"
   },
   "dependencies": {
     "@capacitor-community/admob": "^8.3.0",

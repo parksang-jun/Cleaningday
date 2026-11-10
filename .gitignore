@@ -14,3 +14,11 @@ ios/App/build
 screenshots
 *.log
 scratch
+
+# 생성 자산 — GitHub 에는 올리지 않는다. 클론 후 `npm install`(postinstall) 이 b64 를 풀고, `npm run assets` 가 아이콘·스플래시를 다시 만든다
+android/gradle/wrapper/gradle-wrapper.jar
+android/app/src/main/res/**/*.png
+ios/App/App/Assets.xcassets/**/*.png
+resources/*.png
+public/icon-*.png
+src/assets/host/*.webp

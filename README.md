@@ -222,3 +222,8 @@ src/
   main.ts           화면: 홈(월드·구역·운영자 진입) · 구역(스테이지) · 게임(안내 단계·미끼 도구·수첩·쇼호스트·콤보·제한시간·세정제 용량·광택) · 결과(전후 리빌·발견 목록·광택 보너스·쇼호스트 추천) · 상점(LIVE/프리미엄/기본/세정제/실제 제품) · 성능 근거 · 설정
   i18n.ts, audio.ts(합성 효과음·배경음악·도구별 문지르는 소리), storage.ts, analytics.ts
 ```
+
+## 저장소·CI (GitHub `parksang-jun/Cleaningday`)
+
+- 바이너리(아이콘·스플래시 PNG, 마스코트 WebP, gradle-wrapper.jar)는 GitHub 에 올리지 않는다. 클론 후 `npm install` 이 `tools/assets-b64/`(base64) 를 풀어 WebP·jar 를 복원하고, `npm run assets` 가 `public/favicon.svg` 에서 아이콘·스플래시 PNG 를 다시 만든다(`scripts/make-icons.mjs` + `@capacitor/assets`). 마스코트 그림을 바꿨으면 `npm run assets:pack` 으로 b64 를 갱신한다.
+- CI(`.github/workflows/ci.yml`): push·PR 마다 `npm ci → build → vitest → Playwright e2e`.
