@@ -6,12 +6,12 @@
 import { track } from './analytics';
 import { animateAvatar, avatarHtml, type HostMedia } from './avatar';
 import { BASE_DETERGENTS, BASE_TOOLS, type DirtType, type SurfaceType } from './game/catalog';
-import { performanceRatios, type SponsorProduct } from './game/sponsor';
-import { expertLine } from './game/tips';
+import { type SponsorProduct } from './game/sponsor';
+import { LANG_TAG, pitchLines, type Placement, type PitchContext } from './pitch';
 import { t, type Lang } from './i18n';
+export { bestLab, pitchLines, type Placement, type PitchContext } from './pitch';
 import { iconFor } from './ui/icons';
 
-export type Placement = 'intro' | 'struggle' | 'result' | 'shop' | 'preview';
 
 export interface HostShowOptions {
   product: SponsorProduct;
@@ -36,123 +36,13 @@ export interface HostShowOptions {
   context?: PitchContext;
   /** context='category' 일 때 플레이어가 쓴 일반 제품 이름 */
   usedItem?: string;
+  /** 미리 녹음·생성한 쇼호스트 음성(mp3 URL) — 있으면 브라우저 TTS 대신 재생하고 자막을 길이에 맞춰 넘긴다 */
+  audio?: string;
+  /** 구매 버튼 문구 (예: "쿠팡에서 보기") */
+  buyLabel?: string;
 }
 
-/** 결과 화면 멘트의 맥락: 직접 써 봤다 / 같은 종류를 썼다 / 이 판 오염에 맞다 / 일반 추천 */
-export type PitchContext = 'used' | 'category' | 'dirt' | 'generic';
 
-const LANG_TAG: Record<Lang, string> = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP' };
-
-function fmt(n: number, lang: Lang): string {
-  try {
-    return n.toLocaleString(LANG_TAG[lang]);
-  } catch {
-    return String(n);
-  }
-}
-
-function baseName(p: SponsorProduct): string {
-  return t(`item_${p.base}`);
-}
-
-/** 가장 좋은 시험 결과 (지정 오염이 있으면 그것, 없으면 제거율이 가장 높은 것) */
-export function bestLab(p: SponsorProduct, dirt?: DirtType): { dirt: DirtType; removalPct: number; ratio: number } | null {
-  const ratios = performanceRatios(p);
-  const pick = (dirt && p.lab.find((l) => l.dirt === dirt)) || [...p.lab].sort((a, b) => b.removalPct - a.removalPct)[0];
-  if (!pick) return null;
-  return { dirt: pick.dirt, removalPct: pick.removalPct, ratio: ratios[pick.dirt] };
-}
-
-/** 쇼호스트(청소 전문가) 멘트 생성 — 인사 → 오염의 원리(꿀팁) → 시험 수치 → 소구점 → 리뷰 → 라벨 주의 → 제안 */
-export function pitchLines(p: SponsorProduct, lang: Lang, opts: { hostName: string; placement: Placement; dirt?: DirtType; surface?: SurfaceType; context?: PitchContext; usedItem?: string }): string[] {
-  const lines: string[] = [];
-  const ctx = opts.placement === 'result' ? opts.context : undefined;
-  const custom = p.hostLines?.[lang]?.map((l) => l.replace(/\{brand\}/g, p.brand).replace(/\{name\}/g, p.name).replace(/\{host\}/g, opts.hostName)).filter(Boolean) ?? [];
-  const lab = bestLab(p, opts.dirt);
-  const x = lab && lab.ratio > 1.05 ? Math.round(lab.ratio * 10) / 10 : 0;
-  const dirtName = (d: DirtType) => t(`dirt_${d}`);
-  const cautions = p.cautions.map((s: SurfaceType) => t(`surf_${s}`)).join(', ');
-  const review = p.reviews && p.reviews.count > 0 && p.reviews.rating > 0 ? p.reviews : null;
-  const claims = (p.claims ?? []).filter(Boolean).slice(0, 3);
-  const expert = opts.dirt ? expertLine(opts.dirt, lang, opts.surface) : undefined;
-  if (lang === 'ko') {
-    lines.push(`안녕하세요, 청소 전문가 ${opts.hostName}입니다. 오늘은 ${p.brand} ${p.name} 이야기를 해볼게요.`);
-    if (ctx === 'used') lines.push(`방금 이 판에서 직접 써 보셨죠? 손에 느껴진 차이, 수치로도 증명된 제품이에요.`);
-    else if (ctx === 'category' && opts.usedItem) lines.push(`이번 판에 ${opts.usedItem} 쓰셨죠? 같은 종류인데 이 제품은 뭐가 다른지 보여드릴게요.`);
-    if (expert) lines.push(expert);
-    if (custom.length) lines.push(...custom);
-    else {
-      if (lab) lines.push(`수치부터 볼게요. 공인 시험에서 ${dirtName(lab.dirt)}를 ${lab.removalPct}% 제거했어요${x ? ` — 일반 ${baseName(p)}보다 ${x}배 빠른 결과예요.` : '.'}`);
-      for (const c of claims) lines.push(`✔ ${c}`);
-      if (review) lines.push(`리뷰 ${fmt(review.count, lang)}개에 평점 ${review.rating}점${review.source ? ` (${review.source})` : ''} — 실사용 평도 좋은 편이에요.`);
-    }
-    if (cautions) lines.push(`단, ${cautions}에는 쓰지 마세요. 라벨에 있는 그대로 말씀드리는 거예요.`);
-    switch (opts.placement) {
-      case 'struggle':
-        lines.push(`지금 막힌 ${opts.dirt ? dirtName(opts.dirt) : '오염'}에 딱 맞는 제품이에요. 이번 판에서 바로 써 보세요.`);
-        break;
-      case 'result':
-        lines.push(`다음 판에서 무료로 써 보실 수 있어요. 마음에 들면 구매 링크도 있습니다.`);
-        break;
-      case 'intro':
-        lines.push(`이번 판에서 무료로 써 볼 수 있어요. 광고 한 편이면 됩니다.`);
-        break;
-      default:
-        lines.push(`한번 써 보시고 판단하세요.`);
-    }
-  } else if (lang === 'ja') {
-    lines.push(`こんにちは、お掃除の専門家の${opts.hostName}です。今日は ${p.brand} ${p.name} のお話をします。`);
-    if (ctx === 'used') lines.push(`さっきこのステージで実際に使いましたよね？手で感じた違いは、数値でも証明されています。`);
-    else if (ctx === 'category' && opts.usedItem) lines.push(`このステージで${opts.usedItem}を使いましたね。同じ種類でも、この製品は何が違うのかお見せします。`);
-    if (expert) lines.push(expert);
-    if (custom.length) lines.push(...custom);
-    else {
-      if (lab) lines.push(`まず数値から。公的試験で${dirtName(lab.dirt)}を${lab.removalPct}%除去${x ? ` — 一般の${baseName(p)}より${x}倍速い結果です。` : '。'}`);
-      for (const c of claims) lines.push(`✔ ${c}`);
-      if (review) lines.push(`レビュー${fmt(review.count, lang)}件、評価${review.rating}点${review.source ? `（${review.source}）` : ''} — 実際の評判も良いです。`);
-    }
-    if (cautions) lines.push(`ただし、${cautions}には使わないでください。ラベルどおりにお伝えしています。`);
-    switch (opts.placement) {
-      case 'struggle':
-        lines.push(`今つまずいている${opts.dirt ? dirtName(opts.dirt) : '汚れ'}にぴったりの製品です。このステージで使ってみてください。`);
-        break;
-      case 'result':
-        lines.push(`次のステージで無料で試せます。気に入ったら購入リンクもあります。`);
-        break;
-      case 'intro':
-        lines.push(`このステージで無料で試せます。広告1本でOKです。`);
-        break;
-      default:
-        lines.push(`まず使ってみて判断してください。`);
-    }
-  } else {
-    lines.push(`Hi, I'm ${opts.hostName}, a cleaning specialist. Let's talk about the ${p.brand} ${p.name}.`);
-    if (ctx === 'used') lines.push(`You just used it in this stage — the difference you felt is backed by the numbers.`);
-    else if (ctx === 'category' && opts.usedItem) lines.push(`You used a ${opts.usedItem} this stage. Same category — here's what makes this one different.`);
-    if (expert) lines.push(expert);
-    if (custom.length) lines.push(...custom);
-    else {
-      if (lab) lines.push(`Numbers first: in certified lab tests it removed ${lab.removalPct}% of ${dirtName(lab.dirt)}${x ? ` — ${x}× faster than a standard ${baseName(p)}.` : '.'}`);
-      for (const c of claims) lines.push(`✔ ${c}`);
-      if (review) lines.push(`${fmt(review.count, lang)} reviews at ${review.rating} stars${review.source ? ` (${review.source})` : ''} — real users rate it well.`);
-    }
-    if (cautions) lines.push(`One caveat: don't use it on ${cautions}. That's straight from the label.`);
-    switch (opts.placement) {
-      case 'struggle':
-        lines.push(`It's the right product for the ${opts.dirt ? dirtName(opts.dirt) : 'mess'} you're stuck on. Try it this stage.`);
-        break;
-      case 'result':
-        lines.push(`You can try it free in the next stage — and there's a buy link if you like it.`);
-        break;
-      case 'intro':
-        lines.push(`You can try it free in this stage. One ad, that's all.`);
-        break;
-      default:
-        lines.push(`Try it and judge for yourself.`);
-    }
-  }
-  return lines;
-}
 
 // ---------- TTS ----------
 let voices: SpeechSynthesisVoice[] = [];
@@ -177,13 +67,27 @@ function loadVoices(): void {
 }
 loadVoices();
 
+/**
+ * 가장 사람 같은 목소리 고르기 — 기기마다 설치된 목소리가 다르다.
+ *  점수: 신경망·프리미엄·네트워크 목소리(Google/Microsoft 온라인, iOS "향상된 품질") > 여성 이름 휴리스틱 > 기본 목소리.
+ *  iOS 는 설정 > 손쉬운 사용 > 음성 콘텐츠에서 "유나(향상됨)" 등을 받아 두면 훨씬 자연스럽다.
+ */
 function pickVoice(lang: Lang): SpeechSynthesisVoice | null {
   const tag = LANG_TAG[lang];
   const pref = voices.filter((v) => v.lang.replace('_', '-').toLowerCase().startsWith(tag.slice(0, 2)));
   if (!pref.length) return null;
-  // 여성·자연스러운 목소리 우선 (이름 휴리스틱), 그다음 기본 목소리
-  const fav = pref.find((v) => /female|woman|yuna|sora|heami|kyoko|samantha|aria|jenny|google/i.test(v.name)) ?? pref.find((v) => v.default) ?? pref[0];
-  return fav;
+  const score = (v: SpeechSynthesisVoice) => {
+    let n = 0;
+    const name = v.name;
+    if (/neural|natural|premium|enhanced|향상|プレミアム|online|wavenet|studio/i.test(name)) n += 40;
+    if (!v.localService) n += 25; // 온라인(서버) 목소리는 대개 신경망 TTS
+    if (/google|microsoft|siri/i.test(name)) n += 15;
+    if (/yuna|유나|sora|소라|heami|kyoko|nanami|samantha|aria|jenny|sunhi|선히|injoon|female|woman/i.test(name)) n += 10;
+    if (/compact|eloquence|novelty|whisper|bells|bad news|bubbles/i.test(name)) n -= 30;
+    if (v.default) n += 2;
+    return n;
+  };
+  return [...pref].sort((a, b) => score(b) - score(a))[0];
 }
 
 export function ttsAvailable(): boolean {
@@ -200,8 +104,9 @@ export function speakLine(text: string, lang: Lang): Promise<boolean> {
       u.lang = LANG_TAG[lang];
       const v = pickVoice(lang);
       if (v) u.voice = v;
-      u.rate = lang === 'ko' ? 1.05 : 1.0;
-      u.pitch = 1.15;
+      // 자연스러움: 속도는 보통, 음높이는 기본 — 높이면 기계음이 두드러진다
+      u.rate = lang === 'ko' ? 1.0 : 0.98;
+      u.pitch = 1.0;
       u.volume = 1;
       let done = false;
       const finish = (ok: boolean) => {
@@ -262,7 +167,7 @@ export function showHost(o: HostShowOptions): () => void {
       <div class="host__top">
         <span class="host__live">● LIVE</span>
         <span class="host__name">${t('hostTitle', { name: o.hostName })} <span class="host__ai" title="${t('hostAiTag')}">${t('hostAiTag')}</span></span>
-        <span class="tag-ad">${t('sponsored')}</span>${p.sample ? `<span class="tag-sample">${t('sample')}</span>` : ''}
+        ${p.affiliate ? `<span class="tag-affiliate" data-testid="host-affiliate">${t('affiliateBadge')}</span>` : `<span class="tag-ad">${t('sponsored')}</span>`}${p.sample ? `<span class="tag-sample">${t('sample')}</span>` : ''}
         <button class="host__close" data-act="close" aria-label="${t('close')}" data-testid="host-close">✕</button>
       </div>
       <div class="host__body">
@@ -275,10 +180,10 @@ export function showHost(o: HostShowOptions): () => void {
         ${o.onEvidence ? `<button class="btn btn--sm" data-act="evidence" data-testid="host-evidence">${t('evidence')}</button>` : ''}
       </div>
       <div class="host__cta">
-        ${o.hideTrial || !o.onTrial ? '' : `<button class="btn btn--ad btn--block" data-act="trial" data-testid="host-trial">${trialLabel}</button>`}
-        ${o.onBuy ? `<button class="btn btn--primary btn--block" data-act="buy" data-testid="host-buy">${t('mallBuy')}</button>` : ''}
+        ${o.hideTrial || !o.onTrial || p.affiliate ? '' : `<button class="btn btn--ad btn--block" data-act="trial" data-testid="host-trial">${trialLabel}</button>`}
+        ${o.onBuy ? `<button class="btn btn--primary btn--block" data-act="buy" data-testid="host-buy">${o.buyLabel ?? t('mallBuy')}</button>` : ''}
       </div>
-      <p class="host__foot small muted">${t('hostFoot')}</p>
+      <p class="host__foot small muted" data-testid="host-foot">${p.affiliate ? (o.lang === 'ko' ? t('coupangDisclosure') : t('mallDisclosure')) : t('hostFoot')}</p>
     </div>`;
   document.body.appendChild(el);
   const lineEl = el.querySelector<HTMLElement>('[data-el="line"]')!;
@@ -288,6 +193,31 @@ export function showHost(o: HostShowOptions): () => void {
   // 영상이 있으면 영상 음성이 목소리 — 소리 있는 재생이 막힌 경우에만 TTS 로 대체
   let speak = o.speak && !hasVideo;
   const videoReady = hasVideo ? avatar.playVideo().then((ok) => (speak = o.speak && !ok)) : Promise.resolve();
+  // 미리 만든 음성(mp3)이 있으면 그것이 목소리 — 자막은 음성 길이를 멘트 글자 수로 나눠 맞춘다
+  const audio = !hasVideo && o.audio && o.speak ? new Audio(o.audio) : null;
+  let audioOn = false;
+  const totalChars = lines.reduce((n, l) => n + l.length, 0) || 1;
+  const audioReady = audio
+    ? audio
+        .play()
+        .then(() => {
+          audioOn = true;
+          speak = false;
+        })
+        .catch(() => {
+          audioOn = false;
+        })
+    : Promise.resolve();
+  const waitAudioUntil = (share: number) =>
+    new Promise<void>((resolve) => {
+      const tick = () => {
+        if (!alive || !audio || audio.ended || audio.error) return resolve();
+        const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+        if (dur && audio.currentTime >= dur * share - 0.05) return resolve();
+        timer = setTimeout(tick, 100);
+      };
+      tick();
+    });
   let idx = 0;
   let alive = true;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -319,14 +249,17 @@ export function showHost(o: HostShowOptions): () => void {
     avatar.talking(true);
     // 문장이 시작될 때 눈썹을 살짝 올려 강조
     avatar.emph();
-    if (idx === 0) await videoReady;
+    if (idx === 0) await Promise.all([videoReady, audioReady]);
     if (!alive) return;
     const spoken = speak ? speakLine(text, o.lang) : Promise.resolve(false);
     await typeLine(text);
     const ok = await spoken;
     if (!alive) return;
-    // 음성이 없으면 읽을 시간을 준다
-    if (!ok) await new Promise((r) => (timer = setTimeout(r, Math.max(1400, text.length * 55))));
+    if (audioOn) {
+      // 이 멘트까지의 글자 비율만큼 음성이 진행될 때까지 기다린다
+      const upTo = lines.slice(0, idx + 1).reduce((n, l) => n + l.length, 0) / totalChars;
+      await waitAudioUntil(upTo);
+    } else if (!ok) await new Promise((r) => (timer = setTimeout(r, Math.max(1400, text.length * 55)))); // 음성이 없으면 읽을 시간을 준다
     if (!alive) return;
     idx++;
     void next();
@@ -337,6 +270,11 @@ export function showHost(o: HostShowOptions): () => void {
     if (timer) clearTimeout(timer);
     avatar.stop();
     stopSpeaking();
+    try {
+      audio?.pause();
+    } catch {
+      /* ignore */
+    }
     el.classList.add('is-out');
     setTimeout(() => el.remove(), 260);
     current = null;

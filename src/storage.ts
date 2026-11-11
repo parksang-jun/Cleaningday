@@ -24,6 +24,8 @@ export interface HostConfig {
   struggleAfterTries: number;
   /** 결과 화면(매 판 끝)에서 이번 판에 쓴 제품을 소개 */
   result: boolean;
+  /** 실제 판매 제품(제휴 추천) 소개 — 유료 광고주가 없는 자리에 쇼호스트가 실제 제품을 소개한다 */
+  affiliate: boolean;
   /** 실사 쇼호스트 사진 (https URL 또는 작은 data URL) — 없으면 내장 초상 */
   photo?: string;
 }
@@ -77,7 +79,7 @@ export interface Store {
 
 const KEY = 'sparkle-clean-v1';
 
-export const DEFAULT_HOST: HostConfig = { enabled: true, name: '뽀득이', introCooldownMin: 8, introFromStage: 2, struggleAfterTries: 2, result: true };
+export const DEFAULT_HOST: HostConfig = { enabled: true, name: '뽀득이', introCooldownMin: 8, introFromStage: 2, struggleAfterTries: 2, result: true, affiliate: true };
 
 const DEFAULTS: Store = {
   settings: { sound: true, music: true, haptics: true, hostVoice: true, lang: 'auto' },

@@ -2,6 +2,7 @@
 // 수익: 쿠팡 파트너스(한국)·Amazon Associates(미국·일본)·라쿠텐 어필리에이트(일본) 구매 수수료.
 // 원칙: 모든 링크에 "광고/제휴" 표시, 가격·재고는 판매몰 기준(앱에 표시하지 않음), 포털(Poki/CrazyGames) 빌드는 기본 꺼짐.
 import type { DetergentId, DirtType, ToolId } from './game/catalog';
+import { REAL_PRODUCTS, realSearchUrl } from './game/realProducts';
 import type { SponsorProduct } from './game/sponsor';
 import type { Lang } from './i18n';
 
@@ -141,11 +142,15 @@ export interface MallProduct {
   sample?: boolean;
 }
 
-/** 시작용 샘플(가상 브랜드). 실제 운영 시 교체 — 원격 설정(JSON)에서 받아오도록 바꾸는 것을 권장 */
-export const MALL_PRODUCTS: MallProduct[] = [
-  { id: 'sample-degreaser', base: 'degreaser', brand: 'BrightMax', name: 'Kitchen Degreaser 500ml', note: '주방 후드·가스레인지 기름때용', links: { coupang: 'https://example.com/brightmax', amazon_us: 'https://example.com/brightmax' }, sample: true },
-  { id: 'sample-washer', base: 'washer', brand: 'AquaJet', name: 'Cordless Pressure Washer', note: '테라스·자동차·외벽용', links: { coupang: 'https://example.com/aquajet', amazon_us: 'https://example.com/aquajet' }, sample: true },
-];
+/** 판매몰 제품 = 실제 판매 제품 목록(realProducts.ts). 운영자가 관리자 패널에서 제휴 링크를 붙이면 그 링크가 우선 */
+export const MALL_PRODUCTS: MallProduct[] = REAL_PRODUCTS.map((p) => ({
+  id: p.id,
+  base: p.base,
+  brand: p.brand,
+  name: p.name,
+  note: p.use,
+  links: { [p.market]: realSearchUrl(p, import.meta.env as unknown as Record<string, string | undefined>) },
+}));
 
 /** 스폰서 제품의 구매 링크 — 마켓별 링크가 있으면 그것, 없으면 공통 제품 페이지 */
 export function sponsorBuyUrl(p: SponsorProduct, m: Market): string | undefined {

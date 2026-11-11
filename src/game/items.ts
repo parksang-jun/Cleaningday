@@ -25,7 +25,18 @@ export function countryFor(lang: string): string {
 /** 오늘 노출 가능한 스폰서 (원격 설정으로 교체 가능하도록 목록을 인자로 받음). country 가 있으면 노출 국가도 대조 */
 export function activeSponsors(list: SponsorProduct[] = SAMPLE_SPONSORS, today = new Date().toISOString().slice(0, 10), country?: string): SponsorProduct[] {
   if (!sponsorsEnabled()) return [];
-  return list.filter((p) => validateSponsor(p, today).length === 0 && (!country || !p.countries?.length || p.countries.includes(country)));
+  return list.filter((p) => !p.affiliate && validateSponsor(p, today).length === 0 && (!country || !p.countries?.length || p.countries.includes(country)));
+}
+
+/** 오늘 소개 가능한 제휴 추천 제품(실제 판매 제품) — 게임 아이템이 되지 않고 쇼호스트 카드·판매몰에만 나온다 */
+export function activeAffiliates(list: SponsorProduct[], today = new Date().toISOString().slice(0, 10), country?: string): SponsorProduct[] {
+  return list.filter((p) => p.affiliate && validateSponsor(p, today).length === 0 && (!country || !p.countries?.length || p.countries.includes(country)));
+}
+
+/** 제휴 제품의 카드용 항목: 스펙은 그 제품이 속한 기준 아이템(게임 성능 변화 없음) */
+export function affiliateEntry(p: SponsorProduct): ItemEntry {
+  const spec = (p.kind === 'tool' ? BASE_TOOLS[p.base as keyof typeof BASE_TOOLS] : BASE_DETERGENTS[p.base as keyof typeof BASE_DETERGENTS]) as ItemSpec;
+  return { spec, sponsor: p };
 }
 
 export function allItems(sponsors: SponsorProduct[] = activeSponsors()): ItemEntry[] {

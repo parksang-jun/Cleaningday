@@ -3,14 +3,22 @@
 import { Capacitor } from '@capacitor/core';
 import { onTrack } from './analytics';
 import { BASE_DETERGENTS, BASE_TOOLS, DIRT_TYPES, type DirtType } from './game/catalog';
+import { realSponsors } from './game/realProducts';
 import { SAMPLE_SPONSORS, validateSponsor, type SponsorProduct } from './game/sponsor';
 import { DEFAULT_HOST, getStore, persist, type HostConfig } from './storage';
 
-/** 내장 샘플 + 덮어쓰기 + 운영자 추가 제품 (id 중복이면 운영자 제품이 우선) */
+/** 내장 제품 = 실제 판매 제품(제휴 추천) + 가상 샘플 광고주 */
+export function builtInSponsors(): SponsorProduct[] {
+  return [...realSponsors(import.meta.env as unknown as Record<string, string | undefined>), ...SAMPLE_SPONSORS];
+}
+
+/** 내장(실제 제품·샘플) + 덮어쓰기 + 운영자 추가 제품 (id 중복이면 운영자 제품이 우선). 우선순위 높은 순 */
 export function sponsorList(): SponsorProduct[] {
   const ops = getStore().ops;
   const custom = new Map(ops.sponsors.map((p) => [p.id, { ...p, custom: true }]));
-  const builtIn = SAMPLE_SPONSORS.filter((p) => !custom.has(p.id)).map((p) => ({ ...p, ...(ops.overrides[p.id] ?? {}) }));
+  const builtIn = builtInSponsors()
+    .filter((p) => !custom.has(p.id))
+    .map((p) => ({ ...p, ...(ops.overrides[p.id] ?? {}), links: { ...(p.links ?? {}), ...(ops.overrides[p.id]?.links ?? {}) } }));
   return [...builtIn, ...custom.values()].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 }
 
@@ -21,7 +29,7 @@ export function findSponsor(id: string): SponsorProduct | undefined {
 /** 저장 — 내장 제품이면 덮어쓰기로, 아니면 운영자 제품으로 */
 export function saveSponsor(p: SponsorProduct): void {
   const ops = getStore().ops;
-  const builtIn = SAMPLE_SPONSORS.find((b) => b.id === p.id);
+  const builtIn = builtInSponsors().find((b) => b.id === p.id);
   if (builtIn && !p.custom) {
     const { custom: _c, ...rest } = p;
     ops.overrides[p.id] = rest;

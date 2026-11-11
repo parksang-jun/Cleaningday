@@ -7,7 +7,7 @@ import { audioDebug, duckMusic, installAudioUnlock, scrubSound, setMusicEnabled,
 import { resolveTiming } from './game/bot';
 import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES, recipesFor, type CleanerFamily, type DetergentId, type DetergentSpec, type DirtType, type SurfaceType, type ToolFamily, type ToolId, type ToolSpec } from './game/catalog';
 import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
-import { activeSponsors, allItems, countryFor, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
+import { activeAffiliates, activeSponsors, affiliateEntry, allItems, countryFor, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
 import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type MessKind, type StageMode, type WorldInfo } from './game/levels';
 import { dominantDirt, GEAR_COOLDOWN_MS, GEAR_MESS_COUNT, GEAR_SLOW_AT, GEAR_SLOW_CLEAN, GEAR_TIP_SEC, premiumFor, type GearPick, type GearReason } from './gear';
 import { findMix, MIXES, mixParts } from './game/catalog';
@@ -18,17 +18,19 @@ import { closeHost, hostAvatarSmall, hostOpen, showHost, type PitchContext, type
 import { type HostMedia } from './avatar';
 import { resolveMediaUrl } from './media';
 import { detectLang, getLang, setLang, t, type Lang } from './i18n';
-import { CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MALL_PRODUCTS, MARKET_LABEL, marketsFor, searchUrl, sponsorBuyUrl, type Market } from './mall';
-import { adminEnabled, adminPin, hostConfig, installOpsCounters, sponsorList } from './ops';
+import { CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MARKET_LABEL, marketsFor, searchUrl, sponsorBuyUrl, type Market } from './mall';
+import { adminEnabled, adminPin, hostConfig, installOpsCounters, saveHostConfig, sponsorList } from './ops';
 import { renderAdmin } from './admin';
 import { Renderer } from './render/renderer';
-import { getStore, loadStore, persist, resetStore } from './storage';
+import { getStore, loadStore, persist, resetStore, type HostConfig } from './storage';
 import { AD_COINS, AD_COINS_PER_DAY, adBoostersLeft, adCoinsLeft, BOOSTER_IDS, BOOSTERS, claimDailyBonus, CONTINUE_COINS, daily, type BoosterId } from './economy';
 import { iconFor } from './ui/icons';
 
 const app = document.getElementById('app')!;
 const ads = new AdsController();
 let items: ItemEntry[] = allItems();
+/** 제휴 추천(실제 판매 제품) — 게임 아이템이 아니라 쇼호스트 카드 전용 */
+let affiliates: ItemEntry[] = [];
 const EXTEND_SEC = 30;
 const REFILL_SEC = 8;
 const HINT_COINS = 30;
@@ -44,7 +46,9 @@ function guided(level: LevelDef): boolean {
 
 /** 오늘·이 언어권에 노출되는 광고 제품으로 아이템 목록을 다시 만든다 (운영자 모드에서 바꾸면 호출) */
 function reloadItems() {
-  items = allItems(activeSponsors(sponsorList(), new Date().toISOString().slice(0, 10), countryFor(getLang())));
+  const today = new Date().toISOString().slice(0, 10);
+  items = allItems(activeSponsors(sponsorList(), today, countryFor(getLang())));
+  affiliates = hostConfig().affiliate && mallEnabled() ? activeAffiliates(sponsorList(), today, countryFor(getLang())).map(affiliateEntry) : [];
 }
 
 function esc(s: string): string {
@@ -365,7 +369,18 @@ function sponsorFor(dirt: DirtType | undefined, placement: Placement, surface?: 
     return true;
   });
   cands.sort((a, b) => (b.sponsor!.priority ?? 0) - (a.sponsor!.priority ?? 0));
-  return cands[0] ?? null;
+  if (cands[0]) return cands[0];
+  // 유료 광고주가 없으면 실제 판매 제품(제휴 추천) — 가장 오래전에 보여 준 것부터 돌아가며
+  const last = getStore().ops.lastHostAt;
+  const aff = affiliates.filter((e) => {
+    const pl = e.sponsor!.placements;
+    if (pl && placement !== 'preview' && pl[placement] === false) return false;
+    if (dirt && !strengths(e.spec).includes(dirt)) return false;
+    if (surface && e.spec.harms.includes(surface)) return false;
+    return true;
+  });
+  aff.sort((a, b) => (last[a.sponsor!.id] ?? 0) - (last[b.sponsor!.id] ?? 0));
+  return aff[0] ?? null;
 }
 
 /** 쇼호스트 이름 — 기본 이름 '반디'는 언어별 표기, 운영자가 바꾼 이름은 그대로 */
@@ -394,9 +409,16 @@ function canHost(p: SponsorProduct, placement: Placement): boolean {
  *  같은 등급 안에서는 우선순위, 그다음 가장 오래전에 보여 준 것(돌아가며 노출) */
 function resultSponsor(g: GameState | null, mainDirt: DirtType | undefined): { entry: ItemEntry; context: PitchContext; usedItem?: string } | null {
   const last = getStore().ops.lastHostAt;
-  const live = items.filter((e) => e.sponsor && e.sponsor.placements?.result !== false);
-  if (!live.length) return null;
   const rank = (list: ItemEntry[]) => [...list].sort((a, b) => (b.sponsor!.priority ?? 0) - (a.sponsor!.priority ?? 0) || (last[a.sponsor!.id] ?? 0) - (last[b.sponsor!.id] ?? 0));
+  const live = items.filter((e) => e.sponsor && e.sponsor.placements?.result !== false);
+  if (!live.length) {
+    // 유료 광고주가 없으면 실제 판매 제품: 이 판 오염에 맞는 것 → 아무거나, 돌아가며
+    const aff = affiliates.filter((e) => e.sponsor!.placements?.result !== false);
+    if (!aff.length) return null;
+    const forDirt = rank(aff.filter((e) => mainDirt && strengths(e.spec).includes(mainDirt)));
+    if (forDirt.length) return { entry: forDirt[0], context: 'dirt' };
+    return { entry: rank(aff)[0], context: 'generic' };
+  }
   const usedIds = g?.used ?? new Set<string>();
   const used = [...usedIds].map((id) => findItem(id, items)).filter((e): e is ItemEntry => Boolean(e));
   const direct = rank(live.filter((e) => usedIds.has(e.spec.id)));
@@ -411,10 +433,10 @@ function resultSponsor(g: GameState | null, mainDirt: DirtType | undefined): { e
 }
 
 /** 쇼호스트 실사 미디어: 제품 영상(있으면) + 사진(제품별 → 전역). idb: 참조는 blob URL 로 푼다 */
-async function hostMedia(p?: SponsorProduct): Promise<HostMedia> {
+async function hostMedia(p?: SponsorProduct): Promise<HostMedia & { audio?: string }> {
   const cfg = hostConfig();
-  const [video, photo] = await Promise.all([resolveMediaUrl(p?.hostVideo), resolveMediaUrl(p?.hostPhoto ?? cfg.photo)]);
-  return { video, photo };
+  const [video, photo, audio] = await Promise.all([resolveMediaUrl(p?.hostVideo), resolveMediaUrl(p?.hostPhoto ?? cfg.photo), resolveMediaUrl(p?.hostAudio?.[getLang()])]);
+  return { video, photo, audio };
 }
 
 /** 쇼호스트 등장 — 체험(보상형 광고)·구매·근거 버튼 포함 */
@@ -428,7 +450,7 @@ function presentHost(entry: ItemEntry, placement: Placement, dirt?: DirtType, ct
   void hostMedia(p).then((media) => presentHostWith(entry, placement, dirt, ctx, media));
 }
 
-function presentHostWith(entry: ItemEntry, placement: Placement, dirt: DirtType | undefined, ctx: { context: PitchContext; usedItem?: string } | undefined, media: HostMedia) {
+function presentHostWith(entry: ItemEntry, placement: Placement, dirt: DirtType | undefined, ctx: { context: PitchContext; usedItem?: string } | undefined, media: HostMedia & { audio?: string }) {
   const p = entry.sponsor!;
   const st = getStore();
   if (game && placement === 'struggle') {
@@ -449,7 +471,10 @@ function presentHostWith(entry: ItemEntry, placement: Placement, dirt: DirtType 
     dirt,
     surface: dirt ? (mainSurfaceOf(dirt) as SurfaceType) : undefined,
     speak: st.settings.hostVoice,
-    media,
+    media: { video: media.video, photo: media.photo },
+    audio: media.audio,
+    buyLabel: p.affiliate ? t('mallSeeOn', { m: MARKET_LABEL[market] }) : undefined,
+    hideTrial: p.affiliate,
     context: ctx?.context,
     usedItem: ctx?.usedItem,
     trialLabel: nextStage ? t('hostTrialNext') : undefined,
@@ -475,7 +500,7 @@ function presentHostWith(entry: ItemEntry, placement: Placement, dirt: DirtType 
           openExternal(buy!);
         }
       : undefined,
-    onEvidence: () => openEvidence(entry),
+    onEvidence: p.affiliate ? undefined : () => openEvidence(entry), // 제휴 추천은 시험 성적이 없다
     onClose: () => {
       if (game) game.paused = false;
     },
@@ -1923,11 +1948,13 @@ function mallPanel(market: Market): string {
   const lang = getLang();
   const markets = marketsFor(lang);
   const cats = Object.keys(CATEGORY_QUERY) as (ToolId | DetergentId)[];
+  // 실제 판매 제품(제휴 추천, 운영자가 붙인 제휴 링크 우선) + 스폰서 제품
+  const real = sponsorList().filter((p) => p.affiliate && p.status !== 'paused' && isSafeUrl(p.links?.[market]));
   const picks = [
-    ...MALL_PRODUCTS.filter((p) => isSafeUrl(p.links[market])).map((p) => ({ id: p.id, base: p.base, brand: p.brand, name: p.name, note: p.note, url: p.links[market]!, sample: p.sample, sponsor: false })),
-    // 운영자 추천에 이미 있는 브랜드·계열의 스폰서 제품은 중복 표시하지 않음
+    ...real.map((p) => ({ id: p.id, base: p.base, brand: p.brand, name: p.name, note: p.hostLines?.[lang]?.[0] ?? p.tagline, url: p.links![market]!, sample: p.sample, sponsor: false })),
+    // 제휴 추천에 이미 있는 브랜드·계열의 스폰서 제품은 중복 표시하지 않음
     ...items
-      .filter((e) => e.sponsor && isSafeUrl(sponsorBuyUrl(e.sponsor, market)) && !MALL_PRODUCTS.some((p) => p.brand === e.sponsor!.brand && p.base === e.spec.base && isSafeUrl(p.links[market])))
+      .filter((e) => e.sponsor && isSafeUrl(sponsorBuyUrl(e.sponsor, market)) && !real.some((p) => p.brand === e.sponsor!.brand && p.base === e.spec.base))
       .map((e) => ({ id: e.sponsor!.id, base: e.spec.base, brand: e.sponsor!.brand, name: e.sponsor!.name, note: e.sponsor!.tagline, url: sponsorBuyUrl(e.sponsor!, market)!, sample: e.sponsor!.sample, sponsor: true })),
   ];
   return `
@@ -1940,7 +1967,7 @@ function mallPanel(market: Market): string {
               .map(
                 (p) => `<li class="shop__item${p.sponsor ? ' is-sponsor' : ''}" data-testid="mall-${esc(p.id)}">
           <div class="shop__icon">${iconFor(p.base)}</div>
-          <div class="shop__body"><div class="shop__name">${esc(p.brand)} ${esc(p.name)} <span class="tag-ad">${t('sponsored')}</span>${p.sample ? `<span class="tag-sample">${t('sample')}</span>` : ''}</div>${p.note ? `<div class="small">${esc(p.note)}</div>` : ''}</div>
+          <div class="shop__body"><div class="shop__name">${esc(p.brand)} ${esc(p.name)} ${p.sponsor ? `<span class="tag-ad">${t('sponsored')}</span>` : `<span class="tag-affiliate">${t('affiliateBadge')}</span>`}${p.sample ? `<span class="tag-sample">${t('sample')}</span>` : ''}</div>${p.note ? `<div class="small">${esc(p.note)}</div>` : ''}</div>
           <div class="shop__act"><button class="btn btn--sm btn--primary" data-mall-url="${esc(p.url)}" data-mall-id="${esc(p.id)}">${t('mallBuy')}</button></div>
         </li>`,
               )
@@ -2139,6 +2166,7 @@ declare global {
       setShield: (sec: number) => void;
       gearTip: (reason: 'slow' | 'mess' | 'fail', dirt?: string) => boolean;
       setCoins: (n: number) => void;
+      hostConfig: (patch: Record<string, unknown>) => void;
       useBooster: (id: string) => boolean;
       resultPick: () => { id: string; context: string; usedItem?: string } | null;
       kit: () => string[];
@@ -2182,6 +2210,10 @@ function exposeDebug() {
     setCoins: (n: number) => {
       getStore().coins = n;
       persist();
+    },
+    hostConfig: (patch) => {
+      saveHostConfig(patch as Partial<HostConfig>);
+      reloadItems();
     },
     gearTip: (reason, dirt) => {
       lastGearTipAt = 0;

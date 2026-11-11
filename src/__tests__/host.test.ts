@@ -36,7 +36,8 @@ describe('live host pitch', () => {
 describe('ops: sponsored product management', () => {
   beforeEach(() => resetStore())
   it('lists built-in samples, saves a custom product, pauses and deletes', () => {
-    expect(sponsorList().map((p) => p.id)).toEqual(SAMPLE_SPONSORS.map((p) => p.id))
+    expect(sponsorList().filter((p) => !p.affiliate).map((p) => p.id)).toEqual(SAMPLE_SPONSORS.map((p) => p.id))
+    expect(sponsorList().filter((p) => p.affiliate).length).toBeGreaterThanOrEqual(20) // 실제 판매 제품(제휴 추천)도 내장
     const p = blankSponsor()
     p.id = 'waxco-mold'
     p.brand = 'WaxCo'

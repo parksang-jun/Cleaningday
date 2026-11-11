@@ -66,6 +66,10 @@ export interface SponsorProduct {
   hostVideo?: string
   /** 이 제품 소개 때만 쓸 쇼호스트 사진 (없으면 전역 설정 사진) */
   hostPhoto?: string
+  /** 언어별 쇼호스트 음성 파일 (mp3 https URL 또는 `idb:` 업로드) — 있으면 브라우저 TTS 대신 재생 (자연스러운 사람 목소리) */
+  hostAudio?: Partial<Record<'ko' | 'en' | 'ja', string>>
+  /** 제휴 추천(실제 판매 제품): 시험 성적 없음 → 게임 성능은 기준 제품과 같고, 카드에 "제휴" 배지·고지 문구, 체험 대신 구매 링크 */
+  affiliate?: boolean
   /** 노출 국가 (ISO2, 비우면 전부) — 언어로 판정: ko→KR, en→US, ja→JP */
   countries?: string[]
   /** 운영 상태 — paused 면 노출 안 함 */
@@ -134,6 +138,13 @@ export function validateSponsor(p: SponsorProduct, today: string): SponsorIssue[
   const issues: SponsorIssue[] = []
   if (p.status === 'paused') issues.push('paused')
   if (!(p.base in BASE_TOOLS) && !(p.base in BASE_DETERGENTS)) return [...issues, 'bad_base']
+  if (p.affiliate) {
+    // 제휴 추천: 시험 성적·근거가 없어도 된다 (게임 성능에 손대지 않으므로). 종류만 맞으면 됨
+    const tool = p.base in BASE_TOOLS
+    if ((p.kind === 'tool') !== tool) issues.push('kind_mismatch')
+    if (today < p.campaign.start || today > p.campaign.end) issues.push('campaign_inactive')
+    return issues
+  }
   if (!p.evidence || !p.evidence.lab || !p.evidence.reportId) issues.push('no_evidence')
   if (today < p.campaign.start || today > p.campaign.end) issues.push('campaign_inactive')
   if (!p.lab.length) issues.push('no_lab_results')

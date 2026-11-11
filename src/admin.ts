@@ -71,6 +71,19 @@ const KO: Record<string, string> = {
   priority: '우선순위 (높을수록 먼저)',
   cautions: '사용 금지 재질 (라벨)',
   links: '구매 링크',
+  linksNote: '제휴 사이트(쿠팡 파트너스 · Amazon Associates)에서 만든 제품 링크를 붙여 넣으세요. 비우면 마켓 검색 링크로 열리고 수수료는 없어요.',
+  affiliate: '제휴 추천 (실제 판매 제품 — 시험 성적 없음, 게임 성능 변화 없음)',
+  affiliateTag: '제휴',
+  affiliateList: '실제 판매 제품 (제휴 추천)',
+  affiliateListNote: '유료 광고주가 없는 자리에 쇼호스트가 소개하는 실제 제품이에요. "수정"에서 쿠팡 파트너스·Amazon 제휴 링크를 붙이면 구매 수수료가 들어와요. 라벨에 있는 용도·주의만 쓰고 효능 수치는 쓰지 마세요.',
+  affiliateOn: '실제 판매 제품(제휴 추천) 소개 켜기',
+  affiliateNote: '유료 광고주가 없는 자리에 쇼호스트가 실제 판매 제품을 소개하고, 구매 링크 수수료(쿠팡 파트너스·Amazon Associates)로 수익이 나요. 카드에 제휴 배지와 고지 문구가 자동으로 붙어요.',
+  audioTitle: '쇼호스트 음성 (사람 목소리)',
+  audioNote: '"멘트 복사"로 대본을 복사해 TTS 서비스(네이버 클로바 더빙 · 타입캐스트 · ElevenLabs · Google Cloud TTS)에서 mp3를 만든 뒤 언어별로 올리세요. 있으면 브라우저 기계음 대신 이 음성이 나와요. 터미널에서는 `npm run voice -- <제품id> <언어>` 로도 만들 수 있어요.',
+  audioUrl: '음성 URL (https mp3)',
+  audioFile: 'mp3 올리기 (이 기기 전용)',
+  audioClear: '음성 지우기',
+  audioUploaded: '업로드된 음성 사용 중',
   autoPitch: '자동 생성 멘트 미리보기',
   hostTitle: '쇼호스트 설정',
   hostEnabled: '쇼호스트 켜기',
@@ -192,6 +205,19 @@ const EN: Record<string, string> = {
   priority: 'Priority (higher first)',
   cautions: 'Do-not-use surfaces (label)',
   links: 'Buy links',
+  linksNote: 'Paste product links made on the affiliate site (Coupang Partners, Amazon Associates). Left blank, the card opens a market search link and earns no commission.',
+  affiliate: 'Affiliate pick (a real retail product — no lab results, no change to game performance)',
+  affiliateTag: 'Affiliate',
+  affiliateList: 'Real retail products (affiliate picks)',
+  affiliateListNote: 'Real products the host presents where no paid advertiser applies. Paste Coupang Partners / Amazon affiliate links under Edit to earn commissions. Keep the copy to label facts — no efficacy numbers.',
+  affiliateOn: 'Present real retail products (affiliate picks)',
+  affiliateNote: 'Where no paid advertiser applies, the host presents a real product and the buy link earns a commission (Coupang Partners, Amazon Associates). The card gets the affiliate badge and disclosure automatically.',
+  audioTitle: 'Host voice (recorded, human-like)',
+  audioNote: 'Use "Copy script" and make an mp3 with a TTS service (ElevenLabs, Google Cloud TTS, Naver Clova Dubbing, Typecast), then upload it per language. When present it replaces the browser voice. From a terminal: `npm run voice -- <product id> <lang>`.',
+  audioUrl: 'Voice URL (https mp3)',
+  audioFile: 'Upload mp3 (this device only)',
+  audioClear: 'Remove voice',
+  audioUploaded: 'Using uploaded voice',
   autoPitch: 'Auto-generated script preview',
   hostTitle: 'Live host settings',
   hostEnabled: 'Enable live host',
@@ -326,13 +352,11 @@ function placementCounts(id: string): Record<string, number> {
 }
 
 function renderCampaigns(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
-  const list = sponsorList();
+  const all = sponsorList();
+  const list = all.filter((p) => !p.affiliate);
+  const affiliates = all.filter((p) => p.affiliate);
   const today = new Date().toISOString().slice(0, 10);
-  panel.innerHTML = `
-    <div class="row"><h3>${esc(A('campaigns'))} (${list.length})</h3><button class="btn btn--sm btn--primary" data-act="new" data-testid="admin-new">${esc(A('newProduct'))}</button></div>
-    <ul class="admin__list" data-testid="admin-list">
-      ${list
-        .map((p) => {
+  const row = (p: SponsorProduct) => {
           const issues = sponsorIssues(p, today);
           const live = issues.length === 0;
           const shows = sumCounter('host_show', p.id);
@@ -342,7 +366,7 @@ function renderCampaigns(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks
           return `<li class="admin__item${live ? '' : ' is-off'}" data-testid="admin-item-${esc(p.id)}">
             <div class="shop__icon">${iconFor(p.base)}</div>
             <div class="admin__body">
-              <div class="admin__name"><b>${esc(p.brand)} ${esc(p.name)}</b> <span class="pill${live ? ' pill--ok' : ' pill--off'}">${live ? esc(A('ok')) : esc(A('issues'))}</span>${pro ? `<span class="pill pill--premium">${esc(A('pro'))}</span>` : ''}${p.sample ? `<span class="tag-sample">${esc(A('sample'))}</span>` : ''}${p.custom ? `<span class="pill">${esc(A('custom'))}</span>` : ''}</div>
+              <div class="admin__name"><b>${esc(p.brand)} ${esc(p.name)}</b> <span class="pill${live ? ' pill--ok' : ' pill--off'}">${live ? esc(A('ok')) : esc(A('issues'))}</span>${pro ? `<span class="pill pill--premium">${esc(A('pro'))}</span>` : ''}${p.affiliate ? `<span class="tag-affiliate">${esc(A('affiliateTag'))}</span>` : ''}${p.sample ? `<span class="tag-sample">${esc(A('sample'))}</span>` : ''}${p.custom ? `<span class="pill">${esc(A('custom'))}</span>` : ''}</div>
               <div class="small muted">${esc(p.kind === 'tool' ? A('kindTool') : A('kindDet'))} · ${esc(t(`item_${p.base}`))} · ${esc(p.campaign.start)} ~ ${esc(p.campaign.end)} · ${p.countries?.length ? esc(p.countries.join(',')) : 'ALL'} · ${p.status === 'paused' ? esc(A('paused')) : esc(A('active'))}</div>
               ${issues.length ? `<div class="small warn">${issues.map((i) => esc(A(`issue_${i}`))).join(' · ')}</div>` : ''}
               <div class="small">${esc(A('shows'))} ${shows} · ${esc(A('trials'))} ${trials} · ${esc(A('buys'))} ${buys} · ${esc(A('ctr'))} ${shows ? Math.round(((trials + buys) / shows) * 100) : 0}%</div>
@@ -354,9 +378,14 @@ function renderCampaigns(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks
               ${p.custom ? `<button class="btn btn--sm btn--danger" data-remove="${esc(p.id)}">${esc(A('remove'))}</button>` : ''}
             </div>
           </li>`;
-        })
-        .join('')}
-    </ul>`;
+  };
+  panel.innerHTML = `
+    <div class="row"><h3>${esc(A('campaigns'))} (${list.length})</h3><button class="btn btn--sm btn--primary" data-act="new" data-testid="admin-new">${esc(A('newProduct'))}</button></div>
+    <ul class="admin__list" data-testid="admin-list">${list.map(row).join('')}</ul>
+    <details class="admin__auto" data-testid="admin-affiliates"><summary>${esc(A('affiliateList'))} (${affiliates.length})</summary>
+      <p class="small muted">${esc(A('affiliateListNote'))}</p>
+      <ul class="admin__list" data-testid="admin-affiliate-list">${affiliates.map(row).join('')}</ul>
+    </details>`;
   panel.querySelector('[data-act="new"]')!.addEventListener('click', () => {
     editing = blankSponsor();
     tab = 'edit';
@@ -447,6 +476,7 @@ function renderEdit(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
         ${field(A('status'), `<select name="status"><option value="active" ${p.status !== 'paused' ? 'selected' : ''}>${esc(A('active'))}</option><option value="paused" ${p.status === 'paused' ? 'selected' : ''}>${esc(A('paused'))}</option></select>`)}
         ${field(A('priority'), input('priority', p.priority ?? 0, 'number'))}
       </div>
+      <label class="setting"><span>${esc(A('affiliate'))}</span><input type="checkbox" name="affiliate" ${p.affiliate ? 'checked' : ''} data-testid="admin-affiliate-flag"></label>
       <div class="admin__checks"><span class="small muted">${esc(A('countries'))}</span>${['KR', 'US', 'JP'].map((c) => `<label><input type="checkbox" name="country_${c}" ${p.countries?.includes(c) ? 'checked' : ''}> ${c}</label>`).join('')}</div>
       <div class="admin__checks"><span class="small muted">${esc(A('placements'))}</span>
         ${(['intro', 'struggle', 'result', 'shop'] as const).map((k) => `<label><input type="checkbox" name="pl_${k}" ${p.placements?.[k] !== false ? 'checked' : ''}> ${esc(A(`pl${k[0].toUpperCase()}${k.slice(1)}`))}</label>`).join('')}
@@ -472,7 +502,21 @@ function renderEdit(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
         ${p.hostVideo?.startsWith('idb:') ? `<span class="small muted" data-testid="admin-video-state">✓ ${esc(A('videoUploaded'))}</span><button class="btn btn--sm" type="button" data-act="video-clear">${esc(A('videoClear'))}</button>` : ''}
         <button class="btn btn--sm" type="button" data-act="copy-script" data-testid="admin-copy-script">📋 ${esc(A('copyScript'))}</button>
       </div>
+      <h3>${esc(A('audioTitle'))}</h3>
+      <p class="small muted">${esc(A('audioNote'))}</p>
+      ${(['ko', 'en', 'ja'] as const)
+        .map(
+          (l) => `<div class="admin__grid admin__audio-row">
+        ${field(`${A('audioUrl')} (${l})`, input(`audio_${l}`, p.hostAudio?.[l]?.startsWith('idb:') ? '' : p.hostAudio?.[l], 'url', `data-testid="admin-audio-url-${l}"`))}
+        <div class="btn-row">
+          <label class="btn btn--sm">${esc(A('audioFile'))} (${l})<input type="file" name="audioFile_${l}" accept="audio/mpeg,audio/mp4,audio/ogg,audio/wav" hidden data-testid="admin-audio-file-${l}"></label>
+          ${p.hostAudio?.[l]?.startsWith('idb:') ? `<span class="small muted" data-testid="admin-audio-state-${l}">✓ ${esc(A('audioUploaded'))}</span><button class="btn btn--sm" type="button" data-act="audio-clear" data-lang="${l}">${esc(A('audioClear'))}</button>` : ''}
+        </div>
+      </div>`,
+        )
+        .join('')}
       <h3>${esc(A('links'))}</h3>
+      <p class="small muted">${esc(A('linksNote'))}</p>
       <div class="admin__grid">
         ${field('productUrl', input('productUrl', p.productUrl, 'url'))}
         ${field('coupang', input('link_coupang', p.links?.coupang, 'url'))}
@@ -515,6 +559,8 @@ function renderEdit(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
       reviews: { count: Number(g('rv_count') || 0), rating: Number(g('rv_rating') || 0), source: g('rv_source') || undefined },
       hostLines: Object.fromEntries((['ko', 'en', 'ja'] as const).map((l) => [l, g(`host_${l}`).split('\n').map((x) => x.trim()).filter(Boolean)])),
       hostVideo: g('hostVideo') || (p.hostVideo?.startsWith('idb:') ? p.hostVideo : undefined),
+      hostAudio: Object.fromEntries((['ko', 'en', 'ja'] as const).map((l) => [l, g(`audio_${l}`) || (p.hostAudio?.[l]?.startsWith('idb:') ? p.hostAudio[l] : undefined)])),
+      affiliate: Boolean(f.get('affiliate')) || undefined,
       hostPhoto: g('hostPhoto') || undefined,
       productUrl: g('productUrl') || undefined,
       links: { coupang: g('link_coupang') || undefined, amazon_us: g('link_amazon_us') || undefined, amazon_jp: g('link_amazon_jp') || undefined, rakuten: g('link_rakuten') || undefined },
@@ -565,6 +611,32 @@ function renderEdit(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
     editing = next;
     renderAdmin(app, hooks);
   });
+  // 쇼호스트 음성(mp3) 파일 → IndexedDB, 설정에는 idb: 참조만 (언어별)
+  for (const l of ['ko', 'en', 'ja'] as const) {
+    form.querySelector<HTMLInputElement>(`[name="audioFile_${l}"]`)!.addEventListener('change', async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const next = read();
+      const key = `sponsor-audio:${next.id || 'new'}:${l}`;
+      if (await putMedia(key, file)) {
+        next.hostAudio = { ...(next.hostAudio ?? {}), [l]: `idb:${key}` };
+        editing = next;
+        flash = `${A('saved')} · ${A('audioUploaded')}`;
+        renderAdmin(app, hooks);
+      }
+    });
+  }
+  form.querySelectorAll<HTMLButtonElement>('[data-act="audio-clear"]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const l = b.dataset.lang as 'ko' | 'en' | 'ja';
+      const next = read();
+      const cur = next.hostAudio?.[l];
+      if (cur?.startsWith('idb:')) await deleteMedia(cur.slice(4));
+      next.hostAudio = { ...(next.hostAudio ?? {}), [l]: undefined };
+      editing = next;
+      renderAdmin(app, hooks);
+    }),
+  );
   // 대본 복사: 세 언어 자동 생성(또는 직접 쓴) 멘트 — AI 아바타 영상 제작용
   form.querySelector('[data-act="copy-script"]')!.addEventListener('click', async () => {
     const next = read();
@@ -613,6 +685,8 @@ function renderHost(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
       ${field(A('introFrom'), input('introFromStage', h.introFromStage, 'number', 'min="1" max="96"'))}
       ${field(A('struggleAfter'), input('struggleAfterTries', h.struggleAfterTries, 'number', 'min="1"'))}
       <label class="setting"><span>${esc(A('resultOn'))}</span><input type="checkbox" name="result" ${h.result ? 'checked' : ''}></label>
+      <label class="setting"><span>${esc(A('affiliateOn'))}</span><input type="checkbox" name="affiliate" ${h.affiliate ? 'checked' : ''} data-testid="admin-affiliate"></label>
+      <p class="small muted">${esc(A('affiliateNote'))}</p>
       <h3>${esc(A('realHost'))}</h3>
       <p class="small muted">${esc(A('realHostNote'))}</p>
       <div class="admin__media">
@@ -640,6 +714,7 @@ function renderHost(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
       introFromStage: Number(f.get('introFromStage') || 1),
       struggleAfterTries: Number(f.get('struggleAfterTries') || 2),
       result: Boolean(f.get('result')),
+      affiliate: Boolean(f.get('affiliate')),
       photo: url || (h.photo?.startsWith('data:') ? h.photo : undefined),
     });
     flash = A('saved');

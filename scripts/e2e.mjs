@@ -77,6 +77,8 @@ page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 try {
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
   await page.waitForSelector('[data-testid="play"]');
+  // 실제 제품(제휴 추천) 소개는 아래 전용 구간에서 검사 — 그 전까지는 꺼서 기존 흐름(가상 광고주)을 그대로 본다
+  await page.evaluate(() => window.__sparkle.hostConfig({ affiliate: false }));
   assert((await page.locator('[data-testid="beta-tag"]').count()) === 1, 'home shows the BETA tag on production builds (VITE_BETA)');
   assert((await page.locator('.world').count()) === 3, '3 worlds listed (apartment, house, car)');
   await page.waitForTimeout(700);
@@ -678,6 +680,40 @@ try {
   assert(liveText.includes('WaxCo'), 'LIVE host presents the newly registered product');
   await page.screenshot({ path: resolve(shots, '23-host-live.png') });
   await page.click('[data-testid="host-close"]');
+
+  // 실제 판매 제품(제휴 추천): 유료 광고주가 없는 판에서 쇼호스트가 실제 제품을 소개하고, 체험 대신 구매 링크·제휴 고지를 보여 준다
+  await page.evaluate(() => window.__sparkle.hostConfig({ affiliate: true, introCooldownMin: 0 }));
+  await page.click('[data-testid="area-living"]');
+  await page.click('[data-testid="stage-4"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  await page.click('[data-testid="start"]');
+  await page.waitForSelector('[data-testid="host"][data-placement="intro"]', { timeout: 4000 });
+  await page.waitForTimeout(1200);
+  const affText = await page.locator('[data-testid="host"]').innerText();
+  assert((await page.locator('[data-testid="host-affiliate"]').count()) === 1, 'host card carries the "Affiliate pick" badge for a real retail product');
+  const realKr = /유한락스|홈스타|피죤|스카치브라이트|매직블럭|다이슨|카처|한경희/;
+  assert(realKr.test(affText), `host presents a real Korean retail product (${affText.split('\n').find((l) => realKr.test(l))})`);
+  assert(affText.includes('실제로 파는 제품'), 'pitch says it is a real product you can buy');
+  assert(!/\d+%|\d+배/.test(affText), 'affiliate pitch makes no efficacy claims (no % or ×)');
+  assert((await page.locator('[data-testid="host-trial"]').count()) === 0, 'no "try it free" button — affiliate picks have no in-game effect');
+  assert((await page.locator('[data-testid="host-buy"]').innerText()).includes('쿠팡'), 'buy button says "쿠팡에서 보기"');
+  assert((await page.locator('[data-testid="host-foot"]').innerText()).includes('쿠팡 파트너스'), 'card shows the Coupang Partners disclosure');
+  await page.screenshot({ path: resolve(shots, '24-host-affiliate.png') });
+  await page.click('[data-testid="host-close"]');
+  await page.click('[data-testid="back"]');
+  await page.waitForSelector('[data-testid="stage-1"]');
+  await page.click('[data-testid="back-home"]');
+  await page.waitForSelector('[data-testid="play"]');
+  await page.click('[data-act="shop"]');
+  await page.waitForSelector('[data-testid="shop"]');
+  await page.click('[data-testid="tab-mall"]');
+  await page.waitForSelector('[data-testid="mall"]');
+  assert((await page.locator('[data-testid="mall-kr-yuhanrox"]').count()) === 1 && (await page.locator('[data-testid="mall-kr-yuhanrox"] .tag-affiliate').count()) === 1, 'mall lists real Korean products with the affiliate tag (Coupang market)');
+  assert((await page.locator('[data-testid="mall-us-windex"]').count()) === 0, 'US products stay out of the Coupang list');
+  await page.click('[data-testid="market-amazon_us"]');
+  await page.waitForTimeout(100);
+  assert((await page.locator('[data-testid="mall-us-windex"]').count()) === 1, 'switching to Amazon lists the US products');
+  await page.click('[data-testid="shop"] [data-act="close"]');
 
   assert(errors.length === 0, `no page errors (${errors.join(' | ')})`);
   console.log('\nE2E PASSED');
