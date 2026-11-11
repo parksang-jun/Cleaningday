@@ -3,9 +3,9 @@ import './style.css';
 import { Capacitor } from '@capacitor/core';
 import { AdsController } from './ads';
 import { track } from './analytics';
-import { audioDebug, duckMusic, installAudioUnlock, scrubSound, setMusicEnabled, setSoundEnabled, sfx, stopScrub, unlockAudio, type ScrubProfile } from './audio';
+import { audioDebug, duckMusic, installAudioUnlock, scrubSound, setMusicEnabled, setSoundEnabled, sfx, stopScrub, unlockAudio, type ScrubProfile, type ScrubTarget } from './audio';
 import { resolveTiming } from './game/bot';
-import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES, recipesFor, type CleanerFamily, type DetergentId, type DetergentSpec, type DirtType, type SurfaceType, type ToolFamily, type ToolId, type ToolSpec } from './game/catalog';
+import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES, recipesFor, SURFACES, type CleanerFamily, type DetergentId, type DetergentSpec, type DirtType, type SurfaceType, type ToolFamily, type ToolId, type ToolSpec } from './game/catalog';
 import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
 import { activeAffiliates, activeSponsors, affiliateEntry, allItems, countryFor, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
 import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type MessKind, type StageMode, type WorldInfo } from './game/levels';
@@ -1347,7 +1347,28 @@ function step(dt: number) {
       }
     } else {
       const gain = g.session.cleanliness - before;
-      scrubSound(0.35 + Math.min(1, gain * 400), SCRUB_PROFILE[spec.base as ToolId] ?? 'cloth');
+      // 소리는 지금 문지르는 자리의 재질·오염에 맞춘다
+      const s = g.session;
+      const cx = Math.min(s.w - 1, Math.max(0, Math.floor(g.pointer.x)));
+      const cy = Math.min(s.h - 1, Math.max(0, Math.floor(g.pointer.y)));
+      const ci = cy * s.w + cx;
+      // 오염은 손가락 주변 3×3 에서 가장 많은 칸 기준 (경계에서 소리가 깜빡이지 않게)
+      let best = -1;
+      let dirt: DirtType | undefined;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = cx + dx;
+          const y = cy + dy;
+          if (x < 0 || y < 0 || x >= s.w || y >= s.h) continue;
+          const j = y * s.w + x;
+          if (s.amount[j] > 0.05 && s.amount[j] > best) {
+            best = s.amount[j];
+            dirt = DIRT_TYPES[s.type[j]];
+          }
+        }
+      }
+      const target: ScrubTarget = { surface: SURFACES[s.surfaceIdx[ci]], dirt, wet: s.soak[ci] !== null };
+      scrubSound(0.35 + Math.min(1, gain * 400), SCRUB_PROFILE[spec.base as ToolId] ?? 'cloth', target);
     }
   }
   // 콤보

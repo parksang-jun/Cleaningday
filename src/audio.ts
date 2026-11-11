@@ -3,7 +3,11 @@
 //  · 첫 터치/클릭에서 잠금 해제. iOS 는 무음 스위치가 켜져 있으면 WebAudio 가 조용하므로
 //    짧은 무음 <audio> 를 재생해 재생 카테고리로 바꾼다(unmute 트릭).
 //  · 도구별 문지르는 소리(걸레 스윽, 솔 북북, 청소기 윙, 물 쏴, 고압 쐐, 스퀴지 끽, 스팀 치익, 돌돌이 찍찍)
+//  · 청소 대상에 따라 소리가 달라진다: 표면 재질(나무 둔탁·타일 쨍·유리 끽·금속 챙·천 푹신·돌 서걱)이 공명 필터와 울림음을 바꾸고,
+//    오염(먼지·진흙 자글, 기름 질척, 머리카락 바스락, 물때·녹 긁힘, 거품 보글)이 질감 레이어를 얹는다. 오염이 없어지면 질감이 사라지고 유리는 뽀드득.
 //  · 이벤트: 분사, 반짝임(콤보 음높이), 발견, "싹!", 틀린 도구 둔탁음, 경고, 완료 팡파르, 별, 코인, 구매, 시작, 마지막 10초 째깍, 실패
+import type { DirtType, SurfaceType } from './game/catalog';
+
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let sfxBus: GainNode | null = null;
@@ -23,10 +27,72 @@ interface ScrubNode {
   oscGain?: GainNode;
   lfo?: OscillatorNode;
   profile: ScrubProfile;
+  /** 재질·오염 키 — 바뀌면 노드를 다시 만든다 */
+  key: string;
+  /** 재질 울림음 */
+  ring?: OscillatorNode;
+  ringGain?: GainNode;
+  /** 오염 질감 레이어 */
+  tex?: { src: AudioBufferSourceNode; gain: GainNode; lfo: OscillatorNode; filter: BiquadFilterNode; kind: TextureKind };
+}
+
+/** 청소 대상 — 표면 재질과 그 자리의 오염. 소리가 여기에 맞춰 달라진다 */
+export interface ScrubTarget {
+  surface: SurfaceType;
+  /** 그 자리에 남아 있는 오염 (없으면 깨끗한 면을 문지르는 소리) */
+  dirt?: DirtType;
+  /** 세정제·물이 뿌려져 젖어 있음 */
+  wet?: boolean;
+}
+
+/** 표면 재질 음색: 도구 소리 뒤에 거는 공명 필터 + 울림음 */
+const MATERIAL: Record<SurfaceType, { type: BiquadFilterType; freq: number; q: number; db: number; ring?: number; ringType?: OscillatorType; ringGain?: number }> = {
+  wood: { type: 'peaking', freq: 420, q: 1.2, db: 7, ring: 180, ringType: 'sine', ringGain: 0.05 }, // 둔탁하고 따뜻한 울림
+  tile: { type: 'peaking', freq: 2600, q: 2, db: 6, ring: 2400, ringType: 'sine', ringGain: 0.03 }, // 쨍한 타일
+  ceramic: { type: 'peaking', freq: 3000, q: 2.5, db: 6, ring: 3200, ringType: 'sine', ringGain: 0.04 }, // 도기 — 더 높고 맑게
+  glass: { type: 'peaking', freq: 3600, q: 3, db: 7, ring: 2900, ringType: 'sine', ringGain: 0.07 }, // 유리 — 끽/뽀드득
+  steel: { type: 'peaking', freq: 1900, q: 3, db: 7, ring: 1900, ringType: 'triangle', ringGain: 0.05 }, // 금속 챙
+  metal: { type: 'peaking', freq: 1600, q: 2.5, db: 7, ring: 1400, ringType: 'triangle', ringGain: 0.05 },
+  fabric: { type: 'lowpass', freq: 1200, q: 0.7, db: 0 }, // 천 — 먹먹하고 푹신
+  stone: { type: 'peaking', freq: 900, q: 1, db: 4 }, // 돌 — 서걱
+  brick: { type: 'peaking', freq: 800, q: 1, db: 4 },
+  paint: { type: 'peaking', freq: 1100, q: 1.5, db: 4, ring: 900, ringType: 'sine', ringGain: 0.02 }, // 도장면 — 매끈
+  plastic: { type: 'peaking', freq: 1700, q: 2, db: 5, ring: 1300, ringType: 'triangle', ringGain: 0.03 }, // 플라스틱 — 속 빈 소리
+  vinyl: { type: 'lowpass', freq: 2200, q: 0.8, db: 0 },
+};
+
+type TextureKind = 'grit' | 'squelch' | 'rustle' | 'scrape' | 'fizz';
+/** 오염 질감: 노이즈를 어떻게 흔들어 얹나 (양 0~1) */
+const DIRT_TEXTURE: Record<DirtType, { kind: TextureKind; amount: number }> = {
+  dust: { kind: 'grit', amount: 0.45 }, // 자글자글
+  mud: { kind: 'grit', amount: 1 }, // 서걱서걱
+  hair: { kind: 'rustle', amount: 0.8 }, // 바스락
+  grease: { kind: 'squelch', amount: 0.9 }, // 질척
+  stain: { kind: 'squelch', amount: 0.4 },
+  soap: { kind: 'fizz', amount: 0.6 }, // 보글
+  film: { kind: 'squelch', amount: 0.3 },
+  scale: { kind: 'scrape', amount: 0.8 }, // 긁힘
+  iron: { kind: 'scrape', amount: 0.7 },
+  tar: { kind: 'squelch', amount: 0.7 },
+  mold: { kind: 'scrape', amount: 0.5 },
+  moss: { kind: 'rustle', amount: 0.6 },
+};
+const TEXTURE: Record<TextureKind, { type: BiquadFilterType; freq: number; q: number; lfoType: OscillatorType; lfo: number; gain: number }> = {
+  grit: { type: 'highpass', freq: 2800, q: 0.7, lfoType: 'square', lfo: 23, gain: 0.5 }, // 짧은 모래알 튀는 소리
+  squelch: { type: 'lowpass', freq: 600, q: 2, lfoType: 'sine', lfo: 5.5, gain: 0.45 }, // 질척한 와우
+  rustle: { type: 'highpass', freq: 4200, q: 0.5, lfoType: 'square', lfo: 12, gain: 0.35 }, // 바스락
+  scrape: { type: 'bandpass', freq: 3600, q: 4, lfoType: 'sawtooth', lfo: 8, gain: 0.5 }, // 긁히는 쇳소리
+  fizz: { type: 'highpass', freq: 5000, q: 0.4, lfoType: 'square', lfo: 31, gain: 0.3 }, // 보글보글
+};
+
+function targetKey(profile: ScrubProfile, target?: ScrubTarget): string {
+  return `${profile}:${target?.surface ?? '-'}:${target?.dirt ? DIRT_TEXTURE[target.dirt].kind : '-'}`;
 }
 let scrub: ScrubNode | null = null;
 // 마지막으로 scrubSound 가 불린 시각 — 프레임마다 갱신되지 않으면(판 종료·화면 전환) 감시 타이머가 끈다
 let scrubAt = 0;
+// 노드를 만든 시각 — 재질·오염 경계를 오갈 때 매 프레임 다시 만들지 않게 잠깐 붙잡는다
+let scrubBornAt = 0;
 let scrubWatch: number | null = null;
 
 export type ScrubProfile = 'cloth' | 'sponge' | 'brush' | 'vacuum' | 'water' | 'washer' | 'squeegee' | 'steam' | 'roller' | 'mitt';
@@ -61,8 +127,8 @@ export function isUnlocked(): boolean {
 }
 
 /** 테스트용 상태 */
-export function audioDebug(): { unlocked: boolean; state: string; musicStep: number; sfx: boolean; music: boolean; scrub: string | null } {
-  return { unlocked, state: ctx?.state ?? 'none', musicStep, sfx: sfxEnabled, music: bgmEnabled, scrub: scrub?.profile ?? null };
+export function audioDebug(): { unlocked: boolean; state: string; musicStep: number; sfx: boolean; music: boolean; scrub: string | null; scrubKey: string | null } {
+  return { unlocked, state: ctx?.state ?? 'none', musicStep, sfx: sfxEnabled, music: bgmEnabled, scrub: scrub?.profile ?? null, scrubKey: scrub?.key ?? null };
 }
 
 /** 첫 사용자 입력 안에서 호출 — 컨텍스트 생성·재개, iOS 무음 스위치 우회 */
@@ -189,14 +255,16 @@ function noise(dur: number, gain: number, filter: { type: BiquadFilterType; from
   src.stop(t0 + dur + 0.05);
 }
 
-/** 문지르기 지속음: 도구 프로필 + 세기(0~1) */
-export function scrubSound(intensity: number, profile: ScrubProfile = 'cloth'): void {
+/** 문지르기 지속음: 도구 프로필 + 세기(0~1) + 청소 대상(표면 재질·오염) */
+export function scrubSound(intensity: number, profile: ScrubProfile = 'cloth', target?: ScrubTarget): void {
   if (!sfxEnabled || !ctx || !noiseBuf || !sfxBus) return;
   const p = PROFILE[profile];
-  if (scrub && scrub.profile !== profile) {
+  const key = targetKey(profile, target);
+  if (scrub && scrub.key !== key && (scrub.profile !== profile || performance.now() - scrubBornAt > 160)) {
     killScrub();
   }
   if (!scrub) {
+    scrubBornAt = performance.now();
     const src = ctx.createBufferSource();
     src.buffer = noiseBuf;
     src.loop = true;
@@ -209,9 +277,61 @@ export function scrubSound(intensity: number, profile: ScrubProfile = 'cloth'): 
     // 떨림은 별도 단(trem)에 건다 — 주 게인에 직접 걸면 게인 0 에서도 ±떨림만큼 소리가 남는다
     const trem = ctx.createGain();
     trem.gain.value = 1;
-    src.connect(filter).connect(trem).connect(gain).connect(sfxBus);
+    // 재질 공명: 도구 소리에 표면의 음색을 입힌다
+    const mat = target ? MATERIAL[target.surface] : null;
+    const matFilter = ctx.createBiquadFilter();
+    matFilter.type = mat ? mat.type : 'allpass';
+    matFilter.frequency.value = mat ? mat.freq : 1000;
+    matFilter.Q.value = mat ? mat.q : 1;
+    if (mat && mat.type === 'peaking') matFilter.gain.value = mat.db;
+    src.connect(filter).connect(matFilter).connect(trem).connect(gain).connect(sfxBus);
     src.start();
-    const node: ScrubNode = { src, filter, gain, trem, profile };
+    const node: ScrubNode = { src, filter, gain, trem, profile, key };
+    if (mat?.ring && profile !== 'vacuum' && profile !== 'washer') {
+      // 재질 울림음 (유리 끽, 금속 챙, 나무 둥) — 세기에 따라 살짝
+      const ring = ctx.createOscillator();
+      ring.type = mat.ringType ?? 'sine';
+      ring.frequency.value = mat.ring;
+      const rg = ctx.createGain();
+      rg.gain.value = 0;
+      ring.connect(rg).connect(sfxBus);
+      ring.start();
+      node.ring = ring;
+      node.ringGain = rg;
+    }
+    if (target?.dirt) {
+      // 오염 질감 레이어: 두 번째 노이즈를 LFO 로 끊어 얹는다
+      const tx = DIRT_TEXTURE[target.dirt];
+      const spec = TEXTURE[tx.kind];
+      const tsrc = ctx.createBufferSource();
+      tsrc.buffer = noiseBuf;
+      tsrc.loop = true;
+      tsrc.loopStart = 0.31; // 주 노이즈와 다른 구간에서 시작 (상관 없게)
+      const tf = ctx.createBiquadFilter();
+      tf.type = spec.type;
+      tf.frequency.value = spec.freq;
+      tf.Q.value = spec.q;
+      const tgate = ctx.createGain();
+      tgate.gain.value = 0.5;
+      const tgain = ctx.createGain();
+      tgain.gain.value = 0;
+      const tlfo = ctx.createOscillator();
+      tlfo.type = spec.lfoType;
+      tlfo.frequency.value = spec.lfo * (0.85 + Math.random() * 0.3);
+      const lg = ctx.createGain();
+      lg.gain.value = 0.5;
+      tlfo.connect(lg).connect(tgate.gain);
+      if (tx.kind === 'squelch') {
+        // 질척: LFO 가 로우패스 주파수를 흔든다 (와우)
+        const fg = ctx.createGain();
+        fg.gain.value = 420;
+        tlfo.connect(fg).connect(tf.frequency);
+      }
+      tsrc.connect(tf).connect(tgate).connect(tgain).connect(sfxBus);
+      tsrc.start();
+      tlfo.start();
+      node.tex = { src: tsrc, gain: tgain, lfo: tlfo, filter: tf, kind: tx.kind };
+    }
     if (p.hum) {
       const osc = ctx.createOscillator();
       osc.type = p.humType ?? 'sawtooth';
@@ -257,6 +377,19 @@ export function scrubSound(intensity: number, profile: ScrubProfile = 'cloth'): 
   if (scrub.oscGain) scrub.oscGain.gain.setTargetAtTime(level * (profile === 'squeegee' ? 0.25 : 0.5), ctx.currentTime, 0.05);
   if (scrub.osc && profile === 'vacuum') scrub.osc.frequency.setTargetAtTime(118 + 40 * Math.min(1, intensity), ctx.currentTime, 0.2);
   if (scrub.osc && profile === 'squeegee') scrub.osc.frequency.setTargetAtTime(1500 + Math.random() * 900, ctx.currentTime, 0.08);
+  if (scrub.ringGain && target) {
+    // 울림음: 깨끗한 면일수록(오염 없음) 또렷하게 — 유리는 젖었을 때 뽀드득 끽
+    const mat = MATERIAL[target.surface];
+    const clean = target.dirt ? 0.35 : 1;
+    const wetBoost = target.surface === 'glass' && target.wet ? 1.8 : 1;
+    scrub.ringGain.gain.setTargetAtTime((mat.ringGain ?? 0) * level * clean * wetBoost, ctx.currentTime, 0.06);
+    if (scrub.ring && target.surface === 'glass') scrub.ring.frequency.setTargetAtTime(mat.ring! * (0.9 + Math.random() * 0.25), ctx.currentTime, 0.1);
+  }
+  if (scrub.tex && target?.dirt) {
+    const tx = DIRT_TEXTURE[target.dirt];
+    const spec = TEXTURE[tx.kind];
+    scrub.tex.gain.gain.setTargetAtTime(spec.gain * tx.amount * level, ctx.currentTime, 0.05);
+  }
 }
 
 function killScrub(): void {
@@ -266,11 +399,16 @@ function killScrub(): void {
   const t = ctx.currentTime;
   s.gain.gain.setTargetAtTime(0, t, 0.05);
   if (s.oscGain) s.oscGain.gain.setTargetAtTime(0, t, 0.05);
+  if (s.ringGain) s.ringGain.gain.setTargetAtTime(0, t, 0.05);
+  if (s.tex) s.tex.gain.gain.setTargetAtTime(0, t, 0.05);
   setTimeout(() => {
     try {
       s.src.stop();
       s.osc?.stop();
       s.lfo?.stop();
+      s.ring?.stop();
+      s.tex?.src.stop();
+      s.tex?.lfo.stop();
     } catch {
       /* ignore */
     }

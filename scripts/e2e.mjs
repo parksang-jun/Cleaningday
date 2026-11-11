@@ -110,6 +110,7 @@ try {
   const audio = await page.evaluate(() => window.__sparkle.audio());
   assert(audio.unlocked && audio.state === 'running', `audio unlocked on first touch (state ${audio.state})`);
   assert(audio.scrub === 'cloth', `scrub sound uses the cloth profile while dragging (${audio.scrub})`);
+  assert(/^cloth:(wood|fabric|tile|vinyl|stone|paint|plastic|glass|ceramic|steel|metal|brick):(grit|rustle|squelch|scrape|fizz|-)$/.test(audio.scrubKey), `scrub sound carries the surface material and the dirt texture (${audio.scrubKey})`);
   await page.mouse.up();
   await page.waitForTimeout(450);
   assert((await page.evaluate(() => window.__sparkle.audio())).scrub === null, 'scrub sound stops right after the pointer lifts');
