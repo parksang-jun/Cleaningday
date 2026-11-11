@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BASE_DETERGENTS, BASE_TOOLS } from './catalog'
 import { activeAffiliates, activeSponsors, affiliateEntry, strengths } from './items'
-import { REAL_PRODUCTS, realSearchUrl, realSponsors, toSponsor } from './realProducts'
+import { REAL_PRODUCTS, realItemSpec, realSearchUrl, realSpeedup, realSponsors, toSponsor } from './realProducts'
 import { validateSponsor } from './sponsor'
 
 describe('real retail products (affiliate picks)', () => {
@@ -23,14 +23,27 @@ describe('real retail products (affiliate picks)', () => {
     }
   })
 
-  it('affiliate picks never become game items, but can be presented for the dirt their base cleans', () => {
+  it('real products play in-game with their type spec × published spec ratio (Dyson V16 315AW → faster than basic vacuum)', () => {
+    const v16 = toSponsor(REAL_PRODUCTS.find((p) => p.id === 'kr-dyson-v16')!)
+    const spec = realItemSpec(v16)
+    expect(spec.id).toBe('sp:kr-dyson-v16')
+    expect(spec.kind === 'tool' && spec.power).toBeCloseTo(1.8 * 1.15, 2)
+    expect(realSpeedup(spec)).toBeGreaterThan(1.5)
+    const k4 = realItemSpec(toSponsor(REAL_PRODUCTS.find((p) => p.id === 'kr-karcher-k4')!))
+    expect(k4.kind === 'tool' && k4.power).toBeCloseTo(1.6 * 1.18, 2)
+    // 세정제는 유형 기준 그대로 (효능 배율 없음)
+    const yuhan = realItemSpec(toSponsor(REAL_PRODUCTS.find((p) => p.id === 'kr-yuhanrox')!))
+    expect(yuhan.kind === 'detergent' && Object.values(yuhan.mult).every((v) => v === 1)).toBe(true)
+  })
+
+  it('affiliate picks are presented for the dirt their base cleans', () => {
     const all = realSponsors()
     expect(activeSponsors(all, '2026-11-11', 'KR')).toEqual([]) // 게임 아이템 아님
     const kr = activeAffiliates(all, '2026-11-11', 'KR')
     expect(kr.length).toBeGreaterThanOrEqual(6)
     expect(kr.every((p) => p.countries?.includes('KR'))).toBe(true)
     const yuhan = affiliateEntry(kr.find((p) => p.id === 'kr-yuhanrox')!)
-    expect(yuhan.spec.id).toBe('moldremover')
+    expect(yuhan.spec.id).toBe('sp:kr-yuhanrox')
     expect(strengths(yuhan.spec)).toContain('mold')
     const us = activeAffiliates(all, '2026-11-11', 'US')
     expect(us.some((p) => p.id === 'us-windex')).toBe(true)

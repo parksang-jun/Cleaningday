@@ -47,8 +47,9 @@ function guided(level: LevelDef): boolean {
 /** 오늘·이 언어권에 노출되는 광고 제품으로 아이템 목록을 다시 만든다 (운영자 모드에서 바꾸면 호출) */
 function reloadItems() {
   const today = new Date().toISOString().slice(0, 10);
-  items = allItems(activeSponsors(sponsorList(), today, countryFor(getLang())));
   affiliates = hostConfig().affiliate && mallEnabled() ? activeAffiliates(sponsorList(), today, countryFor(getLang())).map(affiliateEntry) : [];
+  // 실제 제품도 체험 가능한 게임 아이템 (유형 기준 성능 × 공개 사양)
+  items = [...allItems(activeSponsors(sponsorList(), today, countryFor(getLang()))), ...affiliates];
 }
 
 function esc(s: string): string {
@@ -169,8 +170,16 @@ function pop(text: string, cls = '') {
 }
 
 // ---------- 진행 ----------
+/** 관리자 테스트 플레이(모든 판 열기)가 켜져 있나 — 관리자 모드가 있는 빌드에서만 */
+function testUnlock(): boolean {
+  return adminEnabled() && getStore().ops.testUnlock;
+}
+/** 이 판을 열 수 있나: 진행으로 열렸거나, 관리자 테스트 플레이 */
+function stageOpen(id: number): boolean {
+  return id <= getStore().progress.unlocked || testUnlock();
+}
 function areaUnlocked(a: AreaInfo): boolean {
-  return a.levelIds[0] <= getStore().progress.unlocked;
+  return stageOpen(a.levelIds[0]);
 }
 function areaStars(a: AreaInfo): number {
   const st = getStore();
@@ -474,7 +483,6 @@ function presentHostWith(entry: ItemEntry, placement: Placement, dirt: DirtType 
     media: { video: media.video, photo: media.photo },
     audio: media.audio,
     buyLabel: p.affiliate ? t('mallSeeOn', { m: MARKET_LABEL[market] }) : undefined,
-    hideTrial: p.affiliate,
     context: ctx?.context,
     usedItem: ctx?.usedItem,
     trialLabel: nextStage ? t('hostTrialNext') : undefined,
@@ -524,10 +532,11 @@ function renderArea(areaId: string) {
         ${area.levelIds
           .map((id) => {
             const l = getLevel(id)!;
-            const locked = l.id > st.progress.unlocked;
+            const locked = !stageOpen(l.id);
+            const test = l.id > st.progress.unlocked && !locked; // 테스트 플레이로만 열린 판
             const stars = st.progress.stars[l.id] ?? 0;
-            return `<button class="stage${locked ? ' is-locked' : ''}" data-level="${l.id}" ${locked ? 'disabled' : ''} data-testid="stage-${l.id}">
-              <span class="stage__n">${l.id} <small class="stage__tier">T${l.tier}</small> ${MODE_ICON[l.mode]}</span>
+            return `<button class="stage${locked ? ' is-locked' : ''}${test ? ' is-test' : ''}" data-level="${l.id}" ${locked ? 'disabled' : ''} data-testid="stage-${l.id}">
+              <span class="stage__n">${l.id} <small class="stage__tier">T${l.tier}</small> ${MODE_ICON[l.mode]}${test ? ' <small class="stage__test" title="test play">🛠</small>' : ''}</span>
               <span class="stage__name">${esc(t(`theme_${l.theme}`))}<br><small class="muted">${esc(t(`scene_${l.scene}`))}</small></span>
               <span class="stage__dirts">${l.patches.map((p) => dirtSwatch(p.type)).join('')}</span>
               <span class="stage__stars">${locked ? '🔒' : '★'.repeat(stars) + '☆'.repeat(3 - stars)}</span>
@@ -1463,9 +1472,12 @@ function finishLevel() {
   const result = scoreSession(g.session, g.timing.parSec, g.level.tier);
   const st = getStore();
   const id = g.level.id;
-  st.progress.stars[id] = Math.max(st.progress.stars[id] ?? 0, result.stars);
-  st.progress.bestTime[id] = Math.min(st.progress.bestTime[id] ?? Infinity, result.timeSec);
-  if (id >= st.progress.unlocked && id < LEVELS.length) st.progress.unlocked = id + 1;
+  // 관리자 테스트 플레이로 연 판(진행보다 앞)은 진행 저장을 건드리지 않는다
+  if (id <= st.progress.unlocked) {
+    st.progress.stars[id] = Math.max(st.progress.stars[id] ?? 0, result.stars);
+    st.progress.bestTime[id] = Math.min(st.progress.bestTime[id] ?? Infinity, result.timeSec);
+    if (id === st.progress.unlocked && id < LEVELS.length) st.progress.unlocked = id + 1;
+  }
   st.coins += result.coins;
   st.stats.gamesPlayed++;
   st.stats.totalCleanedCells += g.cleanedCells;
@@ -1812,7 +1824,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
     const trial = game?.trials.has(e.spec.id);
     const harms = e.spec.harms.map((s) => t(`surf_${s}`)).join(', ');
     let action = '';
-    if (e.sponsor) action = `${inGame && !trial ? `<button class="btn btn--sm btn--ad" data-try="${esc(e.spec.id)}">${t('tryAd')}</button>` : trial ? `<span class="pill">${t('owned')}</span>` : ''}<button class="btn btn--sm" data-evidence="${esc(e.spec.id)}">${t('evidence')}</button>`;
+    if (e.sponsor) action = `${inGame && !trial ? `<button class="btn btn--sm btn--ad" data-try="${esc(e.spec.id)}">${t('tryAd')}</button>` : trial ? `<span class="pill">${t('owned')}</span>` : ''}${e.sponsor.affiliate ? '' : `<button class="btn btn--sm" data-evidence="${esc(e.spec.id)}">${t('evidence')}</button>`}`;
     else if (own) action = `<span class="pill">${t('owned')}</span>`;
     else
       action = `<button class="btn btn--sm btn--primary" data-buy="${esc(e.spec.id)}" ${st.coins < e.spec.cost ? 'data-poor="1"' : ''}>${t('buy', { c: e.spec.cost })}</button>${inGame && !trial ? `<button class="btn btn--sm btn--ad" data-try="${esc(e.spec.id)}">${t('tryAd')}</button>` : ''}`;
@@ -2157,6 +2169,10 @@ function enterAdmin() {
       renderHome();
     },
     onChange: reloadItems,
+    playStage: (id) => {
+      reloadItems();
+      startLevel(id);
+    },
     preview: (p, placement) => {
       reloadItems();
       const entry = items.find((e) => e.sponsor?.id === p.id) ?? allItems([p]).find((e) => e.sponsor)!;
@@ -2181,6 +2197,9 @@ declare global {
       mixes: () => string[];
       used: () => string[];
       coins: () => number;
+      selected: () => string | null;
+      clearAll: () => void;
+      setUnlocked: (n: number) => void;
       boosters: () => Record<string, number>;
       mess: () => { count: number; next: number | undefined; shield: number; kind: string | undefined };
       forceMess: () => void;
@@ -2224,6 +2243,14 @@ function exposeDebug() {
     used: () => [...(game?.used ?? [])],
     coins: () => getStore().coins,
     boosters: () => ({ ...getStore().boosters }),
+    selected: () => game?.selected ?? null,
+    clearAll: () => {
+      if (game) game.session.clearAll();
+    },
+    setUnlocked: (n: number) => {
+      getStore().progress.unlocked = n;
+      persist();
+    },
     mess: () => ({ count: game?.session.messCount ?? 0, next: game?.session.messIn, shield: game?.session.shieldLeft ?? 0, kind: game?.level.mess?.kind }),
     setShield: (sec: number) => {
       if (game) game.session.shieldUntil = game.session.time + sec;

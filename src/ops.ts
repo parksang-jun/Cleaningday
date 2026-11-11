@@ -64,6 +64,27 @@ export function saveHostConfig(h: Partial<HostConfig>): void {
   persist();
 }
 
+// ---------- 관리자 테스트 플레이 ----------
+/** 모든 판 열기 토글 (관리자 모드 빌드에서만 효력) */
+export function setTestUnlock(on: boolean): void {
+  getStore().ops.testUnlock = on;
+  persist();
+}
+/** 테스트용 지급: 코인·부스터·프리미엄 장비 */
+export function grantForTest(kind: 'coins' | 'boosters' | 'premium' | 'premiumOff'): void {
+  const st = getStore();
+  if (kind === 'coins') st.coins += 1000;
+  else if (kind === 'boosters') for (const k of Object.keys(st.boosters) as (keyof typeof st.boosters)[]) st.boosters[k] += 5;
+  else if (kind === 'premium') {
+    for (const id of Object.keys(BASE_TOOLS)) if (BASE_TOOLS[id as keyof typeof BASE_TOOLS].premium && !st.owned.includes(id)) st.owned.push(id);
+    for (const id of Object.keys(BASE_DETERGENTS)) if (BASE_DETERGENTS[id as keyof typeof BASE_DETERGENTS].premium && !st.owned.includes(id)) st.owned.push(id);
+  } else {
+    const prem = new Set([...Object.keys(BASE_TOOLS).filter((id) => BASE_TOOLS[id as keyof typeof BASE_TOOLS].premium), ...Object.keys(BASE_DETERGENTS).filter((id) => BASE_DETERGENTS[id as keyof typeof BASE_DETERGENTS].premium)]);
+    st.owned = st.owned.filter((id) => !prem.has(id));
+  }
+  persist();
+}
+
 /** 쇼호스트·광고 관련 이벤트를 집계 (관리자 통계) */
 const COUNTED = new Set(['host_show', 'host_cta_trial', 'host_cta_buy', 'host_close', 'sponsor_evidence_view', 'sponsor_item_select', 'mall_click', 'level_complete', 'level_fail', 'level_start', 'shop_buy', 'hint_revealed']);
 export function installOpsCounters(): void {

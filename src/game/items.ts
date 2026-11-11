@@ -1,5 +1,6 @@
 // 아이템 목록 — 기본(무브랜드) 아이템 + 검증을 통과한 스폰서 아이템
 import { BASE_DETERGENTS, BASE_ITEMS, BASE_TOOLS, DIRT_TYPES, RECIPES, type DirtType, type ItemSpec } from './catalog';
+import { realItemSpec } from './realProducts';
 import { SAMPLE_SPONSORS, toItemSpec, validateSponsor, type SponsorProduct } from './sponsor';
 
 export { grantsUpTo } from './levels';
@@ -33,10 +34,9 @@ export function activeAffiliates(list: SponsorProduct[], today = new Date().toIS
   return list.filter((p) => p.affiliate && validateSponsor(p, today).length === 0 && (!country || !p.countries?.length || p.countries.includes(country)));
 }
 
-/** 제휴 제품의 카드용 항목: 스펙은 그 제품이 속한 기준 아이템(게임 성능 변화 없음) */
+/** 제휴 제품을 게임 아이템으로: 제품 유형 기준 스펙 × 공개 사양 배율 (체험하면 이번 판 도구함에 들어온다) */
 export function affiliateEntry(p: SponsorProduct): ItemEntry {
-  const spec = (p.kind === 'tool' ? BASE_TOOLS[p.base as keyof typeof BASE_TOOLS] : BASE_DETERGENTS[p.base as keyof typeof BASE_DETERGENTS]) as ItemSpec;
-  return { spec, sponsor: p };
+  return { spec: realItemSpec(p), sponsor: p };
 }
 
 export function allItems(sponsors: SponsorProduct[] = activeSponsors()): ItemEntry[] {

@@ -2026,3 +2026,52 @@ button {
   align-items: end;
   margin-bottom: 6px;
 }
+
+/* ---------- 관리자 테스트 플레이 ---------- */
+.admin__grants {
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 8px 0 12px;
+}
+.admin__area {
+  margin: 10px 0 4px;
+  font-size: 13px;
+  color: #4b6b70;
+}
+.admin__stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.admin__stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 13px;
+}
+.admin__stage.is-locked .admin__stage-body {
+  opacity: 0.75;
+}
+.admin__stage-n {
+  width: 26px;
+  font-weight: 800;
+  color: #0e9488;
+}
+.admin__stage-body {
+  flex: 1;
+  min-width: 0;
+}
+.stage.is-test {
+  border-style: dashed;
+}
+.stage__test {
+  color: #0e9488;
+}
+
+.host__spec {
+  display: block;
+  color: #0e7c71;
+  font-weight: 700;
+}

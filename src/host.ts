@@ -8,6 +8,7 @@ import { animateAvatar, avatarHtml, type HostMedia } from './avatar';
 import { BASE_DETERGENTS, BASE_TOOLS, type DirtType, type SurfaceType } from './game/catalog';
 import { type SponsorProduct } from './game/sponsor';
 import { LANG_TAG, pitchLines, type Placement, type PitchContext } from './pitch';
+import { realSpecNote } from './game/realProducts';
 import { t, type Lang } from './i18n';
 export { bestLab, pitchLines, type Placement, type PitchContext } from './pitch';
 import { iconFor } from './ui/icons';
@@ -176,11 +177,11 @@ export function showHost(o: HostShowOptions): () => void {
       </div>
       <div class="host__product">
         <span class="host__icon">${iconFor(base?.base ?? p.base)}</span>
-        <span class="host__pname"><b>${p.brand} ${p.name}</b><span class="small muted">${p.tagline ?? t(`item_${p.base}`)}</span></span>
+        <span class="host__pname"><b>${p.brand} ${p.name}</b><span class="small muted">${p.tagline ?? t(`item_${p.base}`)}</span>${p.affiliate && realSpecNote(p.id) ? `<span class="small host__spec" data-testid="host-spec">⚡ ${realSpecNote(p.id)}</span>` : ''}</span>
         ${o.onEvidence ? `<button class="btn btn--sm" data-act="evidence" data-testid="host-evidence">${t('evidence')}</button>` : ''}
       </div>
       <div class="host__cta">
-        ${o.hideTrial || !o.onTrial || p.affiliate ? '' : `<button class="btn btn--ad btn--block" data-act="trial" data-testid="host-trial">${trialLabel}</button>`}
+        ${o.hideTrial || !o.onTrial ? '' : `<button class="btn btn--ad btn--block" data-act="trial" data-testid="host-trial">${trialLabel}</button>`}
         ${o.onBuy ? `<button class="btn btn--primary btn--block" data-act="buy" data-testid="host-buy">${o.buyLabel ?? t('mallBuy')}</button>` : ''}
       </div>
       <p class="host__foot small muted" data-testid="host-foot">${p.affiliate ? (o.lang === 'ko' ? t('coupangDisclosure') : t('mallDisclosure')) : t('hostFoot')}</p>

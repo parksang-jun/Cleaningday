@@ -44,6 +44,8 @@ export interface Ops {
   lastHostAt: Record<string, number>;
   /** 제품별 마지막 '판 시작 소개' — 소개 재노출 간격용 (결과 화면 노출은 소개를 막지 않는다) */
   lastIntroAt: Record<string, number>;
+  /** 관리자 테스트 플레이: 모든 판 열기 (진행 저장은 건드리지 않음, 관리자 모드가 켜진 빌드에서만 효력) */
+  testUnlock: boolean;
 }
 
 export interface AdState {
@@ -91,7 +93,7 @@ const DEFAULTS: Store = {
   daily: { day: '', adCoins: 0, adBoosters: 0, bonusDay: '', streak: 0 },
   owned: [],
   journal: [],
-  ops: { sponsors: [], overrides: {}, host: { ...DEFAULT_HOST }, counters: {}, lastHostAt: {}, lastIntroAt: {} },
+  ops: { sponsors: [], overrides: {}, host: { ...DEFAULT_HOST }, counters: {}, lastHostAt: {}, lastIntroAt: {}, testUnlock: false },
 };
 
 let cache: Store = structuredClone(DEFAULTS);
@@ -140,6 +142,7 @@ export async function loadStore(): Promise<Store> {
           counters: { ...(p.ops?.counters ?? {}) },
           lastHostAt: { ...(p.ops?.lastHostAt ?? {}) },
           lastIntroAt: { ...(p.ops?.lastIntroAt ?? {}) },
+          testUnlock: Boolean(p.ops?.testUnlock),
         },
       };
     } catch {

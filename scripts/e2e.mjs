@@ -667,6 +667,60 @@ try {
   await page.waitForSelector('[data-testid="admin-export"]');
   const json = await page.locator('[data-testid="admin-export"]').inputValue();
   assert(json.includes('"WaxCo"') && json.includes('"host"'), 'export JSON carries products and host config');
+  // 테스트 플레이: 진행과 상관없이 모든 판을 바로 시작
+  await page.click('[data-testid="admin-tab-play"]');
+  await page.waitForSelector('[data-testid="admin-stage-96"]');
+  assert((await page.locator('[data-testid^="admin-play-"]').count()) === 96, 'test-play tab lists all 96 stages with a play button');
+  const realUnlocked = await page.evaluate(() => JSON.parse(localStorage.getItem('sparkle-clean-v1')).progress.unlocked);
+  await page.evaluate(() => window.__sparkle.setUnlocked(5));
+  await page.waitForTimeout(250);
+  const unlocked0 = 5;
+  await page.click('[data-testid="admin-grant-coins"]');
+  await page.waitForSelector('[data-testid="admin-wallet"]');
+  assert((await page.evaluate(() => window.__sparkle.coins())) >= 1000, 'test grant adds 1,000 coins');
+  await page.click('[data-testid="admin-play-90"]');
+  await page.waitForSelector('[data-testid="canvas"]');
+  assert((await page.evaluate(() => window.__sparkle.session().level.id)) === 90, 'locked stage 90 starts straight from the test-play tab');
+  await page.evaluate(() => window.__sparkle.clearAll());
+  await page.waitForSelector('[data-testid="result"]', { timeout: 8000 });
+  await page.waitForTimeout(300);
+  const unlocked1 = await page.evaluate(() => JSON.parse(localStorage.getItem('sparkle-clean-v1')).progress.unlocked);
+  assert(unlocked1 === unlocked0, `clearing a test-played stage leaves saved progress alone (${unlocked0} → ${unlocked1})`);
+  await page.click('[data-testid="result"] [data-act="menu"]').catch(() => {});
+  await page.waitForTimeout(200);
+  if (!(await page.locator('[data-testid="admin-entry"]').count())) {
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  }
+  await page.waitForSelector('[data-testid="admin-entry"]');
+  await page.click('[data-testid="admin-entry"]');
+  if (await page.locator('[data-testid="admin-pin"]').count()) {
+    await page.fill('[data-testid="admin-pin"]', '1234');
+    await page.click('[data-testid="admin-ok"]');
+  }
+  await page.waitForSelector('[data-testid="admin"]');
+  await page.click('[data-testid="admin-tab-play"]');
+  await page.check('[data-testid="admin-test-unlock"]');
+  await page.click('[data-testid="admin-exit"]');
+  await page.waitForSelector('[data-testid="play"]');
+  await page.click('[data-testid="area-interior"]');
+  assert((await page.locator('[data-testid="stage-90"]:not([disabled]).is-test').count()) === 1, 'with "unlock every stage" on, game screens open locked stages marked as test play');
+  await page.click('[data-testid="back-home"]');
+  await page.waitForSelector('[data-testid="play"]');
+  await page.click('[data-testid="result"] [data-act="menu"]').catch(() => {});
+  await page.waitForTimeout(200);
+  if (!(await page.locator('[data-testid="admin-entry"]').count())) {
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  }
+  await page.waitForSelector('[data-testid="admin-entry"]');
+  await page.click('[data-testid="admin-entry"]');
+  if (await page.locator('[data-testid="admin-pin"]').count()) {
+    await page.fill('[data-testid="admin-pin"]', '1234');
+    await page.click('[data-testid="admin-ok"]');
+  }
+  await page.waitForSelector('[data-testid="admin"]');
+  await page.click('[data-testid="admin-tab-play"]');
+  await page.uncheck('[data-testid="admin-test-unlock"]');
+  await page.evaluate((n) => window.__sparkle.setUnlocked(n), realUnlocked);
   await page.click('[data-testid="admin-exit"]');
   await page.waitForSelector('[data-testid="play"]');
   // 일시정지한 제품은 상점에서 빠지고, 새 제품이 들어온다
@@ -696,11 +750,16 @@ try {
   assert(realKr.test(affText), `host presents a real Korean retail product (${affText.split('\n').find((l) => realKr.test(l))})`);
   assert(affText.includes('실제로 파는 제품'), 'pitch says it is a real product you can buy');
   assert(!/\d+%|\d+배/.test(affText), 'affiliate pitch makes no efficacy claims (no % or ×)');
-  assert((await page.locator('[data-testid="host-trial"]').count()) === 0, 'no "try it free" button — affiliate picks have no in-game effect');
+  assert((await page.locator('[data-testid="host-spec"]').innerText()).includes('315AW'), 'card shows the published spec the in-game performance is tuned to (Dyson V16 315AW)');
+  assert((await page.locator('[data-testid="host-trial"]').count()) === 1, 'real product offers "watch ad, try it this stage"');
   assert((await page.locator('[data-testid="host-buy"]').innerText()).includes('쿠팡'), 'buy button says "쿠팡에서 보기"');
   assert((await page.locator('[data-testid="host-foot"]').innerText()).includes('쿠팡 파트너스'), 'card shows the Coupang Partners disclosure');
   await page.screenshot({ path: resolve(shots, '24-host-affiliate.png') });
-  await page.click('[data-testid="host-close"]');
+  const realName = affText.match(/— (.+?)\./)?.[1];
+  await page.click('[data-testid="host-trial"]');
+  await page.waitForTimeout(1600);
+  const sel = await page.evaluate(() => window.__sparkle.selected?.() ?? null);
+  assert(typeof sel === 'string' && sel.startsWith('sp:kr-'), `trying the real product puts it in the toolbar, selected (${sel}, ${realName})`);
   await page.click('[data-testid="back"]');
   await page.waitForSelector('[data-testid="stage-1"]');
   await page.click('[data-testid="back-home"]');

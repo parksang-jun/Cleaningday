@@ -9,7 +9,8 @@ import { avatarHtml } from './avatar';
 import { pitchLines, type Placement } from './host';
 import { deleteMedia, photoToDataUrl, putMedia } from './media';
 import { getLang, t } from './i18n';
-import { BASE_CHOICES, blankSponsor, counterRows, exportConfig, findSponsor, hostConfig, importConfig, removeSponsor, resetCounters, saveHostConfig, saveSponsor, setSponsorStatus, sponsorIssues, sponsorList, sumCounter } from './ops';
+import { LEVELS, WORLDS } from './game/levels';
+import { BASE_CHOICES, blankSponsor, counterRows, exportConfig, findSponsor, grantForTest, hostConfig, importConfig, removeSponsor, resetCounters, saveHostConfig, saveSponsor, setSponsorStatus, setTestUnlock, sponsorIssues, sponsorList, sumCounter } from './ops';
 import { getStore } from './storage';
 import { iconFor } from './ui/icons';
 
@@ -17,9 +18,11 @@ export interface AdminHooks {
   onExit: () => void;
   onChange: () => void;
   preview: (p: SponsorProduct, placement: Placement) => void;
+  /** 테스트 플레이: 잠금과 상관없이 이 판을 바로 시작 */
+  playStage: (id: number) => void;
 }
 
-type Tab = 'campaigns' | 'edit' | 'host' | 'stats' | 'export';
+type Tab = 'campaigns' | 'edit' | 'host' | 'play' | 'stats' | 'export';
 
 // 운영 화면 문구 (ko/en — 운영 도구라 두 언어만)
 const KO: Record<string, string> = {
@@ -29,6 +32,16 @@ const KO: Record<string, string> = {
   edit: '편집',
   host: '쇼호스트',
   stats: '통계',
+  play: '테스트 플레이',
+  playTitle: '모든 판 바로 플레이',
+  playNote: '잠금과 상관없이 아무 판이나 바로 시작해 광고·쇼호스트·재오염·소리를 확인하세요. 진행 저장(열린 판·별)은 건드리지 않아요.',
+  testUnlock: '게임 화면에서도 모든 판 열기 (관리자 빌드에서만, 🛠 표시)',
+  grantCoins: '코인 +1,000',
+  grantBoosters: '부스터 각 +5',
+  grantPremium: '프리미엄 장비 전부 보유',
+  grantPremiumOff: '프리미엄 장비 해제',
+  playBtn: '플레이',
+  granted: '지급했어요',
   export: '배포 JSON',
   newProduct: '＋ 새 광고 제품',
   active: '진행중',
@@ -163,6 +176,16 @@ const EN: Record<string, string> = {
   edit: 'Edit',
   host: 'Live host',
   stats: 'Stats',
+  play: 'Test play',
+  playTitle: 'Play any stage',
+  playNote: 'Start any stage regardless of progress to check ads, the host, re-soiling and sounds. Saved progress (unlocked stages, stars) is untouched.',
+  testUnlock: 'Unlock every stage in the game screens too (admin builds only, marked 🛠)',
+  grantCoins: 'Coins +1,000',
+  grantBoosters: 'Boosters +5 each',
+  grantPremium: 'Own all premium gear',
+  grantPremiumOff: 'Remove premium gear',
+  playBtn: 'Play',
+  granted: 'Granted',
   export: 'Config JSON',
   newProduct: '+ New sponsored product',
   active: 'Active',
@@ -305,7 +328,7 @@ let flash = '';
 let scriptText = '';
 
 export function renderAdmin(app: HTMLElement, hooks: AdminHooks): void {
-  const tabs: Tab[] = ['campaigns', 'edit', 'host', 'stats', 'export'];
+  const tabs: Tab[] = ['campaigns', 'edit', 'host', 'play', 'stats', 'export'];
   app.innerHTML = `
     <div class="admin" data-testid="admin">
       <header class="admin__top">
@@ -335,6 +358,9 @@ export function renderAdmin(app: HTMLElement, hooks: AdminHooks): void {
       break;
     case 'host':
       renderHost(panel, app, hooks);
+      break;
+    case 'play':
+      renderPlay(panel, app, hooks);
       break;
     case 'stats':
       renderStats(panel, app, hooks);
@@ -740,6 +766,62 @@ function renderHost(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
     hooks.onChange();
     renderAdmin(app, hooks);
   });
+}
+
+const MODE_ICON: Record<string, string> = { clean: '🧽', timed: '⏱', fragile: '🫧', rush: '🐾', spread: '🦠', spots: '🎯', dark: '🔦' };
+const MESS_ICON: Record<string, string> = { kids: '🧒', pet: '🐾', splatter: '🍳', drift: '🌬️', splash: '💦', leaves: '🍂', birds: '🐦' };
+
+/** 테스트 플레이: 모든 판 목록 + 바로 시작, 전체 열기 토글, 테스트 지급 */
+function renderPlay(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
+  const st = getStore();
+  panel.innerHTML = `
+    <h3>${esc(A('playTitle'))}</h3>
+    <p class="small muted">${esc(A('playNote'))}</p>
+    <label class="setting"><span>${esc(A('testUnlock'))}</span><input type="checkbox" name="testUnlock" ${st.ops.testUnlock ? 'checked' : ''} data-testid="admin-test-unlock"></label>
+    <div class="btn-row admin__grants">
+      <button class="btn btn--sm" data-grant="coins" data-testid="admin-grant-coins">● ${esc(A('grantCoins'))}</button>
+      <button class="btn btn--sm" data-grant="boosters" data-testid="admin-grant-boosters">🧰 ${esc(A('grantBoosters'))}</button>
+      <button class="btn btn--sm" data-grant="premium" data-testid="admin-grant-premium">⭐ ${esc(A('grantPremium'))}</button>
+      <button class="btn btn--sm" data-grant="premiumOff">${esc(A('grantPremiumOff'))}</button>
+      <span class="small muted" data-testid="admin-wallet">● ${st.coins} · ⭐ ${st.owned.length}</span>
+    </div>
+    ${WORLDS.map(
+      (w) => `<details class="admin__auto" open><summary>${esc(t(`world_${w.id}`))}</summary>
+      ${w.areas
+        .map(
+          (a) => `<h4 class="admin__area">${esc(t(`area_${a.id}`))}</h4>
+        <ul class="admin__stages">
+          ${a.levelIds
+            .map((id) => {
+              const l = LEVELS[id - 1];
+              const open = id <= st.progress.unlocked;
+              const stars = st.progress.stars[id] ?? 0;
+              return `<li class="admin__stage${open ? '' : ' is-locked'}" data-testid="admin-stage-${id}">
+                <span class="admin__stage-n">${id}</span>
+                <span class="admin__stage-body"><b>${esc(t(`theme_${l.theme}`))}</b> <small class="muted">${esc(t(`scene_${l.scene}`))} · T${l.tier} ${MODE_ICON[l.mode] ?? ''}${l.mess ? ` ${MESS_ICON[l.mess.kind] ?? ''}` : ''} · ${l.patches.map((p) => esc(t(`dirt_${p.type}`))).join(', ')}</small></span>
+                <span class="small">${open ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '🔒'}</span>
+                <button class="btn btn--sm btn--primary" data-play="${id}" data-testid="admin-play-${id}">▶ ${esc(A('playBtn'))}</button>
+              </li>`;
+            })
+            .join('')}
+        </ul>`,
+        )
+        .join('')}
+    </details>`,
+    ).join('')}`;
+  panel.querySelector<HTMLInputElement>('[name="testUnlock"]')!.addEventListener('change', (e) => {
+    setTestUnlock((e.target as HTMLInputElement).checked);
+    hooks.onChange();
+  });
+  panel.querySelectorAll<HTMLButtonElement>('[data-grant]').forEach((b) =>
+    b.addEventListener('click', () => {
+      grantForTest(b.dataset.grant as 'coins' | 'boosters' | 'premium' | 'premiumOff');
+      flash = A('granted');
+      hooks.onChange();
+      renderAdmin(app, hooks);
+    }),
+  );
+  panel.querySelectorAll<HTMLButtonElement>('[data-play]').forEach((b) => b.addEventListener('click', () => hooks.playStage(Number(b.dataset.play))));
 }
 
 function renderStats(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {

@@ -2,6 +2,7 @@
 import type { DirtType, SurfaceType } from './game/catalog';
 import { performanceRatios, type SponsorProduct } from './game/sponsor';
 import { expertLine } from './game/tips';
+import { realItemSpec, realSpecNote, realSpeedup } from './game/realProducts';
 import { t, type Lang } from './i18n';
 
 export type Placement = 'intro' | 'struggle' | 'result' | 'shop' | 'preview';
@@ -34,6 +35,14 @@ export function bestLab(p: SponsorProduct, dirt?: DirtType): { dirt: DirtType; r
 /** 제휴 추천(실제 판매 제품) 멘트 — 인사 → 꿀팁 → 라벨 용도·주의(운영자 입력) → 구매 링크 안내 + 수수료 고지. 효능 수치·비교 주장은 없다 */
 function affiliateLines(p: SponsorProduct, lang: Lang, opts: { hostName: string; placement: Placement; dirt?: DirtType; surface?: SurfaceType }, custom: string[]): string[] {
   const lines: string[] = [];
+  const note = realSpecNote(p.id);
+  const x = realSpeedup(realItemSpec(p));
+  const feel =
+    lang === 'ko'
+      ? `게임에서도 이 제품 그대로 써 볼 수 있어요${note ? ` — ${note}를 반영해서` : ''}${x > 1.05 ? ` 기본 도구보다 ${x}배 빨리 닦여요` : ''}. 광고 보고 이번 판에 체험해 보세요.`
+      : lang === 'ja'
+        ? `ゲームでもこの製品をそのまま試せます${note ? ` — ${note}を反映` : ''}${x > 1.05 ? `、基本の道具より${x}倍速く落ちます` : ''}。広告を見てこのステージで体験してみてください。`
+        : `You can try this exact product in the game${note ? ` — tuned to its ${note}` : ''}${x > 1.05 ? `, cleaning ${x}× faster than the basic tool` : ''}. Watch an ad to use it this stage.`;
   const expert = opts.dirt ? expertLine(opts.dirt, lang, opts.surface) : undefined;
   const dirtName = (d: DirtType) => t(`dirt_${d}`);
   if (lang === 'ko') {
@@ -41,18 +50,21 @@ function affiliateLines(p: SponsorProduct, lang: Lang, opts: { hostName: string;
     if (expert) lines.push(expert);
     lines.push(...custom);
     if (opts.placement === 'struggle' && opts.dirt) lines.push(`지금 막힌 ${dirtName(opts.dirt)}이(가) 바로 이 제품이 맡는 종류예요. 게임에선 ${t(`item_${p.base}`)}로 닦으시면 돼요.`);
+    lines.push(feel);
     lines.push(`가격이랑 후기는 구매 링크에서 직접 확인해 보세요. 제휴 링크라서 구매하시면 저희에게 수수료가 조금 들어와요 — 가격은 똑같아요.`);
   } else if (lang === 'ja') {
     lines.push(`こんにちは、お掃除の専門家の${opts.hostName}です。今日は実際に売っている製品をひとつ — ${p.brand} ${p.name}。`);
     if (expert) lines.push(expert);
     lines.push(...custom);
     if (opts.placement === 'struggle' && opts.dirt) lines.push(`今つまずいている${dirtName(opts.dirt)}は、まさにこの製品の担当です。ゲームでは${t(`item_${p.base}`)}で落とせます。`);
+    lines.push(feel);
     lines.push(`価格とレビューは購入リンクで確認してください。アフィリエイトリンクなので、購入されると私たちに少し手数料が入ります — 価格は同じです。`);
   } else {
     lines.push(`Hi, I'm ${opts.hostName}, a cleaning specialist. Today it's a real product you can buy — the ${p.brand} ${p.name}.`);
     if (expert) lines.push(expert);
     lines.push(...custom);
     if (opts.placement === 'struggle' && opts.dirt) lines.push(`The ${dirtName(opts.dirt)} you're stuck on is exactly what this product is for. In the game, use the ${t(`item_${p.base}`)}.`);
+    lines.push(feel);
     lines.push(`Check the price and reviews at the link. It's an affiliate link, so we earn a small commission if you buy — the price is the same for you.`);
   }
   return lines;
