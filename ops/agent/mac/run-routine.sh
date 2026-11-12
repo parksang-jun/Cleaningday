@@ -13,13 +13,45 @@ mkdir -p "$HOME_DIR/logs"
 
 notify() { osascript -e "display notification \"$2\" with title \"싹싹 클린 운영 에이전트\" subtitle \"$1\"" >/dev/null 2>&1 || true; }
 
-# 같은 루틴이 겹쳐 돌지 않게
-LOCK="$HOME_DIR/.lock-$ROUTINE"
-if ! mkdir "$LOCK" 2>/dev/null; then echo "이미 실행 중: $ROUTINE" >> "$LOG"; exit 0; fi
-trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+# 진단기(무엇이 문제였는지 한국어로 정리) — 운영센터와 같은 것을 쓴다
+DIAG=""
+for d in "$HOME_DIR/console/diagnose.mjs" "$REPO/ops/agent/mac/console/diagnose.mjs"; do [ -f "$d" ] && { DIAG="$d"; break; }; done
+diag() { [ -n "$DIAG" ] && node "$DIAG" "$@" 2>/dev/null; }
 
-cd "$REPO" || { notify "실패" "저장소가 없습니다: $REPO"; exit 1; }
-git checkout -q main >> "$LOG" 2>&1 && git pull -q --ff-only origin main >> "$LOG" 2>&1 || echo "(경고) main 갱신 실패 — 로컬 상태로 진행" >> "$LOG"
+# 같은 루틴이 겹쳐 돌지 않게. 예전 실행이 비정상 종료해 남긴 잠금은 스스로 치운다
+LOCK="$HOME_DIR/.lock-$ROUTINE"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  OLD_PID="$(cat "$LOCK/pid" 2>/dev/null || true)"
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo "이미 실행 중입니다(같은 루틴이 아직 끝나지 않음) — 이번 실행은 건너뜁니다." >> "$LOG"; exit 0
+  fi
+  echo "(자동 조치) 예전 실행이 남긴 잠금을 치웠습니다." >> "$LOG"
+  rm -rf "$LOCK"; mkdir "$LOCK" 2>/dev/null || exit 0
+fi
+echo $$ > "$LOCK/pid"
+trap 'rm -rf "$LOCK" 2>/dev/null' EXIT
+
+if ! cd "$REPO" 2>/dev/null; then
+  { echo "저장소가 없습니다: $REPO"; echo ""; echo "=== 종료 코드 1 ==="; echo "=== 진단 ==="; diag "$LOG"; } >> "$LOG"
+  notify "실패: 게임 저장소가 없습니다" "운영센터 설정에서 '다시 설치·복구'를 눌러 주세요."; exit 1
+fi
+
+# git 잠금 파일(index.lock): 다른 git 이 쓰는 중이면 기다리고, 주인이 없으면 지운다
+git_unlock() {
+  local f="$REPO/.git/index.lock" i
+  for i in $(seq 1 20); do [ -f "$f" ] || return 0; sleep 1; done
+  if ! pgrep -x git >/dev/null 2>&1; then rm -f "$f"; echo "(자동 조치) 주인 없는 git 잠금 파일을 지웠습니다." >> "$LOG"; fi
+}
+sync_main() { git_unlock; git checkout -q main 2>> "$LOG" && git pull -q --ff-only origin main 2>> "$LOG"; }
+if ! sync_main; then
+  sleep 3
+  # 이 맥에 저장 안 된 변경이 길을 막고 있으면 지우지 않고 임시 보관(stash)한 뒤 다시 받는다
+  if tail -n 20 "$LOG" | grep -qE "would be overwritten|local changes|Please commit your changes or stash"; then
+    git stash push -u -q -m "ops-auto-$STAMP" >> "$LOG" 2>&1 && echo "(자동 조치) 저장 안 된 변경을 임시 보관(git stash: ops-auto-$STAMP)했습니다. 되살리려면 'git stash pop'." >> "$LOG"
+  fi
+  if sync_main; then echo "(자동 조치) main 갱신을 다시 시도해 성공했습니다." >> "$LOG"
+  else echo "(경고) main 갱신 실패 — 로컬 상태로 진행" >> "$LOG"; fi
+fi
 
 case "$ROUTINE" in
   A) NAME="주간 운영 점검·업데이트"
@@ -51,17 +83,34 @@ PROMPT="당신은 게임 \"싹싹 클린(Sparkle Clean)\"의 운영 에이전트
 4) 마지막 출력은 요약 5줄과 \"승인 요청 목록\"."
 
 notify "$NAME" "시작했습니다."
-claude -p "$PROMPT" \
-  --permission-mode acceptEdits \
-  --allowedTools "Read" "Edit" "Write" "Glob" "Grep" "WebSearch" "WebFetch" \
-                 "Bash(git *)" "Bash(gh *)" "Bash(npm *)" "Bash(npx *)" "Bash(node *)" \
-                 "Bash(ls *)" "Bash(cat *)" "Bash(mkdir *)" "Bash(date *)" "Bash(timeout *)" \
-                 "mcp__*__create_draft" "mcp__*__search_threads" "mcp__*__get_thread" "mcp__*__get_message" \
-  --disallowedTools "Bash(git push origin main*)" "Bash(git push -f*)" "Bash(git push --force*)" "Bash(rm -rf *)" \
-                    "mcp__*__send_message" "mcp__*__reply" "mcp__*__forward" \
-  --max-turns 200 >> "$LOG" 2>&1
-CODE=$?
+run_agent() {
+  # 허용 규칙에는 와일드카드 서버 이름을 쓸 수 없어 Gmail 커넥터 이름을 그대로 적는다(없으면 무시됨). 금지 규칙은 와일드카드 가능.
+  claude -p "$PROMPT" \
+    --permission-mode acceptEdits \
+    --allowedTools "Read" "Edit" "Write" "Glob" "Grep" "WebSearch" "WebFetch" \
+                   "Bash(git *)" "Bash(gh *)" "Bash(npm *)" "Bash(npx *)" "Bash(node *)" \
+                   "Bash(ls *)" "Bash(cat *)" "Bash(mkdir *)" "Bash(date *)" "Bash(timeout *)" \
+                   "mcp__claude_ai_Gmail__create_draft" "mcp__claude_ai_Gmail__search_threads" "mcp__claude_ai_Gmail__get_thread" "mcp__claude_ai_Gmail__get_message" \
+                   "mcp__Gmail__create_draft" "mcp__Gmail__search_threads" "mcp__Gmail__get_thread" "mcp__Gmail__get_message" \
+    --disallowedTools "Bash(git push origin main*)" "Bash(git push -f*)" "Bash(git push --force*)" "Bash(rm -rf *)" \
+                      "mcp__*__send_message" "mcp__*__reply" "mcp__*__forward" \
+    --max-turns 200 >> "$LOG" 2>&1
+}
+run_agent; CODE=$?
 echo "" >> "$LOG"; echo "=== 종료 코드 $CODE ===" >> "$LOG"
+
+# 실패했는데 잠깐 뒤 다시 하면 풀리는 문제(네트워크·서버 혼잡 등)면 스스로 한 번 더 시도한다
+if [ $CODE -ne 0 ] && diag --retry "$LOG"; then
+  WHY="$(diag --title "$LOG")"
+  echo "=== 재시도 (자동 조치: $WHY → 90초 뒤 한 번 더) ===" >> "$LOG"
+  sleep 90; git_unlock
+  run_agent; CODE=$?
+  echo "" >> "$LOG"; echo "=== 종료 코드 $CODE ===" >> "$LOG"
+fi
+
+# 진단: 무엇이 문제였고 어떻게 해결하는지 한국어로 기록에 남긴다
+TITLE="$(diag --title "$LOG")"
+{ echo "=== 진단 ==="; diag "$LOG" || echo "(진단기를 찾지 못했습니다)"; } >> "$LOG"
 
 # 피드백 함 정리: 성공하면 보관, 실패하면 다음 회차에 다시 처리되도록 되돌린다
 if [ -n "$FB_TAKEN" ]; then
@@ -74,6 +123,6 @@ git checkout -q main >> "$LOG" 2>&1 || true
 if [ $CODE -eq 0 ]; then
   notify "$NAME" "끝났습니다. 리포트: ops/agent/reports/"
 else
-  notify "$NAME 실패 (코드 $CODE)" "로그: $LOG"
+  notify "$NAME 실패: ${TITLE:-확인 필요}" "운영센터 › 실행 기록에서 원인과 해결 방법을 확인하세요."
 fi
 exit $CODE

@@ -6,6 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { diagnose, toText } from './diagnose.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HOME = os.homedir();
@@ -29,6 +30,7 @@ const IDLE_MS = 45 * 60 * 1000;
   } catch {}
   process.env.PATH = [...new Set([...extra, ...(process.env.PATH || '').split(':')])].filter(Boolean).join(':');
   process.env.GIT_TERMINAL_PROMPT = '0';
+  process.env.GIT_OPTIONAL_LOCKS = '0'; // 상태 확인용 git 이 잠금 파일을 만들지 않게 (에이전트의 git 과 충돌 방지)
 })();
 
 const ROUTINES = {
@@ -68,14 +70,16 @@ function logsFor(r) {
     return fs.readdirSync(LOGS).filter((f) => f.startsWith(`routine-${r}-`) && f.endsWith('.log')).sort().reverse();
   } catch { return []; }
 }
-function outcome(file) {
+const diagCache = new Map(); // file → { mtime, d }
+function diagOf(file) {
   try {
-    const txt = fs.readFileSync(path.join(LOGS, file), 'utf8');
-    const m = txt.match(/=== 종료 코드 (\d+) ===\s*$/);
-    if (m) return m[1] === '0' ? 'ok' : 'fail';
-    return 'unknown';
-  } catch { return 'unknown'; }
+    const p = path.join(LOGS, file); const st = fs.statSync(p); const c = diagCache.get(file);
+    if (c && c.mtime === st.mtimeMs) return c.d;
+    const d = diagnose(fs.readFileSync(p, 'utf8')); delete d.clean;
+    diagCache.set(file, { mtime: st.mtimeMs, d }); return d;
+  } catch { return { state: 'unknown', primary: null, findings: [] }; }
 }
+const outcome = (file) => diagOf(file).state;
 
 let launchCache = { at: 0, out: '' };
 async function launchList() {
@@ -100,12 +104,15 @@ async function status() {
   for (const [k, r] of Object.entries(ROUTINES)) {
     const label = `com.sparkleclean.ops.${r.label}`;
     const logs = logsFor(k);
-    const last = logs[0] ? { file: logs[0], at: fs.statSync(path.join(LOGS, logs[0])).mtime.toISOString(), result: outcome(logs[0]) } : null;
     const running = exists(path.join(HOME_DIR, `.lock-${k}`)) || children.has(k);
-    if (last && running && last.result === 'unknown') last.result = 'running';
+    let last = null;
+    if (logs[0]) {
+      const d = diagOf(logs[0]);
+      last = { file: logs[0], at: fs.statSync(path.join(LOGS, logs[0])).mtime.toISOString(), result: running ? 'running' : d.state, problem: !running && d.state === 'fail' ? d.primary : null, notes: d.findings.filter((f) => f.level !== 'fatal').map((f) => ({ id: f.id, title: f.title, action: f.action })) };
+    }
     routines[k] = { ...r, scheduled: exists(path.join(LAUNCH, `${label}.plist`)) && ll.includes(label), plist: exists(path.join(LAUNCH, `${label}.plist`)), next: nextRun(r.cal), last, running, runs: logs.length };
   }
-  return { now: new Date().toISOString(), host: os.hostname(), tools: { git: gitBin, node: nodeBin, claude: claudeBin, gh: ghBin }, repo, runner: exists(runner) ? runner : null, homeDir: HOME_DIR, routines, links: { repo: REPO_URL, game: GAME_URL } };
+  return { now: new Date().toISOString(), host: os.hostname(), tools: { git: gitBin, node: nodeBin, claude: claudeBin, gh: ghBin }, repo, runner: exists(runner) ? runner : null, homeDir: HOME_DIR, routines, links: { repo: REPO_URL, game: GAME_URL }, sync: syncState, github: gh, update: { restartNeeded } };
 }
 
 // ---- 상태 파일: main 과 에이전트 브랜치(agent/*) 중 가장 최근 것을 읽는다 (에이전트는 브랜치에 커밋하고 PR 을 연다)
@@ -203,7 +210,7 @@ function stopRoutine(k) {
   const c = children.get(k);
   if (!c) return { ok: false, msg: '이 화면에서 시작한 실행만 멈출 수 있습니다' };
   try { process.kill(-c.pid, 'SIGTERM'); } catch { try { c.kill('SIGTERM'); } catch {} }
-  try { fs.rmdirSync(path.join(HOME_DIR, `.lock-${k}`)); } catch {}
+  try { fs.rmSync(path.join(HOME_DIR, `.lock-${k}`), { recursive: true, force: true }); } catch {}
   return { ok: true, msg: '멈췄습니다' };
 }
 async function setSchedule(on) {
@@ -232,14 +239,112 @@ async function installAgent() {
   const tail = (r.out + r.err).trim().split('\n').slice(-6).join('\n');
   return { ok: r.ok, msg: r.ok ? '에이전트 설치·예약 등록 완료' : `설치 중 문제:\n${tail}` };
 }
+// ---- GitHub 연동: 5분마다 받아 오고(fetch) main 을 최신으로 맞춘다. PR·자동 검사 상태는 GitHub API 에서 읽는다
+const SYNC_MS = 5 * 60 * 1000;
+let syncState = { at: null, ok: null, msg: '아직 동기화 전', pushOk: null, pushAt: 0, busy: false };
+let gh = { at: null, ok: null, prs: [], ci: null, issues: 0, msg: '' };
+let restartNeeded = false;
+const anyRunning = () => children.size > 0 || Object.keys(ROUTINES).some((k) => exists(path.join(HOME_DIR, `.lock-${k}`)));
+
+async function syncRepo(manual = false) {
+  if (!exists(path.join(REPO, '.git'))) { syncState = { ...syncState, at: new Date().toISOString(), ok: false, msg: '저장소가 없습니다 — 설정에서 "다시 설치·복구"' }; return syncState; }
+  if (syncState.busy) return syncState;
+  syncState.busy = true;
+  try {
+    const f = await git(['fetch', '-q', '--prune', 'origin'], 60000);
+    if (!f.ok) {
+      const offline = /Could not resolve host|unable to access|timed out|Network/i.test(f.err);
+      syncState = { ...syncState, at: new Date().toISOString(), ok: false, msg: offline ? 'GitHub 에 연결하지 못했습니다(인터넷 확인) — 5분 뒤 자동으로 다시 시도합니다' : `받기 실패: ${f.err.trim().slice(0, 160)}` };
+      return syncState;
+    }
+    let msg = 'GitHub 와 같은 상태입니다';
+    if (!anyRunning()) { // 에이전트가 일하는 중에는 작업 폴더를 건드리지 않는다
+      const br = (await git(['rev-parse', '--abbrev-ref', 'HEAD'])).out.trim();
+      const dirty = (await git(['status', '--porcelain', '--untracked-files=no'])).out.trim();
+      const behind = Number((await git(['rev-list', '--count', 'main..origin/main'])).out.trim() || 0);
+      if (behind > 0) {
+        if (dirty) msg = `GitHub 에 새 내용 ${behind}건이 있지만, 이 맥에 저장 안 된 변경이 있어 덮어쓰지 않았습니다`;
+        else {
+          if (br !== 'main') await git(['checkout', '-q', 'main']);
+          const m = await git(['merge', '--ff-only', '-q', 'origin/main'], 60000);
+          msg = m.ok ? `GitHub 의 새 내용 ${behind}건을 받았습니다` : `최신으로 맞추지 못했습니다: ${m.err.trim().slice(0, 120)}`;
+          if (m.ok) selfUpdate();
+        }
+      }
+      if (behind === 0) selfUpdate();
+    } else msg = '에이전트 작업 중 — 받아 오기만 했습니다';
+    // 올리기 권한은 30분에 한 번만 확인
+    let { pushOk, pushAt } = syncState;
+    if (manual || Date.now() - pushAt > 30 * 60 * 1000) {
+      const p = await run('git', ['-C', REPO, 'push', '--dry-run', '-q', 'origin', 'HEAD:refs/heads/agent/_permission-check'], { timeout: 30000 });
+      pushOk = p.ok; pushAt = Date.now();
+    }
+    syncState = { at: new Date().toISOString(), ok: true, msg, pushOk, pushAt, busy: false };
+    return syncState;
+  } finally { syncState.busy = false; }
+}
+async function syncGithub() {
+  const api = 'https://api.github.com/repos/parksang-jun/Cleaningday';
+  const get = async (u) => { const r = await fetch(api + u, { headers: { 'User-Agent': 'sparkle-clean-console', Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error(`GitHub API ${r.status}`); return r.json(); };
+  try {
+    const [prs, runs, repo] = await Promise.all([get('/pulls?state=open&per_page=30'), get('/actions/runs?branch=main&per_page=1'), get('')]);
+    const r0 = runs.workflow_runs?.[0];
+    gh = {
+      at: new Date().toISOString(), ok: true, msg: '',
+      prs: prs.map((p) => ({ number: p.number, title: p.title, url: p.html_url, branch: p.head?.ref, at: p.created_at, draft: p.draft })),
+      ci: r0 ? { status: r0.status, conclusion: r0.conclusion, url: r0.html_url, sha: (r0.head_sha || '').slice(0, 7), title: r0.display_title, at: r0.updated_at } : null,
+      issues: Math.max(0, (repo.open_issues_count || 0) - prs.length),
+    };
+  } catch (e) { gh = { ...gh, at: new Date().toISOString(), ok: false, msg: /403|429/.test(String(e.message)) ? 'GitHub 조회 한도 — 잠시 뒤 자동으로 다시 읽습니다' : 'GitHub 상태를 읽지 못했습니다(인터넷 확인)' }; }
+  return gh;
+}
+// 저장소에 운영센터·실행기의 새 버전이 들어왔으면 설치본을 스스로 갱신한다
+function selfUpdate() {
+  const src = path.join(AGENT, 'mac'); const installed = path.join(HOME_DIR, 'console');
+  if (path.resolve(HERE) !== path.resolve(installed)) return; // 저장소에서 직접 실행 중(개발)
+  try { if (!/refs\/heads\/main\s*$/.test(fs.readFileSync(path.join(REPO, '.git', 'HEAD'), 'utf8'))) return; } catch { return; } // main 일 때만
+  const same = (a, b) => { try { return fs.readFileSync(a).equals(fs.readFileSync(b)); } catch { return false; } };
+  try {
+    for (const f of ['index.html', 'diagnose.mjs', 'icon.png', 'server.mjs']) {
+      const from = path.join(src, 'console', f); if (!exists(from) || same(from, path.join(installed, f))) continue;
+      fs.copyFileSync(from, path.join(installed, f));
+      if (f === 'server.mjs' || f === 'diagnose.mjs') restartNeeded = true;
+    }
+    const runner = path.join(src, 'run-routine.sh');
+    if (exists(runner) && !same(runner, path.join(HOME_DIR, 'run-routine.sh'))) { fs.copyFileSync(runner, path.join(HOME_DIR, 'run-routine.sh')); fs.chmodSync(path.join(HOME_DIR, 'run-routine.sh'), 0o755); }
+  } catch {}
+  if (restartNeeded && !anyRunning()) setTimeout(restartSelf, 1500); // 새 서버로 교체 (화면은 자동으로 다시 연결됨)
+}
+function restartSelf() {
+  try { spawn('/bin/sh', ['-c', `sleep 1; exec node "${path.join(HERE, 'server.mjs')}" >> "${path.join(LOGS, 'console.log')}" 2>&1`], { detached: true, stdio: 'ignore', env: process.env }).unref(); } catch {}
+  setTimeout(() => process.exit(0), 100);
+}
 async function pull() {
-  if (!exists(path.join(REPO, '.git'))) return { ok: false, msg: '저장소가 없습니다' };
-  const f = await git(['fetch', '-q', '--prune', 'origin'], 60000);
-  if (!f.ok) return { ok: false, msg: `받기 실패: ${f.err.trim().slice(0, 200)}` };
-  const br = (await git(['rev-parse', '--abbrev-ref', 'HEAD'])).out.trim();
-  if (br !== 'main') await git(['checkout', '-q', 'main']);
-  const p = await git(['merge', '--ff-only', '-q', 'origin/main'], 60000);
-  return { ok: p.ok, msg: p.ok ? '최신으로 갱신했습니다' : `갱신 실패(로컬 변경이 있을 수 있음): ${p.err.trim().slice(0, 200)}` };
+  const [s] = await Promise.all([syncRepo(true), syncGithub()]);
+  return { ok: Boolean(s.ok), msg: s.msg };
+}
+setTimeout(() => { syncRepo(); syncGithub(); }, 500);
+setInterval(() => { syncRepo(); syncGithub(); }, SYNC_MS).unref();
+
+// 터미널에서 해야 하는 로그인(브라우저 인증)을 버튼 하나로 열어 준다
+function openTerminalScript(name, body) {
+  const f = path.join(HOME_DIR, name);
+  fs.writeFileSync(f, `#!/bin/bash\n[ -f "$HOME/SparkleCleanOps/env.sh" ] && . "$HOME/SparkleCleanOps/env.sh"\nexport PATH="$PATH:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"\nclear\n${body}\n`);
+  fs.chmodSync(f, 0o755);
+  spawn('open', ['-a', 'Terminal', f], { detached: true, stdio: 'ignore' }).on('error', () => {}).unref();
+}
+function loginClaude() {
+  openTerminalScript('login-claude.command', `echo "── 싹싹 클린 운영센터: Claude 로그인 ──"\necho "1) 잠시 뒤 로그인 화면이 나옵니다. 안내대로 브라우저에서 로그인하세요."\necho "2) 로그인 화면이 안 나오면  /login  을 입력하고 Enter."\necho "3) 끝나면  /exit  로 나가고 이 창을 닫은 뒤, 운영센터에서 '다시 실행'."\necho\nclaude`);
+  return { ok: true, msg: '터미널을 열었습니다 — 안내대로 로그인한 뒤 "다시 실행"을 눌러 주세요' };
+}
+async function loginGithub() {
+  const hasGh = await which('gh');
+  const hasBrew = await which('brew');
+  if (hasGh) openTerminalScript('login-github.command', `echo "── 싹싹 클린 운영센터: GitHub 로그인 ──"\necho "질문이 나오면: GitHub.com → HTTPS → Yes → Login with a web browser 순서로 고르세요."\necho\ngh auth login -h github.com -p https -w && gh auth setup-git && echo && echo "✅ 완료 — 이 창을 닫아도 됩니다."`);
+  else if (hasBrew) openTerminalScript('login-github.command', `echo "── GitHub 도구(gh) 설치 후 로그인 ──"\nbrew install gh && gh auth login -h github.com -p https -w && gh auth setup-git && echo && echo "✅ 완료 — 이 창을 닫아도 됩니다."`);
+  else return { ok: false, msg: 'GitHub 도구(gh)가 없습니다. https://cli.github.com 에서 설치(macOS .pkg)한 뒤 이 버튼을 다시 눌러 주세요.' };
+  syncState.pushAt = 0;
+  return { ok: true, msg: '터미널을 열었습니다 — 브라우저에서 GitHub 로그인을 마치면 자동으로 반영됩니다' };
 }
 function openTarget(t, arg) {
   const map = {
@@ -247,6 +352,7 @@ function openTarget(t, arg) {
     reports: path.join(AGENT, 'reports'), logs: LOGS, folder: HOME_DIR,
   };
   let target = map[t];
+  if (t === 'url' && typeof arg === 'string' && arg.startsWith(`${REPO_URL}/`) && !/[\s"'<>]/.test(arg)) target = arg;
   if (t === 'branch' && typeof arg === 'string' && /^agent\/[\w\-./]+$/.test(arg)) target = `${REPO_URL}/compare/main...${encodeURIComponent(arg).replace(/%2F/g, '/')}?expand=1`;
   if (!target) return { ok: false, msg: '열 수 없는 대상' };
   if (!target.startsWith('http')) fs.mkdirSync(target, { recursive: true });
@@ -293,7 +399,8 @@ const server = http.createServer(async (req, res) => {
         if (!f || !/^[\w\-.]+\.log$/.test(f)) return send(res, 400, { ok: false });
         const p = path.join(LOGS, f); const st = fs.statSync(p); const start = Math.max(0, st.size - 200000);
         const fd = fs.openSync(p, 'r'); const buf = Buffer.alloc(st.size - start); fs.readSync(fd, buf, 0, buf.length, start); fs.closeSync(fd);
-        return send(res, 200, { ok: true, text: buf.toString('utf8'), truncated: start > 0 });
+        const d = f.startsWith('routine-') ? diagOf(f) : null;
+        return send(res, 200, { ok: true, text: buf.toString('utf8').replace(/\n=== 진단 ===[\s\S]*$/, ''), truncated: start > 0, diag: d });
       }
       return send(res, 404, { ok: false });
     }
@@ -308,6 +415,9 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/pull') return send(res, 200, await pull());
       if (url.pathname === '/api/install') return send(res, 200, await installAgent());
       if (url.pathname === '/api/open') return send(res, 200, openTarget(body.target, body.arg));
+      if (url.pathname === '/api/login') return send(res, 200, loginClaude());
+      if (url.pathname === '/api/gh-login') return send(res, 200, await loginGithub());
+      if (url.pathname === '/api/restart') { send(res, 200, { ok: true, msg: '새 버전으로 다시 시작합니다' }); restartSelf(); return; }
       if (url.pathname === '/api/quit') { send(res, 200, { ok: true }); setTimeout(() => process.exit(0), 200); return; }
       return send(res, 404, { ok: false });
     }

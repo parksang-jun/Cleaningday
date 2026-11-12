@@ -68,8 +68,18 @@ async function cleanUntilDone(page, maxPasses = 20) {
 
 const preview = await startPreview();
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ ...devices['iPhone 13'], locale: 'en-US', hasTouch: false });
+// GPU 없는 CI 러너는 3배 해상도 캔버스를 소프트웨어로 그리느라 프레임이 크게 떨어진다 → 타이밍 검사가 흔들림.
+// CI 에서는 1배 해상도로 돌린다(검사 내용은 같음). 로컬 기본은 실제 기기 배율 그대로.
+const DSF = process.env.E2E_DSF ? Number(process.env.E2E_DSF) : process.env.CI ? 1 : undefined;
+const phone = { ...devices['iPhone 13'], ...(DSF ? { deviceScaleFactor: DSF } : {}) };
+const fpsOf = (pg) => pg.evaluate(() => new Promise((res) => { let n = 0; const t0 = performance.now(); const f = () => { n++; performance.now() - t0 < 1000 ? requestAnimationFrame(f) : res(n); }; requestAnimationFrame(f); }));
+const ctx = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: false });
 const page = await ctx.newPage();
+// 느린 CI 러너 재현용: E2E_CPU_THROTTLE=4 처럼 주면 CPU 를 그만큼 느리게 한다
+if (process.env.E2E_CPU_THROTTLE) {
+  const cdp = await ctx.newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.E2E_CPU_THROTTLE) });
+}
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
@@ -99,6 +109,7 @@ try {
   await page.waitForTimeout(300);
   assert((await page.locator('.toolbar [data-item]').count()) === 2, 'toolbar lists only the needed items');
   assert((await page.locator('[data-testid="limit"]').count()) === 0, 'tier 1 has no time limit');
+  console.log(`info - in-game frame rate: ${await fpsOf(page)} fps (deviceScaleFactor ${DSF ?? 3}${process.env.E2E_CPU_THROTTLE ? ', CPU x' + process.env.E2E_CPU_THROTTLE + ' slower' : ''})`);
   assert((await page.locator('[data-el="unknown"]').innerText()) === '1', 'notebook badge shows 1 unknown mess');
   await page.screenshot({ path: resolve(shots, '02-stage1-dirty.png') });
   // 드래그 중에 문지르는 소리가 나고, 손을 떼면 바로 멈춘다
@@ -808,7 +819,7 @@ try {
   // 3D 보기 — WebGL(SwiftShader) 켠 별도 브라우저에서: 같은 판을 3D 방 안의 면으로, 광선 투사로 닦인다
   {
     const b3d = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-    const ctx3 = await b3d.newContext({ ...devices['iPhone 13'], locale: 'en-US', hasTouch: false });
+    const ctx3 = await b3d.newContext({ ...phone, locale: 'en-US', hasTouch: false });
     const p3 = await ctx3.newPage();
     await p3.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
     await p3.waitForSelector('[data-testid="play"]');

@@ -574,6 +574,10 @@ interface GameState {
   selected: string;
   pointer: { x: number; y: number } | null;
   queue: { x: number; y: number }[];
+  /** 손을 뗀 순간 아직 반영되지 않은 획 — 다음 프레임에 마저 반영 (프레임이 느려도 빠른 문지르기가 사라지지 않게) */
+  pending: { x: number; y: number }[];
+  /** pending 획을 그을 때 쥐고 있던 아이템 (뗀 직후 다른 도구로 바꿔도 원래 도구로 반영) */
+  pendingItem: string | null;
   finished: boolean;
   failed: boolean;
   raf: number;
@@ -706,6 +710,8 @@ function startLevel(id: number) {
     selected: firstTool.spec.id,
     pointer: null,
     queue: [],
+    pending: [],
+    pendingItem: null,
     finished: false,
     failed: false,
     raf: 0,
@@ -763,10 +769,10 @@ function startLevel(id: number) {
   ads.gameplayStart();
   const loop = (now: number) => {
     if (!game) return;
-    // 느린 기기·러너에서도 게임 시간이 실제 시간과 같이 흐르도록: 한 프레임에 최대 0.25초를 0.05초 단위로 나눠 진행
+    // 느린 기기·러너에서도 게임 시간이 실제 시간과 같이 흐르도록: 한 프레임에 최대 0.25초 (시계는 step 안에서 0.05초 단위로 나눠 진행)
     const dt = Math.min(0.25, (now - game.last) / 1000);
     game.last = now;
-    for (let rest = dt; rest > 1e-6 && game && !game.finished && !game.failed; rest -= 0.05) step(Math.min(0.05, rest));
+    step(dt);
     if (!game) return;
     game.renderer.draw(dt);
     if (game.view3d) {
@@ -1275,6 +1281,7 @@ function bindInput(canvas: HTMLCanvasElement) {
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     game.view3d?.setPressing(true);
     game.pointer = p;
+    game.pending = [];
     game.queue = [p];
   };
   const move = (e: PointerEvent) => {
@@ -1295,6 +1302,10 @@ function bindInput(canvas: HTMLCanvasElement) {
     if (!game) return;
     game.view3d?.setPressing(false);
     game.pointer = null;
+    if (game.queue.length && !game.finished && !game.failed) {
+      game.pending.push(...game.queue);
+      game.pendingItem = game.selected;
+    }
     game.queue = [];
     if (game.renderer.cursor) game.renderer.cursor.active = false;
     stopScrub();
@@ -1501,11 +1512,16 @@ function step(dt: number) {
   g.sparkleCooldown -= dt;
   g.sprayCooldown -= dt;
   // 시계는 첫 효과(분사·제거)부터 — 도구를 고르고 시험해 보는 시간은 세지 않음
-  if (g.session.engaged) handleEvents(g.session.tick(dt));
-  const entry = findItem(g.selected, items)!;
+  if (g.session.engaged) {
+    for (let rest = dt; rest > 1e-6 && !g.finished && !g.failed; rest -= 0.05) handleEvents(g.session.tick(Math.min(0.05, rest)));
+  }
+  // 손을 뗀 뒤 남은 획(프레임 사이에 시작해서 끝난 빠른 문지르기 포함)은 이번 프레임에 마저 반영
+  const flush = !g.pointer && g.pending.length ? g.pending.splice(0, g.pending.length) : null;
+  const at = g.pointer ?? (flush ? flush[flush.length - 1] : null);
+  const entry = (flush && g.pendingItem ? findItem(g.pendingItem, items) : undefined) ?? findItem(g.selected, items)!;
   const spec = entry.spec;
-  if (g.pointer) {
-    const pts = g.queue.length ? g.queue.splice(0, g.queue.length) : [g.pointer];
+  if (at) {
+    const pts = flush ?? (g.queue.length ? g.queue.splice(0, g.queue.length) : [at]);
     const each = dt / pts.length;
     const before = g.session.cleanliness;
     g.used.add(spec.id);
@@ -1519,12 +1535,12 @@ function step(dt: number) {
         g.sprayCooldown = 0.35;
         updateBudgets();
       }
-    } else {
+    } else if (!flush) {
       const gain = g.session.cleanliness - before;
       // 소리는 지금 문지르는 자리의 재질·오염에 맞춘다
       const s = g.session;
-      const cx = Math.min(s.w - 1, Math.max(0, Math.floor(g.pointer.x)));
-      const cy = Math.min(s.h - 1, Math.max(0, Math.floor(g.pointer.y)));
+      const cx = Math.min(s.w - 1, Math.max(0, Math.floor(at.x)));
+      const cy = Math.min(s.h - 1, Math.max(0, Math.floor(at.y)));
       const ci = cy * s.w + cx;
       // 오염은 손가락 주변 3×3 에서 가장 많은 칸 기준 (경계에서 소리가 깜빡이지 않게)
       let best = -1;

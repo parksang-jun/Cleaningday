@@ -15,7 +15,7 @@ fi
 
 echo "1/3 운영센터 파일 복사 → $DEST"
 mkdir -p "$DEST" "$HOME_DIR/logs"
-cp "$SRC/server.mjs" "$SRC/index.html" "$SRC/icon.png" "$DEST/"
+cp "$SRC/server.mjs" "$SRC/diagnose.mjs" "$SRC/index.html" "$SRC/icon.png" "$DEST/"
 # 실행 스크립트도 최신으로 (저장소 안에서 실행된 경우)
 if [ -f "$SRC/../run-routine.sh" ]; then cp "$SRC/../run-routine.sh" "$HOME_DIR/run-routine.sh"; chmod +x "$HOME_DIR/run-routine.sh"; fi
 mkdir -p "$HOME_DIR/feedback"
