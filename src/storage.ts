@@ -12,8 +12,8 @@ export interface Settings {
   lang: 'auto' | 'ko' | 'en' | 'ja';
   /** 3D 보기 (항상 켜짐 — 호환용) */
   view3d: boolean;
-  /** 테스트용: 2D 로 강제 (UI 에 없음) */
-  force2d?: boolean;
+  /** 3D 보기 실험 기능 (UI 에 없음 — 기본은 2D) */
+  use3d?: boolean;
   /** 첫 판 조작 안내를 끝까지 봤거나 건너뜀 */
   tourDone?: boolean;
 }

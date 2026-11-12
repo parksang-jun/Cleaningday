@@ -1215,11 +1215,11 @@ function updateBudgets() {
 }
 
 let webglFailed = false;
-/** 3D 보기 (항상 3D, WebGL 이 없을 때만 2D) — three.js 는 처음 켤 때만 불러온다 */
+/** 3D 보기 (실험 기능 — 기본은 2D, 디버그 훅으로만 켠다) — three.js 는 처음 켤 때만 불러온다 */
 async function applyView3D() {
   const g = game;
   if (!g) return;
-  const on = !getStore().settings.force2d && !webglFailed;
+  const on = getStore().settings.use3d === true && !webglFailed;
   const area = app.querySelector<HTMLElement>('.stage-area');
   const c3 = app.querySelector<HTMLCanvasElement>('[data-el="canvas3d"]');
   if (!area || !c3) return;
@@ -2437,7 +2437,7 @@ function exposeDebug() {
       if (game) game.session.shieldUntil = game.session.time + sec;
     },
     force2d: (on: boolean) => {
-      getStore().settings.force2d = on;
+      getStore().settings.use3d = !on;
       persist();
       void applyView3D();
     },

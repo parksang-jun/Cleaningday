@@ -808,6 +808,7 @@ try {
     const p3 = await ctx3.newPage();
     await p3.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
     await p3.waitForSelector('[data-testid="play"]');
+    await p3.evaluate(() => window.__sparkle.force2d(false)); // 3D 는 실험 기능 — 기본은 2D
     await p3.click('[data-testid="play"]');
     await p3.waitForSelector('[data-testid="intro"]');
     await p3.click('[data-testid="start"]');
@@ -823,7 +824,7 @@ try {
     assert(await p3.waitForFunction(() => JSON.parse(localStorage.getItem('sparkle-clean-v1') || '{}').settings?.tourDone === true, null, { timeout: 5000 }).then(() => true, () => false), 'the walkthrough is shown once');
     await p3.waitForFunction(() => { const c = document.querySelector('[data-testid="canvas3d"]'); return c && !c.hidden && c.dataset.engine; }, null, { timeout: 15000 });
     await p3.waitForTimeout(500);
-    assert((await p3.locator('[data-testid="view3d"]').count()) === 0, 'stages open in 3D by default, with no 2D switch');
+    assert((await p3.locator('[data-testid="view3d"]').count()) === 0, '3D (experimental) renders the stage, with no switch in the HUD');
     const before3d = await p3.evaluate(() => window.__sparkle.session().cleanliness);
     const b3 = await p3.locator('[data-testid="canvas3d"]').boundingBox();
     await p3.mouse.move(b3.x + b3.width * 0.2, b3.y + b3.height * 0.35);
