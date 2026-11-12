@@ -821,7 +821,15 @@ try {
       await p3.click('[data-testid="tour-next"]');
     }
     assert(tourTexts.length === 9 && new Set(tourTexts).size === 9 && tourTexts[1].startsWith('Tools') && tourTexts[4].startsWith('Boosters'), 'first stage walks through what each control does (9 steps)');
-    assert(await p3.waitForFunction(() => JSON.parse(localStorage.getItem('sparkle-clean-v1') || '{}').settings?.tourDone === true, null, { timeout: 5000 }).then(() => true, () => false), 'the walkthrough is shown once');
+    assert(await p3.waitForFunction(() => JSON.parse(localStorage.getItem('sparkle-clean-v1') || '{}').settings?.tourDone === true, null, { timeout: 5000 }).then(() => true, () => false), 'finishing the walkthrough is remembered');
+    // 1판은 다시 해도 안내가 나온다
+    await p3.click('[data-testid="back"]');
+    await p3.waitForSelector('[data-testid="stage-1"]');
+    await p3.click('[data-testid="stage-1"]');
+    await p3.waitForSelector('[data-testid="intro"]');
+    await p3.click('[data-testid="start"]');
+    assert(await p3.waitForSelector('[data-testid="tour"]', { timeout: 5000 }).then(() => true, () => false), 'stage 1 shows the walkthrough every time');
+    await p3.click('[data-testid="tour-skip"]');
     await p3.waitForFunction(() => { const c = document.querySelector('[data-testid="canvas3d"]'); return c && !c.hidden && c.dataset.engine; }, null, { timeout: 15000 });
     await p3.waitForTimeout(500);
     assert((await p3.locator('[data-testid="view3d"]').count()) === 0, '3D (experimental) renders the stage, with no switch in the HUD');

@@ -16,6 +16,8 @@ export interface Settings {
   use3d?: boolean;
   /** 첫 판 조작 안내를 끝까지 봤거나 건너뜀 */
   tourDone?: boolean;
+  /** 테스트용: 조작 안내 끔 (UI 에 없음) */
+  tourOff?: boolean;
 }
 
 /** 쇼호스트 전역 설정 (운영자 모드에서 편집) */

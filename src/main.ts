@@ -811,8 +811,10 @@ function startLevel(id: number) {
         unlockAudio();
         sfx.start();
         duckMusic(true);
-        if (getStore().settings.tourDone) maybeHostIntro();
-        else startTour(maybeHostIntro);
+        // 1판에서는 매번 조작 안내(건너뛰기 가능), 다른 판은 아직 안 봤을 때만
+        const cfg = getStore().settings;
+        if (!cfg.tourOff && (id === 1 || !cfg.tourDone)) startTour(maybeHostIntro);
+        else maybeHostIntro();
       });
     },
   );
@@ -2442,6 +2444,7 @@ function exposeDebug() {
       void applyView3D();
     },
     skipTour: () => {
+      getStore().settings.tourOff = true;
       getStore().settings.tourDone = true;
       persist();
     },
