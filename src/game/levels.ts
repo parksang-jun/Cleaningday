@@ -170,17 +170,41 @@ export interface TierDef {
 
 export const TIERS: TierDef[] = [
   { id: 1, fromId: 1, passClean: 0.9, resistMul: 1.0, parFactor: 1.8 },
-  { id: 2, fromId: 13, passClean: 0.93, resistMul: 1.05, parFactor: 1.6, limitFactor: 2.6 },
-  { id: 3, fromId: 25, passClean: 0.95, resistMul: 1.1, parFactor: 1.5, limitFactor: 2.3, sprayBudgetSec: 18, tailRate: 0.7 },
-  { id: 4, fromId: 37, passClean: 0.96, resistMul: 1.15, parFactor: 1.4, limitFactor: 2.1, sprayBudgetSec: 16, tailRate: 0.65 },
-  { id: 5, fromId: 49, passClean: 0.97, resistMul: 1.2, parFactor: 1.3, limitFactor: 1.9, sprayBudgetSec: 14, tailRate: 0.6 },
-  { id: 6, fromId: 73, passClean: 0.98, resistMul: 1.25, parFactor: 1.2, limitFactor: 1.75, sprayBudgetSec: 12, tailRate: 0.55 },
+  { id: 2, fromId: 13, passClean: 0.93, resistMul: 1.1, parFactor: 1.6, limitFactor: 2.6 },
+  { id: 3, fromId: 25, passClean: 0.95, resistMul: 1.2, parFactor: 1.5, limitFactor: 2.3, sprayBudgetSec: 18, tailRate: 0.7 },
+  { id: 4, fromId: 37, passClean: 0.96, resistMul: 1.32, parFactor: 1.4, limitFactor: 2.1, sprayBudgetSec: 16, tailRate: 0.65 },
+  { id: 5, fromId: 49, passClean: 0.97, resistMul: 1.45, parFactor: 1.3, limitFactor: 1.9, sprayBudgetSec: 14, tailRate: 0.6 },
+  { id: 6, fromId: 73, passClean: 0.98, resistMul: 1.6, parFactor: 1.2, limitFactor: 1.75, sprayBudgetSec: 12, tailRate: 0.55 },
 ]
 
 export function tierFor(id: number): TierDef {
   let t = TIERS[0]
   for (const tier of TIERS) if (id >= tier.fromId) t = tier
   return t
+}
+
+/** 마지막 단계가 끝까지 올라가며 닿는 값 (단계 안에서도 판마다 조금씩 어려워진다) */
+const TIER_END = { resistMul: 2.0, parFactor: 1.1, limitFactor: 1.6 }
+
+/**
+ * 판별 난이도 — 단계(tier) 값은 계단이 아니라 **경사**다: 한 단계 안에서도 판이 올라갈수록
+ * 다음 단계 값 쪽으로 조금씩 움직인다(때가 더 끈질기고, 목표·제한시간이 더 빠듯하다).
+ * 통과 기준·세제 한도·찌든 때 같은 "규칙"은 단계가 바뀔 때만 달라진다(인트로에서 안내).
+ */
+export function rampFor(id: number, total: number): { resistMul: number; parFactor: number; limitFactor?: number; p: number } {
+  const tier = tierFor(id)
+  const i = TIERS.indexOf(tier)
+  const next = TIERS[i + 1]
+  const end = next ? next.fromId : total + 1
+  const p = Math.max(0, Math.min(1, (id - tier.fromId) / Math.max(1, end - tier.fromId)))
+  const to = next ?? { ...tier, ...TIER_END }
+  const mix = (a: number, b: number) => a + (b - a) * p
+  return {
+    resistMul: round3(mix(tier.resistMul, to.resistMul)),
+    parFactor: round3(mix(tier.parFactor, to.parFactor)),
+    limitFactor: tier.limitFactor !== undefined ? round3(mix(tier.limitFactor, to.limitFactor ?? tier.limitFactor)) : undefined,
+    p,
+  }
 }
 
 export interface LevelDef {
@@ -580,14 +604,15 @@ const MESS_PATTERN: Record<MessKind, MessPattern> = { kids: 'trail', pet: 'trail
 /** 재오염으로는 생기지 않는 오염 (곰팡이·이끼·녹은 "자라는" 것이지 "떨어지는" 것이 아니다) */
 const NEVER_FRESH: DirtType[] = ['mold', 'moss', 'iron']
 
-export function messFor(seed: StageSeed, id: number, tier: TierDef): MessDef | undefined {
+export function messFor(seed: StageSeed, id: number, tier: TierDef, total = 0): MessDef | undefined {
   if (id < MESS_FROM) return undefined
   const mode = seed.mode ?? 'clean'
   if (mode === 'rush') return undefined // 러시는 이미 계속 생긴다
   const kind = MESS_SCENE[seed.scene]
   const type = MESS_DIRT[kind].find((d) => seed.dirt.includes(d)) ?? seed.dirt.find((d) => !NEVER_FRESH.includes(d))
   if (!type) return undefined
-  const t = (tier.id - 1) / (TIERS.length - 1)
+  // 판이 올라갈수록 더 자주·더 많이 어질러진다 (전체 판 수를 알면 판 번호로, 모르면 단계로)
+  const t = total > MESS_FROM ? (id - MESS_FROM) / (total - MESS_FROM) : (tier.id - 1) / (TIERS.length - 1)
   // 이미 어려운 모드는 덜. 튀는 기름·물때처럼 세정제를 뿌려야 지워지는 오염은 한 단위당 손이 더 가니 양을 줄이고,
   // 바깥(낙엽·흙·새)은 바람이 많이 실어 오니 더 많이 — 넓은 실외 판은 호스·솔로 금방 걷어낸다
   const hard = (mode === 'spread' || mode === 'dark' ? 0.7 : 1) * (kind === 'splatter' ? 0.7 : kind === 'splash' ? 0.55 : kind === 'leaves' || kind === 'birds' ? 1.25 : 1)
@@ -602,6 +627,9 @@ export function messFor(seed: StageSeed, id: number, tier: TierDef): MessDef | u
   }
 }
 
+function round3(n: number) {
+  return Math.round(n * 1000) / 1000
+}
 function round1(n: number) {
   return Math.round(n * 10) / 10
 }
@@ -633,6 +661,7 @@ function build(): { levels: LevelDef[]; worlds: WorldInfo[] } {
         const tier = tierFor(id)
         const t = (id - 1) / (total - 1)
         const mode = seed.mode ?? 'clean'
+        const ramp = rampFor(id, total)
         levels.push({
           id,
           world: w.id,
@@ -643,22 +672,22 @@ function build(): { levels: LevelDef[]; worlds: WorldInfo[] } {
           theme: seed.theme ?? 'morning',
           spawn: spawnFor(seed, t, a.scale),
           growth: growthFor(seed, t),
-          mess: messFor(seed, id, tier),
+          mess: messFor(seed, id, tier, total),
           failDamage: mode === 'fragile' ? 0.1 : undefined,
           outdoor: w.id === 'house' || a.id === 'exterior',
           surface: SCENE_SURFACE[seed.scene],
           zones: ZONE_LAYOUTS[seed.scene],
           patches: patchesFor(seed, t, a.scale),
           passClean: tier.passClean,
-          resistMul: tier.resistMul,
+          resistMul: ramp.resistMul,
           sprayBudgetSec: tier.sprayBudgetSec,
           tailRate: tier.tailRate,
           grants: seed.grants ?? [],
           hint: seed.hint,
           seed: id * 7919 + 17,
           // 정전·번짐·러시는 사람이 봇보다 훨씬 느리므로 여유를 더 준다
-          parFactor: round2(tier.parFactor * (mode === 'dark' ? 1.3 : mode === 'spread' || mode === 'rush' ? 1.15 : 1)),
-          limitFactor: tier.limitFactor,
+          parFactor: round2(ramp.parFactor * (mode === 'dark' ? 1.3 : mode === 'spread' || mode === 'rush' ? 1.15 : 1)),
+          limitFactor: ramp.limitFactor,
         })
         area.levelIds.push(id)
       }

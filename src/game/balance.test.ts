@@ -60,6 +60,18 @@ describe('difficulty curve', () => {
     expect(tierAvg[tierAvg.length - 1]).toBeGreaterThan(tierAvg[0] * 2)
   }, 60_000)
 
+  it('every stage is at least as tough as the one before: grime resistance never drops, time factors never loosen within a mode, re-soiling comes faster', () => {
+    for (let i = 1; i < LEVELS.length; i++) {
+      const a = LEVELS[i - 1]
+      const b = LEVELS[i]
+      expect(b.resistMul, `level ${b.id} resist`).toBeGreaterThanOrEqual(a.resistMul)
+      if (a.limitFactor && b.limitFactor) expect(b.limitFactor, `level ${b.id} limit`).toBeLessThanOrEqual(a.limitFactor)
+    }
+    expect(LEVELS[95].resistMul).toBeGreaterThan(LEVELS[0].resistMul * 1.8)
+    const messy = LEVELS.filter((l) => l.mess && l.mode === 'clean' && l.mess.kind === 'kids')
+    expect(messy[messy.length - 1].mess!.every).toBeLessThan(messy[0].mess!.every)
+  })
+
   it('re-soiling: every stage from 4 (except rush) gets a themed mess-maker; it costs the basic-gear bot real time and premium gear cuts most of it', () => {
     let withMess = 0
     const kinds = new Set<string>()
