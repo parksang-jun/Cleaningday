@@ -75,6 +75,25 @@ textarea:focus, select:focus { outline: 2px solid var(--brand); outline-offset: 
 .diag h3 { margin: 0 0 6px; font-size: 14px; display: flex; gap: 8px; align-items: center; }
 .diag dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; } .diag dt { color: var(--muted); white-space: nowrap; } .diag dd { margin: 0; }
 .diag .btnrow { margin-top: 10px; }
+.ap { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: var(--shadow); margin-bottom: 12px; overflow: hidden; }
+.ap > summary { list-style: none; cursor: pointer; padding: 14px 16px; display: flex; gap: 10px; align-items: center; }
+.ap > summary::-webkit-details-marker { display: none; }
+.ap > summary .ttl { font-weight: 700; font-size: 15px; flex: 1; min-width: 0; }
+.ap > summary .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.ap > summary::after { content: '▾'; color: var(--muted); } .ap[open] > summary::after { content: '▴'; }
+.ap .body { padding: 0 16px 16px; display: grid; gap: 14px; }
+.ap .sec h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
+.ap .sec p { margin: 0; }
+.ap ol.steps { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+.ap .facts { display: flex; gap: 8px; flex-wrap: wrap; }
+.ap .act { background: var(--soft); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; }
+.ap .act h4 { margin: 0; font-size: 13px; }
+.opt { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; }
+.opt .t { flex: 1; min-width: 0; } .opt .t b { display: block; } .opt .t span { color: var(--muted); font-size: 12.5px; }
+.opt.rec { border-color: var(--brand); }
+.ap.decided { opacity: .92; } .ap.decided > summary .ttl { font-weight: 600; }
+.pr-body { white-space: pre-wrap; word-break: break-word; font-size: 13px; background: var(--soft); border-radius: 8px; padding: 10px 12px; max-height: 220px; overflow: auto; }
+h2.grp { font-size: 14px; margin: 22px 0 10px; display: flex; gap: 8px; align-items: center; } h2.grp small { color: var(--muted); font-weight: 400; }
 .strip { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--muted); margin: -4px 2px 14px; }
 .strip b { color: var(--fg); font-weight: 600; } .strip a, .linkish { color: var(--info); cursor: pointer; background: none; border: 0; padding: 0; font: inherit; text-decoration: underline; }
 .rt { display: flex; flex-direction: column; gap: 8px; }
@@ -142,7 +161,7 @@ pre.log { background: #0c1219; color: #cfe0f2; padding: 14px; border-radius: 10p
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-let S = null, D = null, page = 'home', sel = { report: null, log: null };
+let S = null, D = null, page = 'home', sel = { report: null, log: null, ap: null };
 try { page = localStorage.getItem('sc-page') || 'home'; } catch {}
 
 async function api(p, body) {
@@ -163,6 +182,16 @@ const until = (iso) => { if (!iso) return ''; const s = (new Date(iso) - Date.no
 const resultPill = (r) => ({ ok: '<span class="pill ok">성공</span>', fail: '<span class="pill bad">실패</span>', running: '<span class="pill info"><span class="dot run"></span>실행 중</span>', unknown: '<span class="pill">기록 확인</span>', info: '<span class="pill">기타</span>' }[r] || '');
 
 // ---- 데이터 해석
+// 결재함 모델: 요청서(approvals.json) + 변경안(PR·브랜치) + 요청서가 아직 없는 백로그 [승인] 줄
+function inboxModel() {
+  const reqs = (D?.approvals || []).filter((a) => a.status !== 'done');
+  const waiting = reqs.filter((a) => !a.my), decided = reqs.filter((a) => a.my);
+  const done = (D?.approvals || []).filter((a) => a.status === 'done');
+  const prs = S?.github?.prs || [];
+  const branches = (D?.pending || []).filter((b) => !prs.some((p) => p.branch === b.name));
+  const legacy = approvals().filter((x) => x.kind === '승인');
+  return { waiting, decided, done, prs, branches, legacy, count: waiting.length + prs.length + branches.length + legacy.length };
+}
 function approvals() {
   const items = [];
   for (const line of (D?.backlog || '').split('\n')) {
@@ -209,7 +238,7 @@ function overall() {
 // ---- 화면
 const PAGES = {
   home() {
-    const o = overall(), m = money(), p = pipeStats(), ap = approvals().filter((x) => x.kind === '승인'), pend = D?.pending || [];
+    const o = overall(), m = money(), p = pipeStats(), im = inboxModel();
     const routines = Object.entries(S?.routines || {});
     return `
     <div class="top"><h1>대시보드</h1><span class="sub">${S ? `${fmtDate(S.now)} 기준` : ''}</span><span class="sp"></span>
@@ -221,30 +250,69 @@ const PAGES = {
       <div class="card kpi"><div class="lab">이번 달 수익</div><div class="val">${esc(fmtMoney(m.month))}</div><div class="hint">누적 ${esc(fmtMoney(m.all))}</div></div>
       <div class="card kpi"><div class="lab">미수금</div><div class="val">${esc(fmtMoney(m.unpaid))}</div><div class="hint">정산 장부 ${m.count}건</div></div>
       <div class="card kpi"><div class="lab">진행 중인 광고주</div><div class="val">${p.open}곳</div><div class="hint">${p.due.length ? `오늘까지 할 일 ${p.due.length}건` : '밀린 후속 조치 없음'}</div></div>
-      <div class="card kpi"><div class="lab">결재 대기</div><div class="val">${ap.length + pend.length}건</div><div class="hint">결정 ${ap.length} · 변경안 ${pend.length}</div></div>
+      <div class="card kpi"><div class="lab">결재 대기</div><div class="val">${im.count}건</div><div class="hint">결정 ${im.waiting.length + im.legacy.length} · 변경안 ${im.prs.length + im.branches.length}</div></div>
     </div>
     <div class="grid routines">${routines.map(([k, r]) => routineCard(k, r)).join('')}</div>
     <div class="grid cols2">
-      <div class="card"><h2>결재가 필요한 일<span class="sp"></span><button class="btn sm" data-page-go="approve">전체 보기</button></h2>
-        ${ap.length || pend.length ? `<ul class="list">${pend.slice(0, 3).map((b) => `<li><span class="pill info">변경안</span><div class="t">${esc(b.subject)}<div class="m">${esc(b.name)} · ${ago(b.date)}</div></div><button class="btn sm" data-branch="${esc(b.name)}">검토</button></li>`).join('')}${ap.slice(0, 5).map((a) => `<li><span class="pill warn">결정</span><div class="t">${esc(a.text)}</div></li>`).join('')}</ul>` : '<div class="empty">지금 결재할 일이 없습니다</div>'}</div>
+      <div class="card"><h2>결재가 필요한 일<span class="sp"></span><button class="btn sm" data-page-go="approve">결재함 열기</button></h2>
+        ${im.count ? `<ul class="list">${im.prs.slice(0, 3).map((p) => `<li class="pick" data-page-go="approve"><span class="pill info">변경안</span><div class="t">${esc(p.title)}<div class="m">PR #${p.number} · 내용 확인 후 승인 또는 반려</div></div></li>`).join('')}${im.branches.slice(0, 2).map((b) => `<li class="pick" data-page-go="approve"><span class="pill">올리기 대기</span><div class="t">${esc(b.subject)}<div class="m">검토 요청 만들기 필요</div></div></li>`).join('')}${im.waiting.slice(0, 6).map((a) => `<li class="pick" data-ap-go="${esc(a.id)}">${a.kind === 'do' ? '<span class="pill warn">직접 하실 일</span>' : '<span class="pill info">선택</span>'}<div class="t">${esc(a.title)}<div class="m">${esc([a.cost, a.time].filter(Boolean).join(' · '))} · 눌러서 절차 보기</div></div></li>`).join('')}${im.legacy.slice(0, 3).map((a) => `<li><span class="pill">메모</span><div class="t">${esc(a.text)}</div></li>`).join('')}</ul>` : '<div class="empty">지금 결재할 일이 없습니다</div>'}</div>
       <div class="card"><h2>최근 보고서<span class="sp"></span><button class="btn sm" data-page-go="reports">전체 보기</button></h2>
         ${(D?.reports || []).length ? `<ul class="list">${D.reports.slice(0, 6).map((r) => `<li class="pick" data-report="${esc(r.path)}" data-ref="${esc(r.ref)}"><div class="t">${esc(title(r.path))}<div class="m">${r.draft ? '메일 초안 · ' : ''}${ago(r.date)}${r.branch !== 'main' ? ' · 결재 대기' : ''}</div></div></li>`).join('')}</ul>` : '<div class="empty">아직 보고서가 없습니다.<br>위에서 루틴을 한 번 실행해 보세요.</div>'}</div>
     </div>`;
   },
   approve() {
-    const items = approvals(), pend = D?.pending || [];
-    const ap = items.filter((x) => x.kind === '승인'), auto = items.filter((x) => x.kind === 'auto');
-    return `<div class="top"><h1>결재함</h1><span class="sub">에이전트가 혼자 할 수 없는 결정과, 검토를 기다리는 변경안</span><span class="sp"></span><button class="btn" data-open="pulls">GitHub에서 PR 보기</button></div>
-    <div class="grid cols2">
-      <div class="card"><h2>사장님 결정 필요 <small>${ap.length}건</small></h2>
-        ${ap.length ? `<ul class="list">${ap.map((a) => `<li><span class="pill warn">결정</span><div class="t">${esc(a.text)}</div></li>`).join('')}</ul>` : '<div class="empty">없음</div>'}
-        <p class="muted" style="font-size:12px;margin:12px 0 0">결정하신 내용은 Claude 대화창에 말씀해 주시면 반영합니다.</p></div>
-      <div class="card"><h2>검토 대기 변경안 <small>${pend.length}건</small></h2>
-        ${pend.length ? `<ul class="list">${pend.map((b) => { const pr = (S?.github?.prs || []).find((x) => x.branch === b.name); return `<li><div class="t">${esc(pr ? pr.title : b.subject)}<div class="m">${pr ? `PR #${pr.number} · ` : 'PR 없음(브랜치만) · '}${esc(b.name)} · ${fmtDate(b.date)}</div></div>${pr ? `<button class="btn sm pri" data-url="${esc(pr.url)}">GitHub에서 검토·병합</button>` : `<button class="btn sm pri" data-branch="${esc(b.name)}">PR 만들기</button>`}</li>`; }).join('')}</ul>` : '<div class="empty">없음 — 에이전트가 만든 변경은 여기서 승인합니다</div>'}
-        <p class="muted" style="font-size:12px;margin:12px 0 0">병합하면 5분 안에 이 맥에도 자동으로 반영됩니다.</p></div>
-    </div>
-    <div class="card" style="margin-top:14px"><h2>에이전트 작업 대기열 <small>위에서부터 처리 · ${auto.length}건</small></h2>
-      ${auto.length ? `<ul class="list">${auto.map((a, i) => `<li><span class="pill">${i + 1}</span><div class="t">${esc(a.text)}</div></li>`).join('')}</ul>` : '<div class="empty">비어 있음</div>'}</div>`;
+    const m = inboxModel(), auto = approvals().filter((x) => x.kind === 'auto');
+    const kindPill = (k) => k === 'do' ? '<span class="pill warn">직접 하실 일</span>' : '<span class="pill info">선택</span>';
+    const facts = (a) => `<div class="facts">${a.cost ? `<span class="pill">비용 ${esc(a.cost)}</span>` : ''}${a.time ? `<span class="pill">소요 ${esc(a.time)}</span>` : ''}</div>`;
+    const reqCard = (a, open) => {
+      const my = a.my;
+      const act = my
+        ? `<div class="act"><h4>✓ 결재 완료 — ${esc(my.label || my.decision)} <span class="muted" style="font-weight:400">· ${esc(my.at)}</span></h4>${my.memo ? `<div class="fb-text">${esc(my.memo)}</div>` : ''}
+            <div class="muted" style="font-size:12.5px">다음 에이전트 실행(제품 개선: 화·금) 때 반영됩니다. 지금 바로 반영하려면 '지금 반영'을 누르세요.</div>
+            <div class="btnrow"><button class="btn pri" data-run="D">지금 반영</button><button class="btn" data-undecide="${esc(a.id)}">결재 취소</button></div></div>`
+        : a.kind === 'do'
+          ? `<div class="act"><h4>결재: 위 순서를 마치셨으면</h4>${a.ask ? `<div><div class="muted" style="font-size:12.5px;margin-bottom:4px">${esc(a.ask)}</div><textarea data-memo="${esc(a.id)}" style="min-height:64px" placeholder="여기에 적어 주세요 (비밀번호·계좌·카드·신분증 번호는 적지 마세요)"></textarea></div>` : ''}
+              <div class="btnrow"><button class="btn pri" data-decide="${esc(a.id)}" data-decision="done" data-label="완료했어요">완료했어요</button><button class="btn" data-decide="${esc(a.id)}" data-decision="hold" data-label="보류 — 나중에 하겠음">보류 (나중에)</button><button class="btn" data-decide="${esc(a.id)}" data-decision="reject" data-label="하지 않음">하지 않겠음</button></div></div>`
+          : `<div class="act"><h4>결재: 하나를 골라 주세요</h4>
+              ${(a.options || []).map((o) => `<div class="opt ${o.recommended ? 'rec' : ''}"><div class="t"><b>${esc(o.label)} ${o.recommended ? '<span class="pill ok">권장</span>' : ''}</b><span>${esc(o.desc || '')}</span></div><button class="btn ${o.recommended ? 'pri' : ''}" data-decide="${esc(a.id)}" data-decision="${esc(o.id)}" data-label="${esc(o.label)}">이걸로 결정</button></div>`).join('')}
+              <div><div class="muted" style="font-size:12.5px;margin-bottom:4px">덧붙일 말 (선택)</div><textarea data-memo="${esc(a.id)}" style="min-height:52px" placeholder="조건이나 바라는 점이 있으면 적어 주세요"></textarea></div>
+              <div class="btnrow"><button class="btn" data-decide="${esc(a.id)}" data-decision="hold" data-label="보류 — 나중에 결정">보류 (나중에)</button></div></div>`;
+      return `<details class="ap ${my ? 'decided' : ''}" ${open ? 'open' : ''} data-ap="${esc(a.id)}"><summary>${my ? '<span class="pill ok">결재 완료</span>' : kindPill(a.kind)}<span class="ttl">${esc(a.title)}</span><span class="meta">${esc([a.cost, a.time].filter(Boolean).join(' · '))}</span></summary>
+        <div class="body">
+          <div class="sec"><h4>지금 상황</h4><p>${esc(a.summary || '')}</p></div>
+          <div class="sec"><h4>왜 필요한가</h4><p>${esc(a.why || '')}</p></div>
+          ${facts(a)}
+          ${a.steps?.length ? `<div class="sec"><h4>사장님이 하실 일 (순서대로)</h4><ol class="steps">${a.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></div>` : ''}
+          ${a.links?.length ? `<div class="btnrow">${a.links.map((l) => `<button class="btn" data-ext="${esc(l.url)}">${esc(l.label)} ↗</button>`).join('')}</div>` : ''}
+          ${act}
+          ${a.after ? `<div class="sec"><h4>결재 후 에이전트가 할 일</h4><p>${esc(a.after)}</p></div>` : ''}
+        </div></details>`;
+    };
+    const prCard = (p, open) => `<details class="ap" ${open ? 'open' : ''}><summary><span class="pill info">변경안 검토</span><span class="ttl">${esc(p.title)}</span><span class="meta">PR #${p.number} · ${ago(p.at)}</span></summary>
+      <div class="body">
+        <div class="sec"><h4>무엇이 바뀌나 (에이전트 설명)</h4><div class="pr-body">${esc(p.body || '설명이 없습니다. "GitHub에서 내용 보기"로 확인해 주세요.')}</div></div>
+        <div class="sec"><h4>사장님이 하실 일 (순서대로)</h4><ol class="steps">
+          <li>위 설명을 읽습니다. 더 자세히 보려면 'GitHub에서 내용 보기' → 열린 페이지의 'Files changed' 탭에서 바뀐 부분(초록=추가, 빨강=삭제)을 볼 수 있습니다.</li>
+          <li>자동 검사 결과를 확인합니다: 지금 ${ciLabel(S?.github?.ci)} — '실패'면 승인하지 말고 '반려'하거나 그대로 두세요(에이전트가 다음 실행에서 고칩니다).</li>
+          <li>괜찮으면 '승인 (병합)'을 누릅니다. 게임 소스에 합쳐지고 이 맥에도 5분 안에 반영됩니다.</li>
+          <li>마음에 들지 않으면 아래 칸에 이유를 적고 '반려'를 누릅니다. 에이전트가 이유를 읽고 다른 방법으로 다시 올립니다.</li></ol></div>
+        <div class="act"><h4>결재</h4><textarea data-memo="pr-${p.number}" style="min-height:52px" placeholder="반려할 때는 이유를 적어 주세요 (승인은 비워 둬도 됩니다)"></textarea>
+          <div class="btnrow"><button class="btn" data-url="${esc(p.url)}">GitHub에서 내용 보기 ↗</button><button class="btn pri" data-pr="${p.number}" data-pr-act="merge">승인 (병합)</button><button class="btn danger" data-pr="${p.number}" data-pr-act="close">반려</button></div></div>
+      </div></details>`;
+    const brCard = (b) => `<details class="ap"><summary><span class="pill">올리기 대기</span><span class="ttl">${esc(b.subject)}</span><span class="meta">${esc(b.name)} · ${ago(b.date)}</span></summary>
+      <div class="body"><div class="sec"><h4>지금 상황</h4><p>에이전트가 작업을 마쳤지만 GitHub 에 검토 요청(PR)이 아직 만들어지지 않았습니다. 보통 이 맥이 GitHub 에 로그인되어 있지 않을 때 생깁니다.</p></div>
+        <div class="sec"><h4>사장님이 하실 일 (순서대로)</h4><ol class="steps"><li>'검토 요청 만들기'를 누르면 GitHub 페이지가 열립니다.</li><li>열린 페이지에서 초록색 'Create pull request' 버튼을 누릅니다.</li><li>5분 안에 이 결재함에 '변경안 검토'로 올라오면 거기서 승인·반려합니다.</li><li>다음부터 자동으로 올라오게 하려면 설정 › 'GitHub 로그인'을 한 번 해 두세요.</li></ol></div>
+        <div class="btnrow"><button class="btn pri" data-branch="${esc(b.name)}">검토 요청 만들기 ↗</button><button class="btn" data-act="gh-login">GitHub 로그인</button></div></div></details>`;
+    const first = m.waiting[0]?.id;
+    return `<div class="top"><h1>결재함</h1><span class="sub">항목을 누르면 무엇을·왜·어떤 순서로 하면 되는지 나옵니다</span><span class="sp"></span><span class="pill ${m.count ? 'warn' : 'ok'}">결재 대기 ${m.count}건</span></div>
+    ${m.count === 0 && !m.decided.length ? '<div class="card"><div class="empty">지금 결재할 일이 없습니다</div></div>' : ''}
+    ${m.prs.length || m.branches.length ? `<h2 class="grp">에이전트가 올린 변경안 <small>승인하면 게임에 반영됩니다</small></h2>${m.prs.map((p, i) => prCard(p, i === 0 && !first)).join('')}${m.branches.map(brCard).join('')}` : ''}
+    ${m.waiting.length ? `<h2 class="grp">사장님 결재가 필요한 일 <small>${m.waiting.length}건 · 위에서부터 급한 순</small></h2>${m.waiting.map((a) => reqCard(a, sel.ap ? sel.ap === a.id : a.id === first)).join('')}` : ''}
+    ${m.legacy.length ? `<h2 class="grp">요청서 작성 대기 <small>다음 실행 때 에이전트가 절차를 자세히 적어 올립니다</small></h2><div class="card"><ul class="list">${m.legacy.map((a) => `<li><span class="pill">메모</span><div class="t">${esc(a.text)}</div></li>`).join('')}</ul></div>` : ''}
+    ${m.decided.length ? `<h2 class="grp">결재 완료 · 반영 대기 <small>${m.decided.length}건</small></h2>${m.decided.map((a) => reqCard(a, false)).join('')}` : ''}
+    ${m.done.length ? `<h2 class="grp">처리 끝난 결재 <small>${m.done.length}건</small></h2><div class="card"><ul class="list">${m.done.map((a) => `<li><span class="pill ok">완료</span><div class="t">${esc(a.title)}<div class="m">${esc(a.decision || '')} ${esc(a.decided || '')}</div></div></li>`).join('')}</ul></div>` : ''}
+    <h2 class="grp">에이전트 작업 대기열 <small>결재 없이 에이전트가 알아서 처리 · ${auto.length}건</small></h2>
+    <div class="card">${auto.length ? `<ul class="list">${auto.map((a, i) => `<li><span class="pill">${i + 1}</span><div class="t">${esc(a.text)}</div></li>`).join('')}</ul>` : '<div class="empty">비어 있음</div>'}</div>`;
   },
   improve() {
     const inbox = D?.inbox || { items: [], processing: 0 }, fb = D?.feedback || { rows: [], columns: [] }, r = S?.routines?.D;
@@ -418,7 +486,7 @@ function render() {
   $('#main').innerHTML = S ? PAGES[page]() : '<div class="empty" style="padding:80px">운영센터 불러오는 중…</div>';
   if (page === 'reports') loadReport();
   if (page === 'runs') loadLogs();
-  const n = approvals().filter((x) => x.kind === '승인').length + (D?.pending?.length || 0);
+  const n = inboxModel().count;
   const b = $('#b-approve'); b.hidden = !n; b.textContent = n;
   const fi = D?.inbox?.items?.length || 0; const bi = $('#b-improve'); bi.hidden = !fi; bi.textContent = fi;
   const o = overall(); $('#side-foot').innerHTML = `<span class="dot ${o.run ? 'run' : o.cls}"></span>${esc(o.cls === 'ok' ? (o.run ? '작업 중' : '정상') : o.cls === 'warn' ? '확인 필요' : o.cls === 'bad' ? (o.fix ? '설치 필요' : '조치 필요') : '연결 중')}<br><span style="opacity:.7">GitHub ${S?.sync?.at ? ago(S.sync.at) + ' 동기화' : '동기화 중'}</span>`;
@@ -429,7 +497,7 @@ async function refresh(force) {
   try {
     S = await api('/api/status');
     if (force || Date.now() - lastState > 30000) { D = await api('/api/state'); lastState = Date.now(); }
-    const sig = JSON.stringify([S.routines, S.repo, S.tools, D?.reports?.length, D?.pending?.length, D?.source, D?.inbox, D?.feedback?.rows?.length, S.sync?.at, S.sync?.msg, S.sync?.pushOk, S.github?.at, S.update]);
+    const sig = JSON.stringify([S.routines, S.repo, S.tools, D?.reports?.length, D?.pending?.length, D?.source, D?.inbox, D?.feedback?.rows?.length, S.sync?.at, S.sync?.msg, S.sync?.pushOk, S.github?.at, S.update, D?.approvals]);
     if (document.activeElement && ['TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && !force) { lastSig = lastSig || sig; return; } // 입력 중에는 화면을 다시 그리지 않는다
     if (force || sig !== lastSig) { lastSig = sig; render(); }
     else if (page === 'runs' && Object.values(S.routines).some((r) => r.running)) loadLogs();
@@ -439,6 +507,7 @@ async function refresh(force) {
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button, .pick'); if (!t || t.disabled) return;
   const d = t.dataset;
+  if (t.tagName === 'SUMMARY') return;
   if (d.page || d.pageGo) { page = d.page || d.pageGo; try { localStorage.setItem('sc-page', page); } catch {} render(); return; }
   if (d.run) return act('/api/run', { routine: d.run }, t);
   if (d.stop) return act('/api/stop', { routine: d.stop }, t);
@@ -450,6 +519,23 @@ document.addEventListener('click', (e) => {
   if (d.act === 'fb-add') { const text = $('#fb-text').value, source = $('#fb-src').value; if (!text.trim()) return toast('내용을 적어 주세요'); return act('/api/feedback', { source, text }, t); }
   if (d.fbDel) return act('/api/feedback/remove', { index: Number(d.fbDel) }, t);
   if (d.url) return act('/api/open', { target: 'url', arg: d.url }, t);
+  if (d.ext) return act('/api/open', { target: 'ext', arg: d.ext }, t);
+  if (d.apGo) { sel.ap = d.apGo; page = 'approve'; render(); document.querySelector(`[data-ap="${CSS.escape(d.apGo)}"]`)?.scrollIntoView({ block: 'start' }); return; }
+  if (d.decide) {
+    const memo = document.querySelector(`[data-memo="${CSS.escape(d.decide)}"]`)?.value || '';
+    const a = (D?.approvals || []).find((x) => x.id === d.decide);
+    if (d.decision === 'done' && a?.ask && !memo.trim() && !t.dataset.sure) { t.dataset.sure = '1'; t.textContent = '메모 없이 완료 처리할까요? 한 번 더 누르면 완료'; return; }
+    sel.ap = null;
+    return act('/api/decide', { id: d.decide, decision: d.decision, label: d.label, memo, title: a?.title || '' }, t);
+  }
+  if (d.undecide) return act('/api/undecide', { id: d.undecide }, t);
+  if (d.pr) {
+    const memo = document.querySelector(`[data-memo="pr-${d.pr}"]`)?.value || '';
+    if (d.prAct === 'close' && !memo.trim()) return toast('반려 이유를 적어 주세요 — 에이전트가 읽고 고칩니다');
+    if (!t.dataset.sure) { t.dataset.sure = '1'; t.textContent = d.prAct === 'merge' ? '정말 승인할까요? 한 번 더 누르면 병합' : '정말 반려할까요? 한 번 더 누르면 반려'; return; }
+    toast('GitHub 에 처리 중…');
+    return act('/api/pr', { number: Number(d.pr), action: d.prAct, memo }, t);
+  }
   if (d.act === 'login') return act('/api/login', {}, t);
   if (d.act === 'gh-login') return act('/api/gh-login', {}, t);
   if (d.act === 'pull') { toast('GitHub 와 동기화 중…'); return act('/api/pull', {}, t); }

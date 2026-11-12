@@ -2,13 +2,9 @@
 
 표시: `[auto]` 에이전트가 PR 로 처리 가능 · `[승인]` Peter 결정 필요
 
+> 결재가 필요한 일은 여기 한 줄로만 적지 말고 **`state/approvals.json` 에 결재 요청서**(무엇을·왜·정확한 절차·비용·선택지)로 올린다. 아래 `[승인]` 줄은 요청서가 아직 없는 임시 메모다.
+
 ## 출시 전 필수
-- [승인] Google Play 개발자 계정(개인) 가입 → 비공개 테스트 12명·14일 시작
-- [승인] Apple Developer Program 가입
-- [승인] AdMob 계정·앱 ID·광고 단위 ID 발급 → 매니페스트/Info.plist 반영, app-ads.txt
-- [승인] 제휴 고지 문구: 현재 게임 안에서 뺐음. 쿠팡 파트너스·Amazon Associates 약관상 필요 — 판매몰 하단 작은 글씨로 되살릴지 결정
-- [승인] 쇼호스트 음성 클립 제작 방식(Runway 크레딧 vs Clova/Typecast)
-- [승인] 중국어·힌디어 앱 이름
 - [auto] 쿠팡 파트너스·Amazon Associates 링크가 비어 있는 실제 제품 목록 정리(관리자 패널 입력용)
 
 ## 품질

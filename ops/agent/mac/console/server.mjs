@@ -39,6 +39,7 @@ const ROUTINES = {
   D: { name: '제품 개선', desc: '피드백 수집·분류 → 우선순위 → 수정(PR) → 효과 확인', label: 'improve', when: '매주 화·금 10:31', cal: { weekdays: [2, 5], hour: 10, minute: 31 } },
   C: { name: '월간 정산', desc: '광고·제휴 수익 대사, 미수금 정리(지급 안 함)', label: 'settlement', when: '매월 3일 10:12', cal: { day: 3, hour: 10, minute: 12 } },
 };
+const extAllowed = new Set(); // 결재 요청서에 실린 외부 링크
 const children = new Map(); // routine → child process started here
 
 function run(cmd, args, opts = {}) {
@@ -144,7 +145,11 @@ async function stateData() {
   const main = all.find((x) => x.name === 'main');
   const latest = all[0] || null; // 가장 최근 커밋이 있는 브랜치
   const ref = latest ? latest.ref : 'main';
-  const [pipeline, ledger, backlog, log, feedback, improvements] = await Promise.all(['state/pipeline.csv', 'state/ledger.csv', 'state/backlog.md', 'state/log.md', 'state/feedback.csv', 'state/improvements.md'].map((f) => readAt(ref, f)));
+  const [pipeline, ledger, backlog, log, feedback, improvements, approvalsRaw] = await Promise.all(['state/pipeline.csv', 'state/ledger.csv', 'state/backlog.md', 'state/log.md', 'state/feedback.csv', 'state/improvements.md', 'state/approvals.json'].map((f) => readAt(ref, f)));
+  let approvals = []; try { approvals = JSON.parse(approvalsRaw).items || []; } catch {}
+  const decided = readDecided();
+  approvals = approvals.map((a) => ({ ...a, my: decided[a.id] || null }));
+  extAllowed.clear(); for (const a of approvals) for (const l of a.links || []) if (typeof l.url === 'string') extAllowed.add(l.url);
   // 보고서: 모든 에이전트 브랜치 + main
   const reports = []; const seen = new Set();
   for (const b of all.length ? all : [{ ref: 'main', name: 'main', date: '' }]) {
@@ -160,7 +165,7 @@ async function stateData() {
   const pending = all.filter((x) => x.name.startsWith('agent/'));
   return {
     source: { ref, name: latest ? latest.name : 'main', date: latest?.date, isMain: !latest || latest.name === 'main', mainDate: main?.date },
-    pipeline: parseCsv(pipeline), ledger: parseCsv(ledger), feedback: parseCsv(feedback), improvements, inbox: readInbox(), backlog, log, reports, pending,
+    pipeline: parseCsv(pipeline), ledger: parseCsv(ledger), feedback: parseCsv(feedback), improvements, inbox: readInbox(), approvals, backlog, log, reports, pending,
   };
 }
 
@@ -189,6 +194,49 @@ function removeFeedback(index) {
   items.splice(index, 1);
   fs.writeFileSync(FB_INBOX, items.map((i) => `## ${i.at} · ${i.source}\n${i.text}\n\n`).join(''));
   return { ok: true, msg: '지웠습니다' };
+}
+
+// ---- 결재: 사장님의 결정을 기록해 두었다가 다음 에이전트 실행 때 넘긴다 (~/SparkleCleanOps/decisions/)
+const DC_DIR = path.join(HOME_DIR, 'decisions');
+const DC_INBOX = path.join(DC_DIR, 'inbox.md');
+const DC_FILE = path.join(DC_DIR, 'decided.json');
+function readDecided() { try { return JSON.parse(fs.readFileSync(DC_FILE, 'utf8')); } catch { return {}; } }
+function decide({ id, decision, label, memo, title }) {
+  if (typeof id !== 'string' || !/^[\w\-]{1,80}$/.test(id)) return { ok: false, msg: '알 수 없는 항목' };
+  if (typeof decision !== 'string' || !/^[\w\-]{1,40}$/.test(decision)) return { ok: false, msg: '결정 값이 올바르지 않습니다' };
+  const clean = (v, n) => String(v || '').replace(/\r/g, '').trim().slice(0, n);
+  memo = clean(memo, 2000); label = clean(label, 120).replace(/\n/g, ' '); title = clean(title, 160).replace(/\n/g, ' ');
+  if (/\b\d{6}-?[1-4]\d{6}\b/.test(memo)) return { ok: false, msg: '주민등록번호처럼 보이는 숫자가 있습니다. 개인 식별 번호·비밀번호·계좌·카드 번호는 적지 마세요.' };
+  fs.mkdirSync(DC_DIR, { recursive: true });
+  const d = new Date(); const p = (n) => String(n).padStart(2, '0');
+  const at = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  const all = readDecided(); all[id] = { decision, label, memo, at, iso: d.toISOString() };
+  fs.writeFileSync(DC_FILE, JSON.stringify(all, null, 2));
+  fs.appendFileSync(DC_INBOX, `## ${id}\n- 항목: ${title}\n- 결정: ${decision} (${label})\n- 시각: ${at}\n- 메모: ${memo ? memo.replace(/\n/g, '\n  ') : '(없음)'}\n\n`);
+  return { ok: true, msg: '결재를 기록했습니다 — 다음 에이전트 실행 때 반영됩니다' };
+}
+function undecide(id) {
+  const all = readDecided(); if (!all[id]) return { ok: false, msg: '기록이 없습니다' };
+  let txt = ''; try { txt = fs.readFileSync(DC_INBOX, 'utf8'); } catch {}
+  const blocks = txt.split(/^(?=## )/m); const kept = blocks.filter((b) => !b.startsWith(`## ${id}\n`));
+  if (kept.length === blocks.length) return { ok: false, msg: '이미 에이전트가 가져가 처리 중입니다. 바꾸려면 다시 결재해 주세요.' };
+  fs.writeFileSync(DC_INBOX, kept.join('')); delete all[id]; fs.writeFileSync(DC_FILE, JSON.stringify(all, null, 2));
+  return { ok: true, msg: '결재를 취소했습니다' };
+}
+async function prAction(number, action, memo) {
+  number = Number(number); if (!Number.isInteger(number) || number <= 0) return { ok: false, msg: '알 수 없는 변경안' };
+  if (!(await which('gh'))) return { ok: false, msg: '이 맥에 GitHub 도구가 없어 여기서 바로 처리할 수 없습니다. "GitHub에서 내용 보기"를 눌러 열린 페이지 아래쪽의 초록색 "Merge pull request" → "Confirm merge" 를 누르면 승인됩니다. (설정에서 "GitHub 로그인"을 해 두면 다음부터 이 버튼으로 됩니다.)' };
+  const base = ['-R', 'parksang-jun/Cleaningday'];
+  const r = action === 'merge'
+    ? await run('gh', ['pr', 'merge', String(number), ...base, '--merge', '--delete-branch'], { timeout: 60000, cwd: REPO })
+    : await run('gh', ['pr', 'close', String(number), ...base, '--comment', `반려: ${String(memo || '사유 미기재').slice(0, 1000)}`], { timeout: 60000, cwd: REPO });
+  if (!r.ok) {
+    const e = r.err.trim();
+    const why = /auth|logged|401|403/i.test(e) ? 'GitHub 로그인이 필요합니다 — 설정에서 "GitHub 로그인"을 누른 뒤 다시 시도하세요.' : /not mergeable|conflict/i.test(e) ? '다른 변경과 충돌해 바로 병합할 수 없습니다. "제품 개선"을 한 번 실행하면 에이전트가 충돌을 정리해 다시 올립니다.' : /checks|required/i.test(e) ? '자동 검사가 아직 끝나지 않았거나 실패했습니다. 검사 통과 후 다시 시도하세요.' : e.slice(0, 200);
+    return { ok: false, msg: `처리하지 못했습니다: ${why}` };
+  }
+  await Promise.all([syncRepo(), syncGithub()]);
+  return { ok: true, msg: action === 'merge' ? `변경안 #${number} 을 승인(병합)했습니다. 이 맥에도 반영했습니다.` : `변경안 #${number} 을 반려했습니다.` };
 }
 
 function safeRel(rel) { return typeof rel === 'string' && /^reports\/[\w\-./가-힣 ]+\.md$/.test(rel) && !rel.includes('..'); }
@@ -291,7 +339,7 @@ async function syncGithub() {
     const r0 = runs.workflow_runs?.[0];
     gh = {
       at: new Date().toISOString(), ok: true, msg: '',
-      prs: prs.map((p) => ({ number: p.number, title: p.title, url: p.html_url, branch: p.head?.ref, at: p.created_at, draft: p.draft })),
+      prs: prs.map((p) => ({ number: p.number, title: p.title, url: p.html_url, branch: p.head?.ref, at: p.created_at, draft: p.draft, body: String(p.body || '').slice(0, 1500), files: p.changed_files })),
       ci: r0 ? { status: r0.status, conclusion: r0.conclusion, url: r0.html_url, sha: (r0.head_sha || '').slice(0, 7), title: r0.display_title, at: r0.updated_at } : null,
       issues: Math.max(0, (repo.open_issues_count || 0) - prs.length),
     };
@@ -354,6 +402,8 @@ function openTarget(t, arg) {
   let target = map[t];
   if (t === 'url' && typeof arg === 'string' && arg.startsWith(`${REPO_URL}/`) && !/[\s"'<>]/.test(arg)) target = arg;
   if (t === 'branch' && typeof arg === 'string' && /^agent\/[\w\-./]+$/.test(arg)) target = `${REPO_URL}/compare/main...${encodeURIComponent(arg).replace(/%2F/g, '/')}?expand=1`;
+  // 결재 요청서에 적힌 공식 페이지 (요청서에 실제로 있는 주소만 연다)
+  if (t === 'ext' && typeof arg === 'string' && /^https:\/\/[\w.\-]+(\/[^\s"'<>]*)?$/.test(arg) && extAllowed.has(arg)) target = arg;
   if (!target) return { ok: false, msg: '열 수 없는 대상' };
   if (!target.startsWith('http')) fs.mkdirSync(target, { recursive: true });
   spawn('open', [target], { detached: true, stdio: 'ignore' }).on('error', () => {}).unref();
@@ -415,6 +465,9 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/pull') return send(res, 200, await pull());
       if (url.pathname === '/api/install') return send(res, 200, await installAgent());
       if (url.pathname === '/api/open') return send(res, 200, openTarget(body.target, body.arg));
+      if (url.pathname === '/api/decide') return send(res, 200, decide(body));
+      if (url.pathname === '/api/undecide') return send(res, 200, undecide(String(body.id || '')));
+      if (url.pathname === '/api/pr') return send(res, 200, await prAction(body.number, body.action === 'merge' ? 'merge' : 'close', body.memo));
       if (url.pathname === '/api/login') return send(res, 200, loginClaude());
       if (url.pathname === '/api/gh-login') return send(res, 200, await loginGithub());
       if (url.pathname === '/api/restart') { send(res, 200, { ok: true, msg: '새 버전으로 다시 시작합니다' }); restartSelf(); return; }

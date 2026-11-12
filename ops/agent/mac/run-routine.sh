@@ -75,6 +75,17 @@ if [ "$ROUTINE" = "D" ] && [ -s "$FB_DIR/inbox.md" ]; then
   cp "$FB_TAKEN" "$FB_COPY"
 fi
 
+# 결재함에서 사장님이 내린 결정을 이번 회차분으로 넘긴다 (코드를 다루는 A·D 루틴)
+DC_DIR="$HOME_DIR/decisions"; DC_TAKEN=""; DC_COPY=""
+if { [ "$ROUTINE" = "A" ] || [ "$ROUTINE" = "D" ]; } && [ -s "$DC_DIR/inbox.md" ]; then
+  DC_TAKEN="$DC_DIR/processing-$STAMP.md"
+  mv "$DC_DIR/inbox.md" "$DC_TAKEN"
+  mkdir -p "$REPO/ops/agent/state/decisions-inbox"
+  DC_COPY="$REPO/ops/agent/state/decisions-inbox/$STAMP.md"
+  cp "$DC_TAKEN" "$DC_COPY"
+  EXTRA="가장 먼저 ops/agent/state/decisions-inbox/ 의 결재 결과를 헌장 1-1 대로 반영한다(approvals.json 상태 갱신 → 후속 작업). $EXTRA"
+fi
+
 PROMPT="당신은 게임 \"싹싹 클린(Sparkle Clean)\"의 운영 에이전트입니다. 사용자는 자리에 없으니 질문하지 말고 진행하세요. 리포트는 한국어로, 간결하게.
 지금 위치가 저장소(parksang-jun/Cleaningday, main 최신)입니다.
 1) ops/agent/AGENT.md(헌장)와 ops/agent/state/ 를 읽고 권한표를 반드시 지키세요.
@@ -118,6 +129,11 @@ if [ -n "$FB_TAKEN" ]; then
   else cat "$FB_TAKEN" "$FB_DIR/inbox.md" 2>/dev/null > "$FB_DIR/inbox.tmp"; mv "$FB_DIR/inbox.tmp" "$FB_DIR/inbox.md"; rm -f "$FB_TAKEN"; fi
   # 에이전트가 커밋하지 않고 남긴 사본은 지운다(main 작업 폴더를 깨끗하게)
   [ -n "$(git status --porcelain -- "$FB_COPY" 2>/dev/null)" ] && rm -f "$FB_COPY"
+fi
+if [ -n "$DC_TAKEN" ]; then
+  if [ $CODE -eq 0 ]; then mkdir -p "$DC_DIR/done"; mv "$DC_TAKEN" "$DC_DIR/done/"
+  else cat "$DC_TAKEN" "$DC_DIR/inbox.md" 2>/dev/null > "$DC_DIR/inbox.tmp"; mv "$DC_DIR/inbox.tmp" "$DC_DIR/inbox.md"; rm -f "$DC_TAKEN"; fi
+  [ -n "$(git status --porcelain -- "$DC_COPY" 2>/dev/null)" ] && rm -f "$DC_COPY"
 fi
 git checkout -q main >> "$LOG" 2>&1 || true
 if [ $CODE -eq 0 ]; then
