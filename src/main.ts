@@ -24,7 +24,7 @@ import { renderAdmin } from './admin';
 import { Renderer } from './render/renderer';
 import type { View3D } from './render/view3d';
 import { getStore, loadStore, persist, resetStore, type HostConfig } from './storage';
-import { AD_COINS, AD_COINS_PER_DAY, adBoostersLeft, adCoinsLeft, BOOSTER_IDS, BOOSTERS, claimDailyBonus, CONTINUE_COINS, daily, type BoosterId } from './economy';
+import { AD_COINS, AD_COINS_PER_DAY, AD_FREE_PASSES, adFree, buyAdFree, adBoostersLeft, adCoinsLeft, BOOSTER_IDS, BOOSTERS, claimDailyBonus, CONTINUE_COINS, daily, type BoosterId } from './economy';
 import { iconFor } from './ui/icons';
 
 const app = document.getElementById('app')!;
@@ -406,6 +406,10 @@ function hostName(): string {
 function canHost(p: SponsorProduct, placement: Placement): boolean {
   const cfg = hostConfig();
   if (!cfg.enabled || hostOpen()) return false;
+  // 광고 제거 이용권 기간에는 저절로 뜨는 쇼호스트 광고 없음
+  if (adFree(getStore())) return false;
+  // 저절로 뜨는 소개(판 시작·막힘·결과)는 판마다 한 번
+  if (game?.hostAuto) return false;
   if (placement === 'result') return cfg.result;
   if (game?.hostShown.has(p.id)) return false;
   if (placement === 'intro') {
@@ -457,6 +461,7 @@ function presentHost(entry: ItemEntry, placement: Placement, dirt?: DirtType, ct
   if (placement === 'intro') st.ops.lastIntroAt[p.id] = Date.now();
   persist();
   game?.hostShown.add(p.id);
+  if (game && (placement === 'intro' || placement === 'struggle' || placement === 'result')) game.hostAuto = true;
   void hostMedia(p).then((media) => presentHostWith(entry, placement, dirt, ctx, media));
 }
 
@@ -597,6 +602,8 @@ interface GameState {
   paused: boolean;
   /** 이 판에서 이미 소개한 광고 제품 */
   hostShown: Set<string>;
+  /** 이번 판에 쇼호스트가 저절로 나왔나 — 저절로 뜨는 소개는 판마다 한 번 */
+  hostAuto: boolean;
   /** 이번 판에서 실제로 쓴(문지르거나 뿌린) 아이템 — 결과 화면 쇼호스트가 이 중에서 고른다 */
   used: Set<string>;
 }
@@ -667,7 +674,6 @@ function startLevel(id: number) {
           ${level.mode !== 'clean' ? `<div class="hud__mode" data-el="mode" data-testid="mode"></div>` : ''}
           ${level.mess ? `<div class="hud__mess" data-el="mess" data-testid="mess" title="${esc(t(`mess_${level.mess.kind}`))}"></div>` : ''}
         </div>
-        <button class="icon-btn hud__view" data-act="view3d" aria-label="3D" data-testid="view3d">${getStore().settings.view3d ? '2D' : '3D'}</button>
         <button class="icon-btn hud__journal" data-act="journal" aria-label="${t('journal')}" data-testid="journal">📖<span class="badge" data-el="unknown"></span></button>
       </header>
       <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : goalText(level))}</div>
@@ -720,6 +726,7 @@ function startLevel(id: number) {
     lastTick: -1,
     paused: false,
     hostShown: new Set(),
+    hostAuto: false,
     used: new Set(),
   };
   // 결과 화면·홈 LIVE 에서 예약한 "다음 판 체험" — 이 판에 쓰이는 제품만 소비하고 나머지는 다음 판으로 이월
@@ -742,12 +749,6 @@ function startLevel(id: number) {
     renderArea(level.area);
   });
   app.querySelector('[data-act="journal"]')!.addEventListener('click', () => openJournal());
-  app.querySelector('[data-act="view3d"]')!.addEventListener('click', () => {
-    const st = getStore();
-    st.settings.view3d = !st.settings.view3d;
-    persist();
-    void applyView3D();
-  });
   void applyView3D();
   if (newOnes.length) toast(t('newItem', { item: newOnes.map((n) => itemName(findItem(n, items))).join(', ') }));
   track('level_start', { level: id, tier: level.tier, area: level.area });
@@ -810,10 +811,80 @@ function startLevel(id: number) {
         unlockAudio();
         sfx.start();
         duckMusic(true);
-        maybeHostIntro();
+        if (getStore().settings.tourDone) maybeHostIntro();
+        else startTour(maybeHostIntro);
       });
     },
   );
+}
+
+/** 첫 판 조작 안내: 화면의 버튼을 하나씩 비추며 "이걸 누르면 이렇게 된다"를 알려 준다 (한 번만, 설정에서 다시 보기) */
+const TOUR_STEPS: { sel: string; key: string; boosters?: boolean }[] = [
+  { sel: '.stage-area', key: 'tour_stage' },
+  { sel: '[data-el="toolbar"] .toolbar__group:nth-child(1)', key: 'tour_tools' },
+  { sel: '[data-el="toolbar"] .toolbar__group:nth-child(2)', key: 'tour_cleaners' },
+  { sel: '[data-testid="toolbar-shop"]', key: 'tour_more' },
+  { sel: '[data-el="boosters"]', key: 'tour_boosters', boosters: true },
+  { sel: '.hud__mid', key: 'tour_bar' },
+  { sel: '.hud__right', key: 'tour_time' },
+  { sel: '[data-act="journal"]', key: 'tour_journal' },
+  { sel: '[data-act="back"]', key: 'tour_back' },
+];
+function startTour(after: () => void) {
+  const g = game;
+  if (!g) return after();
+  const wasPaused = g.paused;
+  g.paused = true;
+  const wrap = document.createElement('div');
+  wrap.className = 'tour';
+  wrap.dataset.testid = 'tour';
+  wrap.innerHTML = `<div class="tour__spot"></div><div class="tour__card" role="dialog" aria-live="polite"><p class="tour__text" data-testid="tour-text"></p><div class="tour__list"></div><div class="tour__foot"><span class="tour__n small muted"></span><button class="btn btn--sm" data-act="skip" data-testid="tour-skip">${t('tourSkip')}</button><button class="btn btn--sm btn--primary" data-act="next" data-testid="tour-next"></button></div></div>`;
+  document.body.appendChild(wrap);
+  const spot = wrap.querySelector<HTMLElement>('.tour__spot')!;
+  const card = wrap.querySelector<HTMLElement>('.tour__card')!;
+  const steps = TOUR_STEPS.filter((s) => app.querySelector(s.sel));
+  let i = 0;
+  const place = () => {
+    const s = steps[i];
+    const r = app.querySelector<HTMLElement>(s.sel)!.getBoundingClientRect();
+    const pad = 6;
+    spot.style.left = `${r.left - pad}px`;
+    spot.style.top = `${r.top - pad}px`;
+    spot.style.width = `${r.width + pad * 2}px`;
+    spot.style.height = `${r.height + pad * 2}px`;
+    wrap.querySelector('.tour__text')!.textContent = t(s.key);
+    wrap.querySelector('.tour__list')!.innerHTML = s.boosters
+      ? BOOSTER_IDS.map((b) => `<div class="tour__item"><span>${BOOSTERS[b].icon}</span><span><b>${esc(t(`booster_${b}_short`))}</b> ${esc(t(`booster_${b}_desc`))}</span></div>`).join('')
+      : '';
+    wrap.querySelector('.tour__n')!.textContent = `${i + 1} / ${steps.length}`;
+    wrap.querySelector('[data-act="next"]')!.textContent = i === steps.length - 1 ? t('tourDone') : t('tourNext');
+    // 말풍선은 비춘 곳의 반대쪽에 — 가리지 않게
+    const mid = r.top + r.height / 2;
+    const tall = r.height > window.innerHeight * 0.4;
+    card.style.top = card.style.bottom = '';
+    if (tall) card.style.top = `${Math.max(12, r.top + r.height / 2 - 70)}px`;
+    else if (mid > window.innerHeight / 2) card.style.bottom = `${window.innerHeight - r.top + 14}px`;
+    else card.style.top = `${r.bottom + 14}px`;
+  };
+  const end = () => {
+    window.removeEventListener('resize', place);
+    wrap.remove();
+    getStore().settings.tourDone = true;
+    persist();
+    if (game === g) g.paused = wasPaused;
+    track('tour_end', { step: i + 1, of: steps.length });
+    after();
+  };
+  wrap.querySelector('[data-act="next"]')!.addEventListener('click', () => {
+    sfx.ui();
+    if (++i >= steps.length) {
+      i = steps.length - 1;
+      end();
+    } else place();
+  });
+  wrap.querySelector('[data-act="skip"]')!.addEventListener('click', end);
+  window.addEventListener('resize', place);
+  place();
 }
 
 /** 판 시작 소개: 이 판의 오염에 맞는 광고 제품이 있으면 쇼호스트가 잠깐 소개한다 (재노출 간격·시작 스테이지는 운영자 설정) */
@@ -1004,6 +1075,13 @@ function updateModeHud() {
   }
 }
 
+/** 광고 제거 남은 기간 문구 (일·시간) */
+function adFreeLeft(st: ReturnType<typeof getStore>): string {
+  const ms = Math.max(0, (st.ads.adFreeUntil ?? 0) - Date.now());
+  const h = Math.ceil(ms / 3_600_000);
+  return h >= 48 ? t('daysLeft', { n: Math.floor(h / 24) }) : t('hoursLeft', { n: h });
+}
+
 // ---------- 장비 추천: "이런 도구를 쓰면 청소가 더 빨라지고 깨끗해져요" ----------
 let lastGearTipAt = 0;
 
@@ -1136,15 +1214,14 @@ function updateBudgets() {
   });
 }
 
-/** 3D 보기 켜기/끄기 — three.js 는 처음 켤 때만 불러온다 */
+let webglFailed = false;
+/** 3D 보기 (항상 3D, WebGL 이 없을 때만 2D) — three.js 는 처음 켤 때만 불러온다 */
 async function applyView3D() {
   const g = game;
   if (!g) return;
-  const on = getStore().settings.view3d;
+  const on = !getStore().settings.force2d && !webglFailed;
   const area = app.querySelector<HTMLElement>('.stage-area');
   const c3 = app.querySelector<HTMLCanvasElement>('[data-el="canvas3d"]');
-  const btn = app.querySelector<HTMLElement>('[data-act="view3d"]');
-  if (btn) btn.textContent = on ? '2D' : '3D';
   if (!area || !c3) return;
   if (!on) {
     g.view3d?.dispose();
@@ -1156,19 +1233,17 @@ async function applyView3D() {
   if (g.view3d) return;
   try {
     const { View3D } = await import('./render/view3d');
-    if (game !== g || !getStore().settings.view3d) return;
+    if (game !== g) return;
     c3.hidden = false;
     area.classList.add('is-3d');
     const areaId = WORLDS.flatMap((w) => w.areas).find((a) => a.levelIds.includes(g.level.id))!.id;
     g.view3d = new View3D({ source: g.renderer.canvas, target: c3, scene: g.level.scene, area: areaId, gridW: g.session.w, gridH: g.session.h });
     track('view3d', { level: g.level.id });
   } catch {
-    // WebGL 이 없는 기기 — 2D 로 되돌린다
-    getStore().settings.view3d = false;
-    persist();
+    // WebGL 이 없는 기기 — 조용히 2D 로
+    webglFailed = true;
     area.classList.remove('is-3d');
     c3.hidden = true;
-    toast(t('view3dFail'), 'warn');
   }
 }
 
@@ -1933,6 +2008,9 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
   const gameTab = `
     <h3>⚡ ${t('boostersTab')}</h3><p class="small muted">${esc(t('boostersIntro'))}</p>
     <ul class="shop__list" data-testid="booster-list">${boosterRows.join('')}</ul>
+    <h3>🚫 ${t('adFreeTitle')}</h3><p class="small muted">${esc(t('adFreeIntro'))}</p>
+    ${adFree(st) ? `<p class="adfree__on" data-testid="adfree-active">✓ ${esc(t('adFreeActive', { d: adFreeLeft(st) }))}</p>` : ''}
+    <ul class="shop__list" data-testid="adfree-list">${AD_FREE_PASSES.map((p) => `<li class="shop__item" data-testid="adfree-${p.id}"><span class="shop__icon shop__icon--emoji">🚫</span><div class="shop__body"><div class="shop__name">${esc(t(`adFree_${p.id}`))}</div><div class="small muted">${esc(t('adFreeDesc'))}</div></div><button class="btn btn--sm btn--primary" data-adfree="${p.id}" ${st.coins < p.cost ? 'data-poor="1"' : ''}>${esc(t('buyBooster', { c: p.cost }))}</button></li>`).join('')}</ul>
     <div class="coin-ad"><span class="small">${esc(t('coinsAdLeft', { n: coinsAd, max: AD_COINS_PER_DAY }))}</span><button class="btn btn--sm btn--ad" data-ad-coins ${coinsAd > 0 ? '' : 'disabled'} data-testid="ad-coins">${esc(t('coinsAd', { c: AD_COINS }))}</button></div>
     ${live.length ? `<div class="live" data-testid="live"><div class="live__head"><span class="host__live">● LIVE</span> <b>${esc(t('hostTitle', { name: hostName() }))}</b></div><div class="live__row">${live.map((e) => `<button class="live__item" data-live="${esc(e.spec.id)}" data-testid="live-${esc(e.spec.id)}"><span class="host-rec__avatar">${hostAvatarSmall({ photo: e.sponsor!.hostPhoto ?? hostConfig().photo })}</span><span class="small"><b>${esc(e.sponsor!.brand)}</b><br>${esc(e.sponsor!.name)}</span><span class="tag-ad">${t('sponsored')}</span></button>`).join('')}</div></div>` : ''}
     ${sponsors.length ? `<ul class="shop__list">${sponsors.map(row).join('')}</ul>` : ''}
@@ -2016,6 +2094,22 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
           } else b.disabled = false;
         }),
       );
+      root.querySelectorAll<HTMLButtonElement>('[data-adfree]').forEach((b) =>
+        b.addEventListener('click', () => {
+          const id = b.dataset.adfree as 'day' | 'week' | 'month';
+          const st2 = getStore();
+          if (!buyAdFree(st2, id)) {
+            toast(t('needCoins'), 'warn');
+            return;
+          }
+          persist();
+          track('adfree_buy', { pass: id });
+          sfx.buy();
+          toast(esc(t('adFreeActive', { d: adFreeLeft(st2) })), 'good');
+          close();
+          openShop(inGame);
+        }),
+      );
       root.querySelector<HTMLButtonElement>('[data-ad-coins]')?.addEventListener('click', async (e) => {
         const b = e.currentTarget as HTMLButtonElement;
         if (adCoinsLeft(getStore()) <= 0) return;
@@ -2095,7 +2189,7 @@ function mallPanel(market: Market): string {
       </li>`,
         )
         .join('')}</ul>
-      <p class="small muted">${esc(market === 'coupang' ? t('coupangDisclosure') : t('mallDisclosure'))}</p>
+      <p class="small muted">${esc(t('affiliateFoot'))}</p>
     </div>`;
 }
 
@@ -2171,11 +2265,11 @@ function openSettings() {
     <label class="setting"><span>${t('music')}</span><input type="checkbox" data-k="music" ${s.music ? 'checked' : ''}></label>
     <label class="setting"><span>${t('haptics')}</span><input type="checkbox" data-k="haptics" ${s.haptics ? 'checked' : ''}></label>
     <label class="setting"><span>${t('hostVoice')}</span><input type="checkbox" data-k="hostVoice" ${s.hostVoice ? 'checked' : ''}></label>
-    <label class="setting"><span>${t('view3dSetting')}</span><input type="checkbox" data-k="view3d" ${s.view3d ? 'checked' : ''} data-testid="setting-view3d"></label>
     <label class="setting"><span>${t('language')}</span>
       <select data-k="lang">${(['auto', 'ko', 'en', 'ja'] as const).map((l) => `<option value="${l}" ${s.lang === l ? 'selected' : ''}>${l === 'auto' ? t('auto') : l === 'ko' ? '한국어' : l === 'en' ? 'English' : '日本語'}</option>`).join('')}</select>
     </label>
     <a class="small" href="${esc(import.meta.env.VITE_PRIVACY_URL || './privacy.html')}" target="_blank" rel="noopener">${t('privacy')}</a>
+    <button class="btn btn--sm" data-act="tour" data-testid="tour-replay">${t('tourReplay')}</button>
     <button class="btn btn--sm" data-act="reset">${t('resetProgress')}</button>
     <button class="btn btn--block" data-act="close">${t('close')}</button>`,
     (root, close) => {
@@ -2196,6 +2290,12 @@ function openSettings() {
         reloadItems();
         close();
         renderHome();
+      });
+      root.querySelector('[data-act="tour"]')!.addEventListener('click', () => {
+        s.tourDone = false;
+        persist();
+        close();
+        toast(t('tourReset'));
       });
       root.querySelector('[data-act="reset"]')!.addEventListener('click', () => {
         resetStore();
@@ -2285,6 +2385,8 @@ declare global {
       setShield: (sec: number) => void;
       gearTip: (reason: 'slow' | 'mess' | 'fail', dirt?: string) => boolean;
       setCoins: (n: number) => void;
+      force2d: (on: boolean) => void;
+      skipTour: () => void;
       hostConfig: (patch: Record<string, unknown>) => void;
       useBooster: (id: string) => boolean;
       resultPick: () => { id: string; context: string; usedItem?: string } | null;
@@ -2333,6 +2435,15 @@ function exposeDebug() {
     mess: () => ({ count: game?.session.messCount ?? 0, next: game?.session.messIn, shield: game?.session.shieldLeft ?? 0, kind: game?.level.mess?.kind }),
     setShield: (sec: number) => {
       if (game) game.session.shieldUntil = game.session.time + sec;
+    },
+    force2d: (on: boolean) => {
+      getStore().settings.force2d = on;
+      persist();
+      void applyView3D();
+    },
+    skipTour: () => {
+      getStore().settings.tourDone = true;
+      persist();
     },
     setCoins: (n: number) => {
       getStore().coins = n;

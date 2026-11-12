@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { AD_BOOSTERS_PER_DAY, AD_COINS_PER_DAY, adBoostersLeft, adCoinsLeft, claimDailyBonus, daily, todayKey } from './economy'
+import { AD_BOOSTERS_PER_DAY, AD_COINS_PER_DAY, adBoostersLeft, adCoinsLeft, adFree, buyAdFree, claimDailyBonus, daily, todayKey } from './economy'
 import type { Store } from './storage'
 
 function store(over: Partial<Store['daily']> = {}): Store {
   return {
     coins: 0,
     daily: { day: '', adCoins: 0, adBoosters: 0, bonusDay: '', streak: 0, ...over },
+    ads: { lastInterstitialAt: 0, gamesSinceInterstitial: 0, adFreeUntil: 0 },
   } as unknown as Store
 }
 
@@ -43,5 +44,21 @@ describe('economy', () => {
 
   it('todayKey is a local calendar date', () => {
     expect(todayKey(new Date(2026, 0, 5))).toBe('2026-01-05')
+  })
+
+  it('ad-free passes cost coins, stack on remaining time, and expire', () => {
+    const st = store()
+    st.coins = 2000
+    const t0 = Date.UTC(2026, 10, 12)
+    expect(adFree(st, t0)).toBe(false)
+    expect(buyAdFree(st, 'day', t0)).toBe(true)
+    expect(st.coins).toBe(1700)
+    expect(adFree(st, t0 + 23 * 3_600_000)).toBe(true)
+    expect(buyAdFree(st, 'week', t0 + 3_600_000)).toBe(true) // 남은 23시간 위에 7일
+    expect(st.ads.adFreeUntil).toBe(t0 + 24 * 3_600_000 + 7 * 24 * 3_600_000)
+    expect(adFree(st, t0 + 8 * 24 * 3_600_000 + 1)).toBe(false)
+    st.coins = 100
+    expect(buyAdFree(st, 'day', t0)).toBe(false)
+    expect(st.coins).toBe(100)
   })
 })

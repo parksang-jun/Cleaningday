@@ -79,6 +79,8 @@ try {
   await page.waitForSelector('[data-testid="play"]');
   // 실제 제품(제휴 추천) 소개는 아래 전용 구간에서 검사 — 그 전까지는 꺼서 기존 흐름(가상 광고주)을 그대로 본다
   await page.evaluate(() => window.__sparkle.hostConfig({ affiliate: false }));
+  await page.evaluate(() => window.__sparkle.skipTour()); // 첫 판 조작 안내는 3D 브라우저 구간에서 검사
+  await page.evaluate(() => window.__sparkle.force2d(true)); // 본 흐름은 2D 로 검사, 3D 는 아래 WebGL 브라우저에서
   assert((await page.locator('[data-testid="beta-tag"]').count()) === 1, 'home shows the BETA tag on production builds (VITE_BETA)');
   assert((await page.locator('.world').count()) === 3, '3 worlds listed (apartment, house, car)');
   await page.waitForTimeout(700);
@@ -544,7 +546,7 @@ try {
   assert((await page.locator('[data-testid="market-amazon_us"].is-on').count()) === 1, 'English UI defaults to Amazon');
   await page.click('[data-testid="market-coupang"]');
   await page.waitForTimeout(100);
-  assert((await page.locator('[data-testid="mall"]').innerText()).includes('쿠팡 파트너스'), 'Coupang market shows the Partners disclosure');
+  { const mallText = await page.locator('[data-testid="mall"]').innerText(); assert(/Ad ·|광고/.test(mallText) && !/수수료|commission/i.test(mallText), 'Coupang market is labelled as ads, with no commission wording'); }
   await page.screenshot({ path: resolve(shots, '13-mall.png'), fullPage: true });
   await page.click('[data-testid="shop"] [data-act="close"]');
   assert((await page.locator('[data-testid="item-cordlessvac"]').count()) === 0, 'premium vacuum stays hidden where it is not needed (bathtub)');
@@ -754,13 +756,36 @@ try {
   assert((await page.locator('[data-testid="host-spec"]').innerText()).includes('315AW'), 'card shows the published spec the in-game performance is tuned to (Dyson V16 315AW)');
   assert((await page.locator('[data-testid="host-trial"]').count()) === 1, 'real product offers "watch ad, try it this stage"');
   assert((await page.locator('[data-testid="host-buy"]').innerText()).includes('쿠팡'), 'buy button says "쿠팡에서 보기"');
-  assert((await page.locator('[data-testid="host-foot"]').innerText()).includes('쿠팡 파트너스'), 'card shows the Coupang Partners disclosure');
+  assert((await page.locator('[data-testid="host-foot"]').innerText()).startsWith('광고') && !affText.includes('수수료'), 'card is labelled as an ad, with no commission wording');
   await page.screenshot({ path: resolve(shots, '24-host-affiliate.png') });
   const realName = affText.match(/— (.+?)\./)?.[1];
   await page.click('[data-testid="host-trial"]');
   await page.waitForTimeout(1600);
   const sel = await page.evaluate(() => window.__sparkle.selected?.() ?? null);
   assert(typeof sel === 'string' && sel.startsWith('sp:kr-'), `trying the real product puts it in the toolbar, selected (${sel}, ${realName})`);
+  // 쇼호스트 광고는 판마다 한 번: 판 시작에 나왔으면 결과 화면에서는 저절로 안 나온다
+  await page.evaluate(() => window.__sparkle.clearAll());
+  await page.waitForSelector('[data-testid="result"]', { timeout: 8000 });
+  await page.waitForTimeout(2200);
+  assert((await page.locator('[data-testid="host"]').count()) === 0, 'host ad appears only once per stage (intro shown → no automatic result spot)');
+  await page.waitForTimeout(300);
+  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-testid="play"]');
+  // 코인으로 광고 제거 이용권 → 저절로 뜨는 쇼호스트 광고가 나오지 않는다
+  await page.evaluate(() => window.__sparkle.setCoins(400));
+  await page.click('[data-act="shop"]');
+  await page.waitForSelector('[data-testid="adfree-list"]');
+  assert((await page.locator('[data-testid="adfree-list"] .shop__item').count()) === 3, 'shop sells ad-free passes (1 / 7 / 30 days) for coins');
+  await page.click('[data-testid="adfree-day"] [data-adfree]');
+  await page.waitForSelector('[data-testid="adfree-active"]');
+  assert((await page.evaluate(() => window.__sparkle.coins())) === 100, 'one-day ad-free pass costs 300 coins');
+  await page.click('[data-testid="shop"] [data-act="close"]');
+  await page.click('[data-testid="area-living"]');
+  await page.click('[data-testid="stage-4"]');
+  await page.waitForSelector('[data-testid="intro"]');
+  await page.click('[data-testid="start"]');
+  await page.waitForTimeout(2500);
+  assert((await page.locator('[data-testid="host"]').count()) === 0, 'with ad-free on, no automatic host ad at stage start');
   await page.click('[data-testid="back"]');
   await page.waitForSelector('[data-testid="stage-1"]');
   await page.click('[data-testid="back-home"]');
@@ -787,10 +812,18 @@ try {
     await p3.waitForSelector('[data-testid="intro"]');
     await p3.click('[data-testid="start"]');
     await p3.waitForSelector('[data-testid="canvas"]');
-    await p3.click('[data-testid="view3d"]');
+    // 첫 판 조작 안내: 버튼을 하나씩 비추며 설명, 그동안 게임은 멈춤
+    await p3.waitForSelector('[data-testid="tour"]');
+    const tourTexts = [];
+    for (let n = 0; n < 12 && (await p3.locator('[data-testid="tour"]').count()); n++) {
+      tourTexts.push(await p3.locator('[data-testid="tour-text"]').innerText());
+      await p3.click('[data-testid="tour-next"]');
+    }
+    assert(tourTexts.length === 9 && new Set(tourTexts).size === 9 && tourTexts[1].startsWith('Tools') && tourTexts[4].startsWith('Boosters'), 'first stage walks through what each control does (9 steps)');
+    assert(await p3.waitForFunction(() => JSON.parse(localStorage.getItem('sparkle-clean-v1') || '{}').settings?.tourDone === true, null, { timeout: 5000 }).then(() => true, () => false), 'the walkthrough is shown once');
     await p3.waitForFunction(() => { const c = document.querySelector('[data-testid="canvas3d"]'); return c && !c.hidden && c.dataset.engine; }, null, { timeout: 15000 });
     await p3.waitForTimeout(500);
-    assert((await p3.locator('[data-testid="view3d"]').innerText()) === '2D', 'HUD 3D button switches the stage to the 3D view');
+    assert((await p3.locator('[data-testid="view3d"]').count()) === 0, 'stages open in 3D by default, with no 2D switch');
     const before3d = await p3.evaluate(() => window.__sparkle.session().cleanliness);
     const b3 = await p3.locator('[data-testid="canvas3d"]').boundingBox();
     await p3.mouse.move(b3.x + b3.width * 0.2, b3.y + b3.height * 0.35);
@@ -803,9 +836,6 @@ try {
     const after3d = await p3.evaluate(() => window.__sparkle.session().cleanliness);
     assert(after3d > before3d + 0.05, `scrubbing the 3D surface cleans it (${(before3d * 100).toFixed(0)}% → ${(after3d * 100).toFixed(0)}%)`);
     await p3.screenshot({ path: resolve(shots, '03b-view3d.png') });
-    await p3.click('[data-testid="view3d"]');
-    await p3.waitForTimeout(200);
-    assert((await p3.locator('[data-testid="canvas3d"][hidden]').count()) === 1, 'tapping 2D returns to the flat view');
     await b3d.close();
   }
 

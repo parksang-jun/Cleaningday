@@ -51,21 +51,21 @@ function affiliateLines(p: SponsorProduct, lang: Lang, opts: { hostName: string;
     lines.push(...custom);
     if (opts.placement === 'struggle' && opts.dirt) lines.push(`지금 막힌 ${dirtName(opts.dirt)}이(가) 바로 이 제품이 맡는 종류예요. 게임에선 ${t(`item_${p.base}`)}로 닦으시면 돼요.`);
     lines.push(feel);
-    lines.push(`가격이랑 후기는 구매 링크에서 직접 확인해 보세요. 제휴 링크라서 구매하시면 저희에게 수수료가 조금 들어와요 — 가격은 똑같아요.`);
+    lines.push(`가격이랑 후기는 구매 링크에서 직접 확인해 보세요.`);
   } else if (lang === 'ja') {
     lines.push(`こんにちは、お掃除の専門家の${opts.hostName}です。今日は実際に売っている製品をひとつ — ${p.brand} ${p.name}。`);
     if (expert) lines.push(expert);
     lines.push(...custom);
     if (opts.placement === 'struggle' && opts.dirt) lines.push(`今つまずいている${dirtName(opts.dirt)}は、まさにこの製品の担当です。ゲームでは${t(`item_${p.base}`)}で落とせます。`);
     lines.push(feel);
-    lines.push(`価格とレビューは購入リンクで確認してください。アフィリエイトリンクなので、購入されると私たちに少し手数料が入ります — 価格は同じです。`);
+    lines.push(`価格とレビューは購入リンクで確認してください。`);
   } else {
     lines.push(`Hi, I'm ${opts.hostName}, a cleaning specialist. Today it's a real product you can buy — the ${p.brand} ${p.name}.`);
     if (expert) lines.push(expert);
     lines.push(...custom);
     if (opts.placement === 'struggle' && opts.dirt) lines.push(`The ${dirtName(opts.dirt)} you're stuck on is exactly what this product is for. In the game, use the ${t(`item_${p.base}`)}.`);
     lines.push(feel);
-    lines.push(`Check the price and reviews at the link. It's an affiliate link, so we earn a small commission if you buy — the price is the same for you.`);
+    lines.push(`Check the price and reviews at the link.`);
   }
   return lines;
 }

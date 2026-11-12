@@ -10,8 +10,12 @@ export interface Settings {
   /** AI 쇼호스트 음성(TTS) */
   hostVoice: boolean;
   lang: 'auto' | 'ko' | 'en' | 'ja';
-  /** 3D 보기 */
+  /** 3D 보기 (항상 켜짐 — 호환용) */
   view3d: boolean;
+  /** 테스트용: 2D 로 강제 (UI 에 없음) */
+  force2d?: boolean;
+  /** 첫 판 조작 안내를 끝까지 봤거나 건너뜀 */
+  tourDone?: boolean;
 }
 
 /** 쇼호스트 전역 설정 (운영자 모드에서 편집) */
@@ -53,6 +57,8 @@ export interface Ops {
 export interface AdState {
   lastInterstitialAt: number;
   gamesSinceInterstitial: number;
+  /** 코인으로 산 광고 제거 이용권 만료 시각(ms) */
+  adFreeUntil: number;
 }
 
 export interface Stats {
@@ -86,9 +92,9 @@ const KEY = 'sparkle-clean-v1';
 export const DEFAULT_HOST: HostConfig = { enabled: true, name: '뽀득이', introCooldownMin: 8, introFromStage: 2, struggleAfterTries: 2, result: true, affiliate: true };
 
 const DEFAULTS: Store = {
-  settings: { sound: true, music: true, haptics: true, hostVoice: true, lang: 'auto', view3d: false },
+  settings: { sound: true, music: true, haptics: true, hostVoice: true, lang: 'auto', view3d: true },
   stats: { gamesPlayed: 0, totalCleanedCells: 0 },
-  ads: { lastInterstitialAt: 0, gamesSinceInterstitial: 0 },
+  ads: { lastInterstitialAt: 0, gamesSinceInterstitial: 0, adFreeUntil: 0 },
   progress: { unlocked: 1, stars: {}, bestTime: {} },
   coins: 0,
   boosters: { time: 0, bomb: 0, scan: 0, shield: 0 },

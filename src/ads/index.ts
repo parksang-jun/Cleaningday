@@ -68,6 +68,8 @@ export class AdsController {
     const now = Date.now();
     const intervalOk = now - ads.lastInterstitialAt >= INTERSTITIAL_MIN_INTERVAL_MS;
     const firstEver = getStore().stats.gamesPlayed <= 1;
+    // 코인으로 산 광고 제거 이용권 기간에는 전면 광고 없음
+    if ((ads.adFreeUntil ?? 0) > now) return false;
     if (!this.ready || this.busy || firstEver || ads.gamesSinceInterstitial < INTERSTITIAL_MIN_GAMES || !intervalOk) {
       return false;
     }

@@ -184,7 +184,7 @@ export function showHost(o: HostShowOptions): () => void {
         ${o.hideTrial || !o.onTrial ? '' : `<button class="btn btn--ad btn--block" data-act="trial" data-testid="host-trial">${trialLabel}</button>`}
         ${o.onBuy ? `<button class="btn btn--primary btn--block" data-act="buy" data-testid="host-buy">${o.buyLabel ?? t('mallBuy')}</button>` : ''}
       </div>
-      <p class="host__foot small muted" data-testid="host-foot">${p.affiliate ? (o.lang === 'ko' ? t('coupangDisclosure') : t('mallDisclosure')) : t('hostFoot')}</p>
+      <p class="host__foot small muted" data-testid="host-foot">${p.affiliate ? t('affiliateFoot') : t('hostFoot')}</p>
     </div>`;
   document.body.appendChild(el);
   const lineEl = el.querySelector<HTMLElement>('[data-el="line"]')!;

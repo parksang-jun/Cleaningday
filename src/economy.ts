@@ -66,3 +66,26 @@ export function adCoinsLeft(st: Store): number {
 export function adBoostersLeft(st: Store): number {
   return Math.max(0, AD_BOOSTERS_PER_DAY - daily(st).adBoosters);
 }
+
+/** 코인으로 사는 광고 제거 이용권 — 전면 광고와 저절로 뜨는 쇼호스트 광고를 끈다 (보상형 광고는 원할 때만 보는 것이라 그대로) */
+export interface AdFreePass {
+  id: 'day' | 'week' | 'month';
+  hours: number;
+  cost: number;
+}
+export const AD_FREE_PASSES: AdFreePass[] = [
+  { id: 'day', hours: 24, cost: 300 },
+  { id: 'week', hours: 24 * 7, cost: 1500 },
+  { id: 'month', hours: 24 * 30, cost: 5000 },
+];
+export function adFree(st: Store, now = Date.now()): boolean {
+  return (st.ads.adFreeUntil ?? 0) > now;
+}
+/** 이용권 구매: 남은 기간 위에 더해진다. 코인이 모자라면 false */
+export function buyAdFree(st: Store, id: AdFreePass['id'], now = Date.now()): boolean {
+  const pass = AD_FREE_PASSES.find((p) => p.id === id);
+  if (!pass || st.coins < pass.cost) return false;
+  st.coins -= pass.cost;
+  st.ads.adFreeUntil = Math.max(st.ads.adFreeUntil ?? 0, now) + pass.hours * 3_600_000;
+  return true;
+}
