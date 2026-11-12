@@ -763,9 +763,11 @@ function startLevel(id: number) {
   ads.gameplayStart();
   const loop = (now: number) => {
     if (!game) return;
-    const dt = Math.min(0.05, (now - game.last) / 1000);
+    // 느린 기기·러너에서도 게임 시간이 실제 시간과 같이 흐르도록: 한 프레임에 최대 0.25초를 0.05초 단위로 나눠 진행
+    const dt = Math.min(0.25, (now - game.last) / 1000);
     game.last = now;
-    step(dt);
+    for (let rest = dt; rest > 1e-6 && game && !game.finished && !game.failed; rest -= 0.05) step(Math.min(0.05, rest));
+    if (!game) return;
     game.renderer.draw(dt);
     if (game.view3d) {
       const sp = findItem(game.selected, items)?.spec;
