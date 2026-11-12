@@ -134,7 +134,15 @@ function openExternal(url: string) {
     void import('@capacitor/browser').then(({ Browser }) => Browser.open({ url })).catch(() => window.open(url, '_blank', 'noopener'));
     return;
   }
-  window.open(url, '_blank', 'noopener');
+  // 웹: 진짜 링크 클릭으로 연다 — window.open 은 샌드박스(임베드·미리보기)에서 막히는 경우가 많다
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.hidden = true;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 // ---------- 모달 ----------
