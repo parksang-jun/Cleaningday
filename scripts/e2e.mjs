@@ -454,8 +454,12 @@ try {
   await page.waitForSelector('[data-testid="item-degreaser"]');
   assert(await page.locator('[data-testid="item-degreaser"] .tool__warn').count(), 'toolbar flags degreaser as risky on wood');
   await page.click('[data-testid="item-degreaser"]');
-  await sweep(page, 2, 10, 6);
-  await page.waitForTimeout(300);
+  // 느린 CI 러너에서는 프레임이 적어 게임 시간이 천천히 흐른다 — 손상이 쌓일 때까지 몇 번 더 문지른다
+  for (let i = 0; i < 6; i++) {
+    await sweep(page, 2, 10, 6);
+    await page.waitForTimeout(300);
+    if ((await page.evaluate(() => window.__sparkle.session().damage)) > 0.05 || (await page.locator('[data-testid="fail"]').count())) break;
+  }
   assert((await page.evaluate(() => window.__sparkle.session().damage)) > 0.05, 'degreaser on the wooden table causes damage');
   await page.waitForSelector('[data-testid="fail"]', { timeout: 8000 });
   assert((await page.locator('[data-testid="fail"]').innerText()).includes('Surface ruined'), 'fragile stage fails when damage reaches 10%');

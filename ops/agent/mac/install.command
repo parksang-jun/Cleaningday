@@ -2,7 +2,7 @@
 # 싹싹 클린 운영 에이전트 — 맥 설치
 # 더블클릭(또는 터미널에서 `bash install.command`)하면:
 #   1) 저장소를 ~/SparkleCleanOps/Cleaningday 에 받고
-#   2) 주간 점검(월 09:43) · 광고주 발굴(수 10:17) · 월간 정산(매월 3일 10:12) 을 launchd 에 등록한다.
+#   2) 주간 점검(월 09:43) · 광고주 발굴(수 10:17) · 월간 정산(매월 3일 10:12) · 제품 개선(화·금 10:31) 을 launchd 에 등록한다.
 # 실행은 이 맥의 Claude Code(`claude`)가 한다. 맥이 잠들어 있었으면 깨어난 뒤에 돈다.
 set -euo pipefail
 
@@ -35,15 +35,15 @@ if [ "$MISSING" = 1 ]; then
 fi
 
 say "2/4 저장소 받기 → $REPO_DIR"
-mkdir -p "$HOME_DIR/logs"
+mkdir -p "$HOME_DIR/logs" "$HOME_DIR/feedback"
 if [ -d "$REPO_DIR/.git" ]; then
   git -C "$REPO_DIR" fetch -q origin && git -C "$REPO_DIR" checkout -q main && git -C "$REPO_DIR" pull -q --ff-only origin main
   echo "✓ 최신으로 갱신"
 else
-  git clone -q "$REPO_URL" "$REPO_DIR"
+  GIT_TERMINAL_PROMPT=0 git clone -q "$REPO_URL" "$REPO_DIR"
   echo "✓ 받음"
 fi
-if ! git -C "$REPO_DIR" push --dry-run -q origin main >/dev/null 2>&1; then
+if ! GIT_TERMINAL_PROMPT=0 git -C "$REPO_DIR" push --dry-run -q origin main >/dev/null 2>&1; then
   echo "· 이 맥에서 GitHub 푸시 권한이 확인되지 않았습니다. 'gh auth login' 으로 로그인해 두면 에이전트가 브랜치를 올릴 수 있습니다."
 fi
 
@@ -72,7 +72,7 @@ plist() { # 이름 루틴 "<달력 키들>"
   <key>ProgramArguments</key>
   <array><string>/bin/bash</string><string>$HOME_DIR/run-routine.sh</string><string>$2</string></array>
   <key>StartCalendarInterval</key>
-  <dict>$3</dict>
+  <array>$3</array>
   <key>StandardOutPath</key><string>$HOME_DIR/logs/launchd-$1.log</string>
   <key>StandardErrorPath</key><string>$HOME_DIR/logs/launchd-$1.log</string>
   <key>RunAtLoad</key><false/>
@@ -83,13 +83,17 @@ PLIST
   launchctl bootstrap "gui/$(id -u)" "$file"
   echo "✓ $label"
 }
-plist weekly     A "<key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>43</integer>"
-plist sponsors   B "<key>Weekday</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>17</integer>"
-plist settlement C "<key>Day</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>12</integer>"
+plist weekly     A "<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>43</integer></dict>"
+plist sponsors   B "<dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>17</integer></dict>"
+plist settlement C "<dict><key>Day</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>12</integer></dict>"
+plist improve    D "<dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>31</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>31</integer></dict>"
+
+say "운영센터 앱 (바탕화면)"
+if [ -z "${SC_FROM_CONSOLE:-}" ]; then bash "$SRC/console/install-app.sh" || echo "· 운영센터 앱 만들기를 건너뜀"; else echo "✓ (운영센터에서 실행 중)"; fi
 
 say "설치 완료"
 cat <<DONE
-· 일정: 주간 점검 월 09:43 / 광고주 발굴 수 10:17 / 월간 정산 매월 3일 10:12 (이 맥의 시간대)
+· 일정: 주간 점검 월 09:43 / 광고주 발굴 수 10:17 / 월간 정산 매월 3일 10:12 / 제품 개선 화·금 10:31 (이 맥의 시간대)
 · 지금 한 번 돌려 보기:  bash "$HOME_DIR/run-routine.sh" A
 · 리포트:  $REPO_DIR/ops/agent/reports/
 · 로그:    $HOME_DIR/logs/
