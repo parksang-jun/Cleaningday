@@ -307,7 +307,7 @@ const PAGES = {
     return `<div class="top"><h1>결재함</h1><span class="sub">항목을 누르면 무엇을·왜·어떤 순서로 하면 되는지 나옵니다</span><span class="sp"></span><span class="pill ${m.count ? 'warn' : 'ok'}">결재 대기 ${m.count}건</span></div>
     ${m.count === 0 && !m.decided.length ? '<div class="card"><div class="empty">지금 결재할 일이 없습니다</div></div>' : ''}
     ${m.prs.length || m.branches.length ? `<h2 class="grp">에이전트가 올린 변경안 <small>승인하면 게임에 반영됩니다</small></h2>${m.prs.map((p, i) => prCard(p, i === 0 && !first)).join('')}${m.branches.map(brCard).join('')}` : ''}
-    ${m.waiting.length ? `<h2 class="grp">사장님 결재가 필요한 일 <small>${m.waiting.length}건 · 위에서부터 급한 순</small></h2>${m.waiting.map((a) => reqCard(a, sel.ap ? sel.ap === a.id : a.id === first)).join('')}` : ''}
+    ${m.waiting.length ? `<h2 class="grp">사장님 결재가 필요한 일 <small>${m.waiting.length}건 · 위에서부터 급한 순</small></h2>${m.waiting.map((a) => reqCard(a, apTouched ? openAp.has(a.id) : a.id === first)).join('')}` : ''}
     ${m.legacy.length ? `<h2 class="grp">요청서 작성 대기 <small>다음 실행 때 에이전트가 절차를 자세히 적어 올립니다</small></h2><div class="card"><ul class="list">${m.legacy.map((a) => `<li><span class="pill">메모</span><div class="t">${esc(a.text)}</div></li>`).join('')}</ul></div>` : ''}
     ${m.decided.length ? `<h2 class="grp">결재 완료 · 반영 대기 <small>${m.decided.length}건</small></h2>${m.decided.map((a) => reqCard(a, false)).join('')}` : ''}
     ${m.done.length ? `<h2 class="grp">처리 끝난 결재 <small>${m.done.length}건</small></h2><div class="card"><ul class="list">${m.done.map((a) => `<li><span class="pill ok">완료</span><div class="t">${esc(a.title)}<div class="m">${esc(a.decision || '')} ${esc(a.decided || '')}</div></div></li>`).join('')}</ul></div>` : ''}
@@ -481,9 +481,13 @@ async function loadLogs() {
   if (sel.log) { const v = await api(`/api/log?file=${encodeURIComponent(sel.log)}`); const pre = $('#logview'); sel.logRoutine = (sel.log.match(/^routine-([ABCD])-/) || [])[1] || null; const dv = $('#diagview'); if (dv && v.ok) dv.innerHTML = diagCard(v.diag); if (pre && v.ok) { const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30; pre.textContent = (v.truncated ? '… (앞부분 생략)\n' : '') + (v.text || '(아직 출력 없음 — 에이전트가 작업을 끝내면 결과가 한 번에 기록됩니다)'); if (atEnd) pre.scrollTop = pre.scrollHeight; } }
 }
 
+const openAp = new Set(); let apTouched = false; const memos = {};
+document.addEventListener('toggle', (e) => { const d = e.target; if (!d.matches?.('details.ap[data-ap]')) return; apTouched = true; d.open ? openAp.add(d.dataset.ap) : openAp.delete(d.dataset.ap); }, true);
+document.addEventListener('input', (e) => { const k = e.target.dataset?.memo; if (k) memos[k] = e.target.value; });
 function render() {
   document.querySelectorAll('.nav').forEach((b) => b.classList.toggle('on', b.dataset.page === page));
   $('#main').innerHTML = S ? PAGES[page]() : '<div class="empty" style="padding:80px">운영센터 불러오는 중…</div>';
+  document.querySelectorAll('[data-memo]').forEach((el) => { if (memos[el.dataset.memo]) el.value = memos[el.dataset.memo]; }); // 다시 그려도 적던 메모 유지
   if (page === 'reports') loadReport();
   if (page === 'runs') loadLogs();
   const n = inboxModel().count;
@@ -520,12 +524,12 @@ document.addEventListener('click', (e) => {
   if (d.fbDel) return act('/api/feedback/remove', { index: Number(d.fbDel) }, t);
   if (d.url) return act('/api/open', { target: 'url', arg: d.url }, t);
   if (d.ext) return act('/api/open', { target: 'ext', arg: d.ext }, t);
-  if (d.apGo) { sel.ap = d.apGo; page = 'approve'; render(); document.querySelector(`[data-ap="${CSS.escape(d.apGo)}"]`)?.scrollIntoView({ block: 'start' }); return; }
+  if (d.apGo) { apTouched = true; openAp.clear(); openAp.add(d.apGo); page = 'approve'; render(); document.querySelector(`[data-ap="${CSS.escape(d.apGo)}"]`)?.scrollIntoView({ block: 'start' }); return; }
   if (d.decide) {
     const memo = document.querySelector(`[data-memo="${CSS.escape(d.decide)}"]`)?.value || '';
     const a = (D?.approvals || []).find((x) => x.id === d.decide);
     if (d.decision === 'done' && a?.ask && !memo.trim() && !t.dataset.sure) { t.dataset.sure = '1'; t.textContent = '메모 없이 완료 처리할까요? 한 번 더 누르면 완료'; return; }
-    sel.ap = null;
+    sel.ap = null; delete memos[d.decide];
     return act('/api/decide', { id: d.decide, decision: d.decision, label: d.label, memo, title: a?.title || '' }, t);
   }
   if (d.undecide) return act('/api/undecide', { id: d.undecide }, t);
