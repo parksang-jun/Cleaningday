@@ -247,6 +247,7 @@ try {
   assert(gear4.includes('taking a while') || gear4.includes('Getting messed up again'), 'gear tip explains itself in context (slow pace / re-soiling)');
   assert((await page.locator('[data-testid="gear-buy"]').innerText()).includes('1,200') || (await page.locator('[data-testid="gear-buy"]').innerText()).includes('1200'), 'with enough coins the tip offers "Buy now · 1200 coins"');
   await page.screenshot({ path: resolve(shots, '05c-gear-tip.png') });
+  if (!(await page.locator('[data-testid="gear-tip"]:not([hidden])').count())) await page.evaluate(() => window.__sparkle.gearTip('slow')); // 14초 자동 닫힘 대비
   await page.click('[data-testid="gear-shop"]');
   await page.waitForSelector('[data-testid="shop"]');
   assert((await page.locator('[data-testid="gear-tip"]:not([hidden])').count()) === 0, 'gear tip closes when the shop opens from it');
@@ -774,6 +775,39 @@ try {
   await page.waitForTimeout(100);
   assert((await page.locator('[data-testid="mall-us-windex"]').count()) === 1, 'switching to Amazon lists the US products');
   await page.click('[data-testid="shop"] [data-act="close"]');
+
+  // 3D 보기 — WebGL(SwiftShader) 켠 별도 브라우저에서: 같은 판을 3D 방 안의 면으로, 광선 투사로 닦인다
+  {
+    const b3d = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+    const ctx3 = await b3d.newContext({ ...devices['iPhone 13'], locale: 'en-US', hasTouch: false });
+    const p3 = await ctx3.newPage();
+    await p3.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+    await p3.waitForSelector('[data-testid="play"]');
+    await p3.click('[data-testid="play"]');
+    await p3.waitForSelector('[data-testid="intro"]');
+    await p3.click('[data-testid="start"]');
+    await p3.waitForSelector('[data-testid="canvas"]');
+    await p3.click('[data-testid="view3d"]');
+    await p3.waitForFunction(() => { const c = document.querySelector('[data-testid="canvas3d"]'); return c && !c.hidden && c.dataset.engine; }, null, { timeout: 15000 });
+    await p3.waitForTimeout(500);
+    assert((await p3.locator('[data-testid="view3d"]').innerText()) === '2D', 'HUD 3D button switches the stage to the 3D view');
+    const before3d = await p3.evaluate(() => window.__sparkle.session().cleanliness);
+    const b3 = await p3.locator('[data-testid="canvas3d"]').boundingBox();
+    await p3.mouse.move(b3.x + b3.width * 0.2, b3.y + b3.height * 0.35);
+    await p3.mouse.down();
+    for (let k = 0; k < 40; k++) {
+      await p3.mouse.move(b3.x + b3.width * (0.2 + (k % 10) * 0.06), b3.y + b3.height * (0.3 + Math.floor(k / 10) * 0.1));
+      await p3.waitForTimeout(25);
+    }
+    await p3.mouse.up();
+    const after3d = await p3.evaluate(() => window.__sparkle.session().cleanliness);
+    assert(after3d > before3d + 0.05, `scrubbing the 3D surface cleans it (${(before3d * 100).toFixed(0)}% → ${(after3d * 100).toFixed(0)}%)`);
+    await p3.screenshot({ path: resolve(shots, '03b-view3d.png') });
+    await p3.click('[data-testid="view3d"]');
+    await p3.waitForTimeout(200);
+    assert((await p3.locator('[data-testid="canvas3d"][hidden]').count()) === 1, 'tapping 2D returns to the flat view');
+    await b3d.close();
+  }
 
   assert(errors.length === 0, `no page errors (${errors.join(' | ')})`);
   console.log('\nE2E PASSED');

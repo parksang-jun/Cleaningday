@@ -10,6 +10,8 @@ export interface Settings {
   /** AI 쇼호스트 음성(TTS) */
   hostVoice: boolean;
   lang: 'auto' | 'ko' | 'en' | 'ja';
+  /** 3D 보기 */
+  view3d: boolean;
 }
 
 /** 쇼호스트 전역 설정 (운영자 모드에서 편집) */
@@ -84,7 +86,7 @@ const KEY = 'sparkle-clean-v1';
 export const DEFAULT_HOST: HostConfig = { enabled: true, name: '뽀득이', introCooldownMin: 8, introFromStage: 2, struggleAfterTries: 2, result: true, affiliate: true };
 
 const DEFAULTS: Store = {
-  settings: { sound: true, music: true, haptics: true, hostVoice: true, lang: 'auto' },
+  settings: { sound: true, music: true, haptics: true, hostVoice: true, lang: 'auto', view3d: false },
   stats: { gamesPlayed: 0, totalCleanedCells: 0 },
   ads: { lastInterstitialAt: 0, gamesSinceInterstitial: 0 },
   progress: { unlocked: 1, stars: {}, bestTime: {} },

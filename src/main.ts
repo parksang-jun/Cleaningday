@@ -22,6 +22,7 @@ import { CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MA
 import { adminEnabled, adminPin, hostConfig, installOpsCounters, saveHostConfig, sponsorList } from './ops';
 import { renderAdmin } from './admin';
 import { Renderer } from './render/renderer';
+import type { View3D } from './render/view3d';
 import { getStore, loadStore, persist, resetStore, type HostConfig } from './storage';
 import { AD_COINS, AD_COINS_PER_DAY, adBoostersLeft, adCoinsLeft, BOOSTER_IDS, BOOSTERS, claimDailyBonus, CONTINUE_COINS, daily, type BoosterId } from './economy';
 import { iconFor } from './ui/icons';
@@ -555,6 +556,8 @@ interface GameState {
   timing: Timing;
   session: CleanSession;
   renderer: Renderer;
+  /** 3D 보기 (켜져 있을 때만) */
+  view3d: View3D | null;
   selected: string;
   pointer: { x: number; y: number } | null;
   queue: { x: number; y: number }[];
@@ -604,6 +607,7 @@ function stopGame() {
   closeHost();
   if (game) {
     cancelAnimationFrame(game.raf);
+    game.view3d?.dispose();
     stopScrub();
     ads.gameplayStop();
     window.removeEventListener('resize', onResize);
@@ -613,6 +617,7 @@ function stopGame() {
 
 function onResize() {
   game?.renderer.resize();
+  game?.view3d?.resize();
 }
 
 function fmtTime(sec: number): string {
@@ -662,10 +667,11 @@ function startLevel(id: number) {
           ${level.mode !== 'clean' ? `<div class="hud__mode" data-el="mode" data-testid="mode"></div>` : ''}
           ${level.mess ? `<div class="hud__mess" data-el="mess" data-testid="mess" title="${esc(t(`mess_${level.mess.kind}`))}"></div>` : ''}
         </div>
+        <button class="icon-btn hud__view" data-act="view3d" aria-label="3D" data-testid="view3d">${getStore().settings.view3d ? '2D' : '3D'}</button>
         <button class="icon-btn hud__journal" data-act="journal" aria-label="${t('journal')}" data-testid="journal">📖<span class="badge" data-el="unknown"></span></button>
       </header>
       <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : goalText(level))}</div>
-      <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><div class="combo" data-el="combo" hidden></div><div class="scan" data-el="scan" hidden></div><div class="mess-warn" data-el="mess-warn" data-testid="mess-warn" hidden></div><div class="gear" data-el="gear" data-testid="gear-tip" hidden></div></div>
+      <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><canvas class="canvas3d" data-el="canvas3d" data-testid="canvas3d" hidden></canvas><div class="combo" data-el="combo" hidden></div><div class="scan" data-el="scan" hidden></div><div class="mess-warn" data-el="mess-warn" data-testid="mess-warn" hidden></div><div class="gear" data-el="gear" data-testid="gear-tip" hidden></div></div>
       <div class="boosters" data-el="boosters" data-testid="boosters"></div>
       <nav class="toolbar" data-el="toolbar"></nav>
     </div>`;
@@ -682,6 +688,7 @@ function startLevel(id: number) {
     timing,
     session,
     renderer,
+    view3d: null,
     selected: firstTool.spec.id,
     pointer: null,
     queue: [],
@@ -735,6 +742,13 @@ function startLevel(id: number) {
     renderArea(level.area);
   });
   app.querySelector('[data-act="journal"]')!.addEventListener('click', () => openJournal());
+  app.querySelector('[data-act="view3d"]')!.addEventListener('click', () => {
+    const st = getStore();
+    st.settings.view3d = !st.settings.view3d;
+    persist();
+    void applyView3D();
+  });
+  void applyView3D();
   if (newOnes.length) toast(t('newItem', { item: newOnes.map((n) => itemName(findItem(n, items))).join(', ') }));
   track('level_start', { level: id, tier: level.tier, area: level.area });
   ads.gameplayStart();
@@ -744,6 +758,11 @@ function startLevel(id: number) {
     game.last = now;
     step(dt);
     game.renderer.draw(dt);
+    if (game.view3d) {
+      const sp = findItem(game.selected, items)?.spec;
+      if (sp) game.view3d.setTool(sp.kind === 'tool' ? sp.families[0] : 'spray');
+      game.view3d.draw(dt);
+    }
     if (++game.frames === 3) game.renderer.snapshot(); // 전후 비교용 "더러운" 화면
     game.raf = requestAnimationFrame(loop);
   };
@@ -1117,18 +1136,64 @@ function updateBudgets() {
   });
 }
 
+/** 3D 보기 켜기/끄기 — three.js 는 처음 켤 때만 불러온다 */
+async function applyView3D() {
+  const g = game;
+  if (!g) return;
+  const on = getStore().settings.view3d;
+  const area = app.querySelector<HTMLElement>('.stage-area');
+  const c3 = app.querySelector<HTMLCanvasElement>('[data-el="canvas3d"]');
+  const btn = app.querySelector<HTMLElement>('[data-act="view3d"]');
+  if (btn) btn.textContent = on ? '2D' : '3D';
+  if (!area || !c3) return;
+  if (!on) {
+    g.view3d?.dispose();
+    g.view3d = null;
+    area.classList.remove('is-3d');
+    c3.hidden = true;
+    return;
+  }
+  if (g.view3d) return;
+  try {
+    const { View3D } = await import('./render/view3d');
+    if (game !== g || !getStore().settings.view3d) return;
+    c3.hidden = false;
+    area.classList.add('is-3d');
+    const areaId = WORLDS.flatMap((w) => w.areas).find((a) => a.levelIds.includes(g.level.id))!.id;
+    g.view3d = new View3D({ source: g.renderer.canvas, target: c3, scene: g.level.scene, area: areaId, gridW: g.session.w, gridH: g.session.h });
+    track('view3d', { level: g.level.id });
+  } catch {
+    // WebGL 이 없는 기기 — 2D 로 되돌린다
+    getStore().settings.view3d = false;
+    persist();
+    area.classList.remove('is-3d');
+    c3.hidden = true;
+    toast(t('view3dFail'), 'warn');
+  }
+}
+
+/** 포인터 → 격자 (3D 면 [밖이면 null] 또는 2D 캔버스) */
+function gridAt(clientX: number, clientY: number): { x: number; y: number } | null {
+  if (!game) return null;
+  return game.view3d ? game.view3d.toGrid(clientX, clientY) : game.renderer.toGrid(clientX, clientY);
+}
+
 function bindInput(canvas: HTMLCanvasElement) {
+  const c3 = app.querySelector<HTMLCanvasElement>('[data-el="canvas3d"]');
   const down = (e: PointerEvent) => {
     if (!game || game.finished || game.failed) return;
     unlockAudio();
-    canvas.setPointerCapture(e.pointerId);
-    const p = game.renderer.toGrid(e.clientX, e.clientY);
+    const p = gridAt(e.clientX, e.clientY);
+    if (!p) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    game.view3d?.setPressing(true);
     game.pointer = p;
     game.queue = [p];
   };
   const move = (e: PointerEvent) => {
     if (!game) return;
-    const p = game.renderer.toGrid(e.clientX, e.clientY);
+    const p = gridAt(e.clientX, e.clientY);
+    if (!p) return;
     const item = findItem(game.selected, items)!.spec;
     game.renderer.cursor = { x: p.x, y: p.y, item, active: Boolean(game.pointer) };
     if (!game.pointer) return;
@@ -1141,6 +1206,7 @@ function bindInput(canvas: HTMLCanvasElement) {
   };
   const up = () => {
     if (!game) return;
+    game.view3d?.setPressing(false);
     game.pointer = null;
     game.queue = [];
     if (game.renderer.cursor) game.renderer.cursor.active = false;
@@ -1153,6 +1219,18 @@ function bindInput(canvas: HTMLCanvasElement) {
   canvas.addEventListener('pointerleave', () => {
     if (game && !game.pointer) game.renderer.cursor = null;
   });
+  if (c3) {
+    c3.addEventListener('pointerdown', down);
+    c3.addEventListener('pointermove', move);
+    c3.addEventListener('pointerup', up);
+    c3.addEventListener('pointercancel', up);
+    c3.addEventListener('pointerleave', () => {
+      if (game && !game.pointer) {
+        game.renderer.cursor = null;
+        game.view3d?.hideTool();
+      }
+    });
+  }
 }
 
 function handleEvents(events: SessionEvent[]) {
@@ -2093,6 +2171,7 @@ function openSettings() {
     <label class="setting"><span>${t('music')}</span><input type="checkbox" data-k="music" ${s.music ? 'checked' : ''}></label>
     <label class="setting"><span>${t('haptics')}</span><input type="checkbox" data-k="haptics" ${s.haptics ? 'checked' : ''}></label>
     <label class="setting"><span>${t('hostVoice')}</span><input type="checkbox" data-k="hostVoice" ${s.hostVoice ? 'checked' : ''}></label>
+    <label class="setting"><span>${t('view3dSetting')}</span><input type="checkbox" data-k="view3d" ${s.view3d ? 'checked' : ''} data-testid="setting-view3d"></label>
     <label class="setting"><span>${t('language')}</span>
       <select data-k="lang">${(['auto', 'ko', 'en', 'ja'] as const).map((l) => `<option value="${l}" ${s.lang === l ? 'selected' : ''}>${l === 'auto' ? t('auto') : l === 'ko' ? '한국어' : l === 'en' ? 'English' : '日本語'}</option>`).join('')}</select>
     </label>
