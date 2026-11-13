@@ -451,8 +451,8 @@ function openTerminalScript(name, body) {
   spawn('open', ['-a', 'Terminal', f], { detached: true, stdio: 'ignore' }).on('error', () => {}).unref();
 }
 function loginClaude() {
-  openTerminalScript('login-claude.command', `echo "── 싹싹 클린 운영센터: Claude 로그인 ──"\necho "1) 잠시 뒤 로그인 화면이 나옵니다. 안내대로 브라우저에서 로그인하세요."\necho "2) 로그인 화면이 안 나오면  /login  을 입력하고 Enter."\necho "3) 끝나면  /exit  로 나가고 이 창을 닫은 뒤, 운영센터에서 '다시 실행'."\necho\nclaude`);
-  return { ok: true, msg: '터미널을 열었습니다 — 안내대로 로그인한 뒤 "다시 실행"을 눌러 주세요' };
+  openTerminalScript('login-claude.command', `echo "── 싹싹 클린 운영센터: Claude 로그인 ──"\necho "1) Claude 가 열리면  /login  을 입력하고 Enter."\necho "2) 로그인 방법을 물으면 첫 번째  Claude account with subscription (구독 계정)  을 고르세요."\necho "   ※ 두 번째 Anthropic Console account (API 결제) 는 고르지 마세요 — 잔액이 없으면 에이전트가 멈춥니다."\necho "3) 브라우저에서 평소 쓰는 Claude 계정으로 로그인합니다."\necho "4) 끝나면  /exit  로 나가고 이 창을 닫은 뒤, 운영센터에서 '다시 실행'."\necho\nclaude`);
+  return { ok: true, msg: '터미널을 열었습니다 — 안내대로 구독 계정으로 로그인한 뒤 "다시 실행"을 눌러 주세요' };
 }
 async function loginGithub() {
   const hasGh = await which('gh');

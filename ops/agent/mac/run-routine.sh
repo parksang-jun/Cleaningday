@@ -31,6 +31,21 @@ fi
 echo $$ > "$LOCK/pid"
 trap 'rm -rf "$LOCK" 2>/dev/null' EXIT
 
+# 작업 폴더(저장소)는 하나뿐이라 한 번에 한 작업만 돈다. 다른 작업이 돌고 있으면 끝날 때까지 줄을 선다(최대 90분)
+GLOCK="$HOME_DIR/.lock-run"
+WAITED=0
+until mkdir "$GLOCK" 2>/dev/null; do
+  GPID="$(cat "$GLOCK/pid" 2>/dev/null || true)"
+  if [ -z "$GPID" ] || ! kill -0 "$GPID" 2>/dev/null; then rm -rf "$GLOCK"; continue; fi   # 주인 없는 잠금은 치운다
+  [ $WAITED -eq 0 ] && echo "(대기) 다른 작업이 끝나기를 기다립니다 — 끝나면 자동으로 시작합니다." >> "$LOG"
+  sleep 15; WAITED=$((WAITED + 15))
+  if [ $WAITED -ge 5400 ]; then
+    { echo "앞선 작업이 90분 넘게 끝나지 않아 이번 실행을 취소했습니다."; echo ""; echo "=== 종료 코드 75 ==="; } >> "$LOG"; exit 75
+  fi
+done
+echo $$ > "$GLOCK/pid"
+trap 'rm -rf "$LOCK" "$GLOCK" 2>/dev/null' EXIT
+
 if ! cd "$REPO" 2>/dev/null; then
   { echo "저장소가 없습니다: $REPO"; echo ""; echo "=== 종료 코드 1 ==="; echo "=== 진단 ==="; diag "$LOG"; } >> "$LOG"
   notify "실패: 게임 저장소가 없습니다" "운영센터 설정에서 '다시 설치·복구'를 눌러 주세요."; exit 1

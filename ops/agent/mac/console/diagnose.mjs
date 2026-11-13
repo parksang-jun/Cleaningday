@@ -18,6 +18,13 @@ const RULES = [
     fix: '운영센터에서 "Claude 로그인" 버튼을 누르면 터미널이 열립니다 → 안내대로 브라우저에서 로그인 → 로그인이 끝나면 "다시 실행". 한 번만 하면 이후 예약 실행에도 적용됩니다.',
   },
   {
+    id: 'credit', level: 'fatal', action: 'login',
+    test: /Credit balance is too low|insufficient credits?|billing.*(issue|problem)|purchase credits/i,
+    title: 'Claude 가 "API 결제 계정"으로 로그인되어 있고 잔액이 없습니다',
+    cause: '이 맥의 Claude Code 가 구독(Pro·Max) 계정이 아니라, 쓴 만큼 돈을 내는 API 계정(Anthropic Console)으로 로그인되어 있습니다. 그 계정에 충전된 금액이 없어 에이전트가 시작하자마자 멈췄습니다.',
+    fix: '"Claude 로그인" 버튼 → 터미널에서 /login 입력 → 첫 번째 "Claude account with subscription"(구독 계정)을 고르고 평소 쓰는 Claude 계정으로 로그인 → /exit → "다시 실행". (API 계정에 돈을 충전하는 방법도 있지만 권하지 않습니다 — 구독으로 충분합니다.)',
+  },
+  {
     id: 'no-claude', level: 'fatal', action: 'none',
     test: /claude: command not found|claude: No such file|command not found: claude/i,
     title: 'Claude Code 가 설치되어 있지 않습니다',
@@ -51,6 +58,13 @@ const RULES = [
     title: '작업이 너무 길어 중간에 멈췄습니다',
     cause: '한 번에 할 수 있는 작업량을 넘었습니다. 중간 결과는 브랜치에 남아 있을 수 있습니다.',
     fix: '"다시 실행"하면 남은 부분부터 이어서 합니다.',
+  },
+  {
+    id: 'queue-timeout', level: 'fatal', action: 'retry',
+    test: /앞선 작업이 90분 넘게 끝나지 않아/,
+    title: '앞선 작업이 너무 오래 걸려 이번 실행을 건너뛰었습니다',
+    cause: '에이전트는 한 번에 한 작업만 합니다. 먼저 시작한 작업이 90분 넘게 끝나지 않아 이 작업은 시작하지 못했습니다.',
+    fix: '실행 기록에서 먼저 돌던 작업이 끝났는지 확인한 뒤 "다시 실행"을 누르세요.',
   },
   {
     id: 'git-lock', level: 'warn', retry: true, action: 'none',
@@ -118,7 +132,7 @@ export function diagnose(text) {
   let primary = findings.find((f) => f.level === 'fatal') || null;
   if (failed && !primary) {
     const tail = lines.filter((l) => l.trim() && !/^=== /.test(l)).slice(-3).join(' / ').slice(0, 300);
-    primary = { id: 'unknown', level: 'fatal', title: '원인을 자동으로 분류하지 못했습니다', cause: tail ? `마지막 기록: ${tail}` : '기록이 비어 있습니다 — 에이전트가 시작 직후 멈춘 것으로 보입니다.', fix: '"다시 실행"해 보고, 같은 증상이면 이 실행 기록을 Claude 대화창에 붙여 주세요.', action: 'retry', retry: false, auto: false, evidence: '' };
+    primary = { id: 'unknown', level: 'fatal', title: '처음 보는 오류입니다', cause: tail ? `에이전트가 남긴 마지막 기록: ${tail}` : '기록이 비어 있습니다 — 에이전트가 시작 직후 멈춘 것으로 보입니다.', fix: '"기록 복사"를 눌러 Claude 대화창에 붙여 넣어 주세요. 원인을 찾아 고치고, 다음부터는 자동으로 진단되게 합니다. (급하면 "다시 실행")', action: 'retry', retry: false, auto: false, evidence: tail };
     findings.unshift(primary);
   }
   // 종료 코드가 아직 없는데(실행 중이거나 예전 기록) 치명 원인이 보이면 실패로 본다

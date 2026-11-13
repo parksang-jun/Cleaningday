@@ -237,7 +237,7 @@ function overall() {
   if (!t.claude) return { cls: 'bad', text: 'Claude Code(claude)를 찾을 수 없습니다 — 설치·로그인이 필요합니다' };
   if (rs.some((r) => r.running)) return { cls: 'ok', text: `에이전트 작업 중 — ${rs.filter((r) => r.running).map((r) => r.name).join(', ')}`, run: true };
   const bad = Object.entries(S.routines).find(([, r]) => r.last?.result === 'fail');
-  if (bad) { const [k, r] = bad; const p = r.last.problem; return { cls: 'bad', text: `${r.name} 실패 — ${p?.title || '원인 확인 필요'}`, detail: p ? p.fix : '', action: p?.action, routine: k, log: r.last.file }; }
+  if (bad) { const [k, r] = bad; const p = r.last.problem; return { cls: 'bad', text: `${r.name} 실패 — ${p?.title || '원인 확인 필요'}`, cause: p?.id === 'unknown' ? p.cause : '', detail: p ? p.fix : '', action: p?.action, routine: k, log: r.last.file }; }
   if (S.sync?.ok && S.sync.pushOk === false) return { cls: 'warn', text: 'GitHub 에 올릴 권한이 없습니다 — 에이전트의 작업이 이 맥에만 남습니다', action: 'gh-login' };
   if (!rs.some((r) => r.scheduled)) return { cls: 'warn', text: '자동 실행이 꺼져 있습니다 (지금 실행은 가능)', sched: true };
   return { cls: 'ok', text: '정상 운영 중 — 자동 실행 켜짐' };
@@ -251,8 +251,8 @@ const PAGES = {
     return `
     <div class="top"><h1>대시보드</h1><span class="sub">${S ? `${fmtDate(S.now)} 기준` : ''}</span><span class="sp"></span>
       <button class="btn" data-open="game">게임 열기</button><button class="btn" data-act="pull">최신 자료 받기</button></div>
-    <div class="banner ${o.cls}"><span class="dot ${o.run ? 'run' : o.cls}"></span><div><b>${esc(o.text)}</b>${o.detail ? `<div style="font-size:12.5px;margin-top:2px;color:var(--fg)">해결 방법: ${esc(o.detail)}</div>` : ''}</div><span class="sp"></span>
-      ${o.fix ? '<button class="btn pri" data-act="install">에이전트 설치</button>' : ''}${o.sched ? '<button class="btn pri" data-sched="1">자동 실행 켜기</button>' : ''}${actionBtns(o.action, o.routine)}${o.log ? `<button class="btn" data-log="${esc(o.log)}">자세히</button>` : ''}</div>
+    <div class="banner ${o.cls}"><span class="dot ${o.run ? 'run' : o.cls}"></span><div><b>${esc(o.text)}</b>${o.cause ? `<div style="font-size:12.5px;margin-top:2px;color:var(--fg);word-break:break-word">${esc(o.cause)}</div>` : ''}${o.detail ? `<div style="font-size:12.5px;margin-top:2px;color:var(--fg)">해결 방법: ${esc(o.detail)}</div>` : ''}</div><span class="sp"></span>
+      ${o.fix ? '<button class="btn pri" data-act="install">에이전트 설치</button>' : ''}${o.sched ? '<button class="btn pri" data-sched="1">자동 실행 켜기</button>' : ''}${actionBtns(o.action, o.routine)}${o.log ? `<button class="btn" data-copylog="${esc(o.log)}">기록 복사</button><button class="btn" data-log="${esc(o.log)}">자세히</button>` : ''}</div>
     ${ghStrip()}
     <div class="grid kpis" style="margin-bottom:14px">
       <div class="card kpi"><div class="lab">이번 달 수익</div><div class="val">${esc(fmtMoney(m.month))}</div><div class="hint">누적 ${esc(fmtMoney(m.all))}</div></div>
@@ -402,7 +402,7 @@ const PAGES = {
   },
   runs() {
     return `<div class="top"><h1>실행 기록</h1><span class="sub">에이전트가 실제로 한 일의 원본 기록</span><span class="sp"></span><button class="btn" data-open="logs">폴더 열기</button></div>
-    <div class="split"><div class="card" id="loglist"><div class="empty">불러오는 중…</div></div><div class="card"><div id="diagview"></div><h2 style="margin-top:4px">원본 기록 <small>에이전트가 남긴 그대로</small></h2><pre class="log" id="logview">기록을 고르세요</pre></div></div>`;
+    <div class="split"><div class="card" id="loglist"><div class="empty">불러오는 중…</div></div><div class="card"><div id="diagview"></div><h2 style="margin-top:4px">원본 기록 <small>에이전트가 남긴 그대로</small><span class="sp"></span><button class="btn sm" data-copylog="">기록 복사</button></h2><pre class="log" id="logview">기록을 고르세요</pre></div></div>`;
   },
   settings() {
     const t = S?.tools || {}, r = S?.repo || {}, rs = Object.values(S?.routines || {});
@@ -415,7 +415,7 @@ const PAGES = {
         ${row(true, 'GitHub CLI (선택)', t.gh || '없음 — 없으면 PR 대신 브랜치만 올림')}
         ${row(r.ok, '게임 저장소', r.ok ? `${r.path} · ${r.hash} ${r.subject || ''}` : r.path, r.ok ? '<button class="btn sm" data-act="pull">최신으로</button>' : '<button class="btn sm pri" data-act="install">받기·설치</button>')}
         ${row(S?.runner, '실행 스크립트', S?.runner, S?.runner ? '' : '<button class="btn sm pri" data-act="install">설치</button>')}
-        ${(() => { const lp = rs.some((x) => x.last?.problem?.id === 'login'); return row(!lp, 'Claude 로그인', lp ? '로그인이 필요합니다 — 마지막 실행이 로그인 문제로 실패' : '실행할 때 확인됩니다', `<button class="btn sm ${lp ? 'pri' : ''}" data-act="login">로그인 열기</button>`); })()}
+        ${(() => { const lp = rs.some((x) => ['login', 'credit'].includes(x.last?.problem?.id)); return row(!lp, 'Claude 로그인', lp ? '로그인이 필요합니다 — 마지막 실행이 로그인 문제로 실패' : '실행할 때 확인됩니다', `<button class="btn sm ${lp ? 'pri' : ''}" data-act="login">로그인 열기</button>`); })()}
       </div>
       <div class="card" style="grid-column:1/-1"><h2>운영센터 버전</h2>
         ${row(true, `버전 ${esc(r.hash || '?')}`, `${r.subject || ''} · 자동 업데이트 켜짐 — 앱을 열 때와 5분마다 새 버전을 확인해 스스로 바꿉니다(터미널 불필요)`, '<button class="btn sm" data-act="pull">지금 업데이트 확인</button>')}
@@ -559,6 +559,14 @@ document.addEventListener('click', (e) => {
   if (d.log) { sel.log = d.log; if (page !== 'runs') { page = 'runs'; render(); } else loadLogs(); return; }
   if (d.act === 'fb-add') { const text = $('#fb-text').value, source = $('#fb-src').value; if (!text.trim()) return toast('내용을 적어 주세요'); return act('/api/feedback', { source, text }, t); }
   if (d.fbDel) return act('/api/feedback/remove', { index: Number(d.fbDel) }, t);
+  if (d.copylog !== undefined) {
+    const f = d.copylog || sel.log; if (!f) return toast('복사할 기록이 없습니다');
+    return api(`/api/log?file=${encodeURIComponent(f)}`).then(async (v) => {
+      const text = `[싹싹 클린 운영센터 실행 기록 ${f}]\n${(v.text || '').slice(-6000)}`;
+      try { await navigator.clipboard.writeText(text); toast('기록을 복사했습니다 — Claude 대화창에 붙여 넣어 주세요'); }
+      catch { page = 'runs'; sel.log = f; render(); toast('자동 복사가 막혀 있습니다 — 아래 기록을 직접 선택해 복사해 주세요'); }
+    });
+  }
   if (d.url) return act('/api/open', { target: 'url', arg: d.url }, t);
   if (d.quick) { const ta = $('#cmd-text'); ta.value = d.quick; memos.cmd = d.quick; ta.focus(); return; }
   if (d.cmd) {
