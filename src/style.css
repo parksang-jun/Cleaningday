@@ -2324,3 +2324,190 @@ body.has-banner .ad-banner {
 .missions--compact .mission__name {
   font-size: 13px;
 }
+
+/* ---------- 고비 판 · 연승 · 반짝 타임 · 결과 연출 ---------- */
+.stage.is-hard {
+  border-color: #ff8a65;
+  box-shadow: 0 2px 0 #ffccbc;
+}
+.stage.is-boss {
+  border-color: #f2b705;
+  box-shadow: 0 2px 0 #f2b705;
+  background: linear-gradient(180deg, #fffbe9, var(--card));
+}
+.stage__ch {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+  background: #ffe9e2;
+  color: #d84315;
+  white-space: nowrap;
+}
+.stage.is-boss .stage__ch {
+  background: #fff1c2;
+  color: #8a6400;
+}
+.intro__challenge {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  margin: 0 0 8px;
+  background: #ffe9e2;
+  color: #b23c17;
+}
+.intro__challenge.is-boss {
+  background: #fff1c2;
+  color: #7a5900;
+}
+.goal--streak {
+  color: #e64a19;
+}
+
+/* 반짝 타임 게이지: 판 위쪽 가장자리에 가늘게. 다 차면 판 전체가 금빛으로 빛난다 */
+.fever {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 4px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(23, 50, 58, 0.12);
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+.fever i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #ffd54f, #ff8f00);
+  transition: width 0.12s linear;
+}
+.stage-area.is-fever .fever {
+  height: 7px;
+  box-shadow: 0 0 10px rgba(255, 179, 0, 0.9);
+}
+.stage-area.is-fever canvas {
+  box-shadow:
+    0 0 0 3px #ffc107,
+    0 0 26px 6px rgba(255, 193, 7, 0.75);
+  animation: feverGlow 0.6s ease-in-out infinite alternate;
+}
+@keyframes feverGlow {
+  from {
+    box-shadow:
+      0 0 0 3px #ffc107,
+      0 0 18px 4px rgba(255, 193, 7, 0.55);
+  }
+  to {
+    box-shadow:
+      0 0 0 3px #ffe082,
+      0 0 34px 10px rgba(255, 193, 7, 0.9);
+  }
+}
+.pop--praise {
+  top: 22%;
+  font-size: 24px;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.25),
+    0 0 16px rgba(18, 181, 166, 0.95);
+}
+.pop--fever {
+  top: 30%;
+  white-space: nowrap;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.3),
+    0 0 22px rgba(255, 143, 0, 1);
+}
+
+/* 결과: 별이 하나씩 튀어나오고, 별 3개면 색종이 */
+.result {
+  position: relative;
+}
+.result__stars span.on {
+  display: inline-block;
+  animation: starPop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes starPop {
+  0% {
+    transform: scale(0) rotate(-40deg);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+.result__coins {
+  animation: coinPop 0.4s 0.9s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes coinPop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.result__bonus {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #b88300;
+}
+.result__record {
+  margin: 0;
+  font-weight: 800;
+  color: var(--primary);
+}
+.result__streak {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #e64a19;
+}
+.confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.confetti i {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: confettiFall 1.6s ease-in forwards;
+}
+@keyframes confettiFall {
+  0% {
+    transform: translateY(0) rotate(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(340px) rotate(540deg);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
+  .stage-area.is-fever canvas,
+  .result__stars span.on,
+  .result__coins {
+    animation: none;
+  }
+}

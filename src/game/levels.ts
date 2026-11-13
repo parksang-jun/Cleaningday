@@ -169,13 +169,18 @@ export interface TierDef {
 }
 
 export const TIERS: TierDef[] = [
-  { id: 1, fromId: 1, passClean: 0.9, resistMul: 1.0, parFactor: 1.8 },
-  { id: 2, fromId: 13, passClean: 0.93, resistMul: 1.1, parFactor: 1.6, limitFactor: 2.6 },
-  { id: 3, fromId: 25, passClean: 0.95, resistMul: 1.2, parFactor: 1.5, limitFactor: 2.3, sprayBudgetSec: 18, tailRate: 0.7 },
-  { id: 4, fromId: 37, passClean: 0.96, resistMul: 1.32, parFactor: 1.4, limitFactor: 2.1, sprayBudgetSec: 16, tailRate: 0.65 },
-  { id: 5, fromId: 49, passClean: 0.97, resistMul: 1.45, parFactor: 1.3, limitFactor: 1.9, sprayBudgetSec: 14, tailRate: 0.6 },
-  { id: 6, fromId: 73, passClean: 0.98, resistMul: 1.6, parFactor: 1.2, limitFactor: 1.75, sprayBudgetSec: 12, tailRate: 0.55 },
+  // 목표시간(별 3개) = 숙련자 봇 × parFactor, 제한시간 = 목표시간 × limitFactor.
+  // 제한시간 ÷ 봇 시간: 5판 3.6배 → 13판 3.2배 → 25판 2.8배 → 37판 2.4배 → 49판 2.2배 → 73판 2.0배 → 96판 1.75배
+  // (예전에는 12판까지 제한시간이 없고 13판이 4.2배여서, 앞쪽 절반은 실패할 일이 없었다)
+  { id: 1, fromId: 1, passClean: 0.9, resistMul: 1.0, parFactor: 1.7, limitFactor: 2.2 }, // 제한시간은 LIMIT_FROM 판부터
+  { id: 2, fromId: 13, passClean: 0.93, resistMul: 1.1, parFactor: 1.5, limitFactor: 2.1 },
+  { id: 3, fromId: 25, passClean: 0.95, resistMul: 1.2, parFactor: 1.38, limitFactor: 2.0, sprayBudgetSec: 18, tailRate: 0.7 },
+  { id: 4, fromId: 37, passClean: 0.96, resistMul: 1.32, parFactor: 1.28, limitFactor: 1.9, sprayBudgetSec: 16, tailRate: 0.65 },
+  { id: 5, fromId: 49, passClean: 0.97, resistMul: 1.45, parFactor: 1.2, limitFactor: 1.85, sprayBudgetSec: 14, tailRate: 0.6 },
+  { id: 6, fromId: 73, passClean: 0.98, resistMul: 1.6, parFactor: 1.13, limitFactor: 1.78, sprayBudgetSec: 12, tailRate: 0.55 },
 ]
+/** 제한시간이 처음 생기는 판 — 1~4판은 조작을 익히는 판이라 실패가 없다 */
+export const LIMIT_FROM = 5
 
 export function tierFor(id: number): TierDef {
   let t = TIERS[0]
@@ -184,7 +189,7 @@ export function tierFor(id: number): TierDef {
 }
 
 /** 마지막 단계가 끝까지 올라가며 닿는 값 (단계 안에서도 판마다 조금씩 어려워진다) */
-const TIER_END = { resistMul: 2.0, parFactor: 1.1, limitFactor: 1.6 }
+const TIER_END = { resistMul: 2.0, parFactor: 1.06, limitFactor: 1.65 }
 
 /**
  * 판별 난이도 — 단계(tier) 값은 계단이 아니라 **경사**다: 한 단계 안에서도 판이 올라갈수록
@@ -202,13 +207,36 @@ export function rampFor(id: number, total: number): { resistMul: number; parFact
   return {
     resistMul: round3(mix(tier.resistMul, to.resistMul)),
     parFactor: round3(mix(tier.parFactor, to.parFactor)),
-    limitFactor: tier.limitFactor !== undefined ? round3(mix(tier.limitFactor, to.limitFactor ?? tier.limitFactor)) : undefined,
+    limitFactor: tier.limitFactor !== undefined && id >= LIMIT_FROM ? round3(mix(tier.limitFactor, to.limitFactor ?? tier.limitFactor)) : undefined,
     p,
   }
 }
 
+/**
+ * 고비 판 — 난이도가 "느껴지게" 하는 굴곡. 구역마다 쉬운 판으로 시작해 일이 점점 늘고,
+ * 4·8번째는 어려운 판(hard), 마지막(12번째)은 대청소(boss). 일이 더 많은 대신 코인을 더 준다.
+ */
+export type Challenge = 'hard' | 'boss'
+export const CHALLENGE: Record<Challenge, { work: number; coins: number }> = {
+  hard: { work: 1.15, coins: 1.5 },
+  boss: { work: 1.25, coins: 2 },
+}
+/** 구역 안 순서(0부터)로 고비 판을 정한다. 맨 앞 6판은 배우는 구간이라 고비가 없다 */
+export function challengeFor(id: number, indexInArea: number): Challenge | undefined {
+  if (id <= 6) return undefined
+  const k = indexInArea % 12
+  return k === 11 ? 'boss' : k === 3 || k === 7 ? 'hard' : undefined
+}
+/** 구역 안에서 일이 늘어나는 폭: 첫 판 ×0.8 → 마지막 판 ×1.15 (고비 판은 여기에 더 곱한다) */
+export function areaWork(indexInArea: number): number {
+  const p = (indexInArea % 12) / 11
+  return 0.8 + 0.35 * p
+}
+
 export interface LevelDef {
   id: number
+  /** 고비 판 (어려운 판·대청소) */
+  challenge?: Challenge
   world: WorldId
   area: AreaId
   tier: number
@@ -656,28 +684,32 @@ function build(): { levels: LevelDef[]; worlds: WorldInfo[] } {
     const info: WorldInfo = { id: w.id, areas: [] }
     for (const a of w.areas) {
       const area: AreaInfo = { id: a.id, world: w.id, levelIds: [] }
-      for (const seed of a.stages) {
+      a.stages.forEach((seed, idx) => {
         id++
         const tier = tierFor(id)
         const t = (id - 1) / (total - 1)
         const mode = seed.mode ?? 'clean'
         const ramp = rampFor(id, total)
+        const challenge = challengeFor(id, idx)
+        // 1~3판(안내 판)은 그대로. 그 뒤로는 구역 안에서 일이 점점 늘고, 고비 판은 더 많다
+        const work = id <= 3 ? 1 : areaWork(idx) * (challenge ? CHALLENGE[challenge].work : 1)
         levels.push({
           id,
+          challenge,
           world: w.id,
           area: a.id,
           tier: tier.id,
           scene: seed.scene,
           mode,
           theme: seed.theme ?? 'morning',
-          spawn: spawnFor(seed, t, a.scale),
+          spawn: spawnFor(seed, t, a.scale * work),
           growth: growthFor(seed, t),
           mess: messFor(seed, id, tier, total),
           failDamage: mode === 'fragile' ? 0.1 : undefined,
           outdoor: w.id === 'house' || a.id === 'exterior',
           surface: SCENE_SURFACE[seed.scene],
           zones: ZONE_LAYOUTS[seed.scene],
-          patches: patchesFor(seed, t, a.scale),
+          patches: patchesFor(seed, t, a.scale * work),
           passClean: tier.passClean,
           resistMul: ramp.resistMul,
           sprayBudgetSec: tier.sprayBudgetSec,
@@ -690,7 +722,7 @@ function build(): { levels: LevelDef[]; worlds: WorldInfo[] } {
           limitFactor: ramp.limitFactor,
         })
         area.levelIds.push(id)
-      }
+      })
       info.areas.push(area)
     }
     worlds.push(info)

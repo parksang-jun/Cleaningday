@@ -118,6 +118,74 @@ const ctx = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: fals
   assert((await p0.evaluate(() => window.__sparkle.coins())) === c0 + 220 && (await p0.evaluate(() => window.__sparkle.missions().chest)), 'bonus chest pays 100 coins once all are claimed');
   assert((await p0.locator('[data-testid="chest-open"]').count()) === 0, 'opened chest cannot be opened again');
   await p0.screenshot({ path: resolve(shots, '00-today.png'), fullPage: true });
+
+  // 난이도 굴곡과 쾌감 장치: 고비 판 표시 · 반짝 타임 · 연승 보너스 · 5판부터 제한시간
+  await p0.evaluate(() => { window.__sparkle.skipTour(); window.__sparkle.force2d(true); window.__sparkle.setUnlocked(12); });
+  await p0.click('[data-testid="area-living"]');
+  await p0.waitForSelector('[data-testid="stage-12"]');
+  assert((await p0.locator('.stage.is-hard').count()) === 1 && (await p0.locator('[data-testid="stage-challenge-8"]').count()) === 1, 'living room marks stage 8 as a hard stage (the first 6 stages have none)');
+  assert((await p0.locator('.stage.is-boss').count()) === 1 && (await p0.locator('[data-testid="stage-challenge-12"]').count()) === 1, 'the last stage of the area is marked as the big-clean boss');
+  await p0.screenshot({ path: resolve(shots, '00b-area-challenge.png'), fullPage: true });
+  const startStage = async (n) => {
+    await p0.click(`[data-testid="stage-${n}"]`);
+    await p0.waitForSelector('[data-testid="intro"]');
+  };
+  const begin = async () => {
+    await p0.click('[data-testid="start"]');
+    await p0.waitForSelector('[data-testid="canvas"]');
+    await p0.waitForTimeout(300);
+  };
+  const win = async () => {
+    await p0.evaluate(() => window.__sparkle.clearAll());
+    await p0.waitForSelector('[data-testid="result"]', { timeout: 8000 });
+    await p0.waitForTimeout(300);
+  };
+  await startStage(1);
+  await begin();
+  assert((await p0.locator('[data-testid="fever"]').count()) === 1 && (await p0.evaluate(() => window.__sparkle.fever().boost)) === 1, 'the sparkle-time gauge starts empty at normal speed');
+  await p0.evaluate(() => window.__sparkle.setFever(6.9));
+  {
+    const box = await p0.locator('[data-testid="canvas"]').boundingBox();
+    await p0.mouse.move(box.x + 20, box.y + 20);
+    await p0.mouse.down();
+    for (let k = 0; k < 24; k++) {
+      await p0.mouse.move(box.x + 20 + k * 8, box.y + 24 + k * 6);
+      await p0.waitForTimeout(16);
+    }
+    const fv = await p0.evaluate(() => window.__sparkle.fever());
+    assert(fv.left > 0 && fv.boost === 1.5 && (await p0.locator('.stage-area.is-fever').count()) === 1, `scrubbing without a break fills the gauge and starts sparkle time (x${fv.boost}, ${fv.left.toFixed(1)}s left)`);
+    await p0.screenshot({ path: resolve(shots, '00c-fever.png') });
+    await p0.mouse.up();
+  }
+  await win();
+  assert((await p0.evaluate(() => window.__sparkle.streak())) === 1 && (await p0.locator('[data-testid="bonus-streak"]').count()) === 0, 'first clear starts a win streak of 1 with no bonus yet');
+  const coins1 = await p0.evaluate(() => window.__sparkle.coins());
+  await p0.click('[data-testid="next"]');
+  await p0.waitForSelector('[data-testid="intro"]');
+  await begin();
+  await win();
+  assert((await p0.evaluate(() => window.__sparkle.streak())) === 2 && (await p0.locator('[data-testid="bonus-streak"]').count()) === 1, 'second clear in a row shows the +10% streak bonus');
+  const gained = (await p0.evaluate(() => window.__sparkle.coins())) - coins1;
+  assert(gained === Math.round(50 * 1.1), `streak bonus is paid: 50 x 1.1 = ${gained} coins`);
+  await p0.screenshot({ path: resolve(shots, '00d-result-streak.png') });
+  await p0.click('[data-testid="to-menu"]');
+  await p0.waitForSelector('[data-testid="stage-5"]', { timeout: 20000 });
+  await startStage(5);
+  assert((await p0.locator('[data-testid="intro-limit-rule"]').count()) === 1, 'stage 5 intro announces the time limit');
+  await begin();
+  assert((await p0.locator('[data-testid="limit"]').count()) === 1, 'the clock arrives at stage 5 (it used to arrive at stage 13)');
+  await p0.evaluate(() => window.__sparkle.forceExpire());
+  await p0.waitForSelector('[data-testid="fail"]', { timeout: 8000 });
+  assert((await p0.locator('[data-testid="streak-risk"]').count()) === 1, 'running out of time warns that the win streak is about to end');
+  await p0.click('[data-testid="fail"] [data-act="menu"]');
+  await p0.waitForSelector('[data-testid="stage-12"]');
+  assert((await p0.evaluate(() => window.__sparkle.streak())) === 0, 'giving up after a fail ends the streak');
+  await startStage(12);
+  assert((await p0.locator('[data-testid="intro-challenge"]').innerText()).includes('2'), 'boss stage intro says it pays double');
+  await begin();
+  const coins2 = await p0.evaluate(() => window.__sparkle.coins());
+  await win();
+  assert((await p0.locator('[data-testid="bonus-challenge"]').count()) === 1 && (await p0.evaluate(() => window.__sparkle.coins())) - coins2 === 100, 'boss stage pays double coins (50 x 2)');
   await ctx0.close();
 }
 await ctx.addInitScript(() => { try { localStorage.setItem('sc_real_products', '1'); localStorage.setItem('sc_sample_sponsors', '1'); } catch {} });

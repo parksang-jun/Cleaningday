@@ -8,10 +8,11 @@ import { resolveTiming } from './game/bot';
 import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES, recipesFor, SURFACES, type CleanerFamily, type DetergentId, type DetergentSpec, type DirtType, type SurfaceType, type ToolFamily, type ToolId, type ToolSpec } from './game/catalog';
 import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
 import { activeAffiliates, activeSponsors, affiliateEntry, allItems, countryFor, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
-import { getLevel, LEVELS, tierFor, WORLDS, type AreaInfo, type LevelDef, type MessKind, type StageMode, type WorldInfo } from './game/levels';
+import { CHALLENGE, getLevel, LEVELS, LIMIT_FROM, tierFor, WORLDS, type AreaInfo, type LevelDef, type MessKind, type StageMode, type WorldInfo } from './game/levels';
 import { dominantDirt, GEAR_COOLDOWN_MS, GEAR_MESS_COUNT, GEAR_SLOW_AT, GEAR_SLOW_CLEAN, GEAR_TIP_SEC, premiumFor, type GearPick, type GearReason } from './gear';
 import { findMix, MIXES, mixParts } from './game/catalog';
 import { mulberry32 } from './game/rng';
+import { FEVER_BOOST, feverMeter, rewardFor, stepFever, streakBonus, type FeverState, type Reward } from './game/reward';
 import { cautionTipFor, tipForCombo, tipForItems, tipsFor, type CleaningTip } from './game/tips';
 import { performanceRatios, REFERENCE_REMOVAL, type SponsorProduct } from './game/sponsor';
 import { closeHost, hostAvatarSmall, hostOpen, showHost, type PitchContext, type Placement } from './host';
@@ -180,6 +181,9 @@ function pop(text: string, cls = '') {
   setTimeout(() => el.remove(), 1100);
 }
 
+/** 이 콤보 단계에 닿으면 칭찬 한마디 */
+const PRAISE_AT = [4, 8, 12];
+
 // ---------- 진행 ----------
 /** 관리자 테스트 플레이(모든 판 열기)가 켜져 있나 — 관리자 모드가 있는 빌드에서만 */
 function testUnlock(): boolean {
@@ -248,6 +252,7 @@ function renderHome() {
         <button class="btn btn--primary btn--big" data-act="continue" data-testid="play">${t('play')} · ${t('stage', { n: next.id })} ${esc(t(`scene_${next.scene}`))}</button>
         <p class="muted small">★ ${totalStars} / ${LEVELS.length * 3} · 📖 ${st.journal.length}</p>
         ${nextAreaGoalHtml()}
+        ${(st.progress.winStreak ?? 0) >= 2 ? `<p class="goal goal--streak" data-testid="home-streak">🔥 ${esc(t('streakHome', { n: st.progress.winStreak!, p: Math.round(streakBonus(st.progress.winStreak! + 1) * 100) }))}</p>` : ''}
       </section>
       ${todayCardHtml()}
       ${WORLDS.map(worldCard).join('')}
@@ -276,7 +281,7 @@ function nextAreaGoalHtml(): string {
   const nextArea = WORLDS.flatMap((w) => w.areas).find((a) => a.levelIds[0] > st.progress.unlocked);
   if (!nextArea) return '';
   const left = nextArea.levelIds[0] - st.progress.unlocked;
-  return `<p class="goal" data-testid="next-area-goal">🔓 ${esc(t('nextAreaGoal', { area: t(`area_${nextArea.id}`), n: left }))}</p>`;
+  return `<p class="goal" data-testid="next-area-goal">🔓 ${esc(t(left === 1 ? 'nextAreaGoalOne' : 'nextAreaGoal', { area: t(`area_${nextArea.id}`), n: left }))}</p>`;
 }
 
 function missionRowsHtml(withClaim: boolean): string {
@@ -647,8 +652,8 @@ function renderArea(areaId: string) {
             const locked = !stageOpen(l.id);
             const test = l.id > st.progress.unlocked && !locked; // 테스트 플레이로만 열린 판
             const stars = st.progress.stars[l.id] ?? 0;
-            return `<button class="stage${locked ? ' is-locked' : ''}${test ? ' is-test' : ''}" data-level="${l.id}" ${locked ? 'disabled' : ''} data-testid="stage-${l.id}">
-              <span class="stage__n">${l.id} <small class="stage__tier">T${l.tier}</small> ${MODE_ICON[l.mode]}${test ? ' <small class="stage__test" title="test play">🛠</small>' : ''}</span>
+            return `<button class="stage${locked ? ' is-locked' : ''}${test ? ' is-test' : ''}${l.challenge ? ` is-${l.challenge}` : ''}" data-level="${l.id}" ${locked ? 'disabled' : ''} data-testid="stage-${l.id}">
+              <span class="stage__n">${l.id} <small class="stage__tier">T${l.tier}</small> ${MODE_ICON[l.mode]}${test ? ' <small class="stage__test" title="test play">🛠</small>' : ''}${l.challenge ? ` <small class="stage__ch" data-testid="stage-challenge-${l.id}">${l.challenge === 'boss' ? '👑' : '🔥'} ${esc(t(`challenge_${l.challenge}`))}</small>` : ''}</span>
               <span class="stage__name">${esc(t(`theme_${l.theme}`))}<br><small class="muted">${esc(t(`scene_${l.scene}`))}</small></span>
               <span class="stage__dirts">${l.patches.map((p) => dirtSwatch(p.type)).join('')}</span>
               <span class="stage__stars">${locked ? '🔒' : '★'.repeat(stars) + '☆'.repeat(3 - stars)}</span>
@@ -691,6 +696,10 @@ interface GameState {
   comboCells: number;
   comboTimer: number;
   comboLevel: number;
+  /** 이 판에서 낸 최고 콤보 (결과의 콤보 보너스) */
+  maxCombo: number;
+  /** 반짝 타임 게이지·남은 시간 */
+  fever: FeverState;
   discoveries: { dirt: DirtType; tool: ToolFamily; cleaner: CleanerFamily | null }[];
   /** 오염별 힌트 공개 단계 (0 없음, 1 세정제, 2 도구까지) */
   hints: Map<DirtType, number>;
@@ -788,7 +797,7 @@ function startLevel(id: number) {
         <button class="icon-btn hud__journal" data-act="journal" aria-label="${t('journal')}" data-testid="journal">📖<span class="badge" data-el="unknown"></span></button>
       </header>
       <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : goalText(level))}</div>
-      <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><canvas class="canvas3d" data-el="canvas3d" data-testid="canvas3d" hidden></canvas><div class="combo" data-el="combo" hidden></div><div class="scan" data-el="scan" hidden></div><div class="mess-warn" data-el="mess-warn" data-testid="mess-warn" hidden></div><div class="gear" data-el="gear" data-testid="gear-tip" hidden></div></div>
+      <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><canvas class="canvas3d" data-el="canvas3d" data-testid="canvas3d" hidden></canvas><div class="fever" data-el="fever" data-testid="fever" aria-hidden="true"><i data-el="fever-fill"></i></div><div class="combo" data-el="combo" hidden></div><div class="scan" data-el="scan" hidden></div><div class="mess-warn" data-el="mess-warn" data-testid="mess-warn" hidden></div><div class="gear" data-el="gear" data-testid="gear-tip" hidden></div></div>
       <div class="boosters" data-el="boosters" data-testid="boosters"></div>
       <nav class="toolbar" data-el="toolbar"></nav>
     </div>`;
@@ -825,6 +834,8 @@ function startLevel(id: number) {
     comboCells: 0,
     comboTimer: 0,
     comboLevel: 0,
+    maxCombo: 0,
+    fever: { charge: 0, left: 0 },
     discoveries: [],
     hints: new Map(),
     scanLeft: 0,
@@ -859,6 +870,7 @@ function startLevel(id: number) {
   bindInput(canvas);
   app.querySelector('[data-act="back"]')!.addEventListener('click', () => {
     track('level_quit', { level: id, clean: Math.round(session.cleanliness * 100) });
+    if (session.engaged && game && !game.finished) breakStreak(); // 시계가 간 뒤에 나가면 진 것으로 친다
     renderArea(level.area);
   });
   app.querySelector('[data-act="journal"]')!.addEventListener('click', () => openJournal());
@@ -908,6 +920,8 @@ function startLevel(id: number) {
       <div class="intro__mode">${MODE_ICON[level.mode]} ${esc(t(`mode_${level.mode}`))} · <span class="muted">${t('stage', { n: id })} · T${level.tier}</span></div>
       <h2>${esc(levelTitle(level))}</h2>
       <p class="intro__goal">${esc(goalText(level, session))}</p>
+      ${level.challenge ? `<p class="intro__challenge is-${level.challenge}" data-testid="intro-challenge">${level.challenge === 'boss' ? '👑' : '🔥'} <b>${esc(t(`challenge_${level.challenge}`))}</b> · ${esc(t(`challengeDesc_${level.challenge}`, { x: CHALLENGE[level.challenge].coins }))}</p>` : ''}
+      ${id === LIMIT_FROM ? `<p class="intro__rule" data-testid="intro-limit-rule">⏱ ${esc(t('limitRule'))}</p>` : ''}
       ${showRule ? `<p class="intro__rule">📌 ${esc(t(`tierRule_${tier.id}`))}</p>` : ''}
       ${showTail ? `<p class="intro__rule">🧽 ${esc(t('tierRuleTail'))}</p>` : ''}
       ${id === GUIDED_UNTIL + 1 && !st.progress.stars[id] ? `<p class="intro__rule">🔍 ${esc(t('hintsOver', { n: GUIDED_UNTIL }))}</p>` : ''}
@@ -1667,8 +1681,14 @@ function step(dt: number) {
     g.comboTimer -= dt;
     const lvl = Math.min(12, Math.floor(g.comboCells / 18));
     if (lvl !== g.comboLevel) {
+      if (lvl > g.comboLevel) {
+        g.maxCombo = Math.max(g.maxCombo, lvl);
+        haptic('light'); // 콤보가 한 칸 오를 때마다 손끝에 톡
+        const praise = PRAISE_AT.indexOf(lvl);
+        if (praise >= 0) pop(t(`praise_${praise + 1}`), 'pop--praise');
+      }
       g.comboLevel = lvl;
-      g.renderer.combo = lvl;
+      g.renderer.combo = g.fever.left > 0 ? 12 : lvl;
       const el = app.querySelector<HTMLElement>('[data-el="combo"]');
       if (el) {
         el.hidden = lvl < 2;
@@ -1681,9 +1701,32 @@ function step(dt: number) {
   } else if (g.comboCells) {
     g.comboCells = 0;
     g.comboLevel = 0;
-    g.renderer.combo = 0;
+    g.renderer.combo = g.fever.left > 0 ? 12 : 0;
     const el = app.querySelector<HTMLElement>('[data-el="combo"]');
     if (el) el.hidden = true;
+  }
+  // 반짝 타임: 쉬지 않고 닦으면 게이지가 차고, 다 차면 잠깐 닦는 속도가 빨라진다
+  if (!g.finished && !g.failed) {
+    const fev = stepFever(g.fever, dt, g.comboTimer > 0);
+    const area = app.querySelector<HTMLElement>('.stage-area');
+    if (fev === 'start') {
+      g.session.boost = FEVER_BOOST;
+      g.renderer.combo = 12;
+      g.renderer.celebrate(50);
+      g.renderer.sweep();
+      area?.classList.add('is-fever');
+      pop(t('feverStart'), 'pop--big pop--fever');
+      sfx.shine(1);
+      sfx.swoosh();
+      haptic('medium');
+      track('fever', { level: g.level.id });
+    } else if (fev === 'end') {
+      g.session.boost = 1;
+      g.renderer.combo = g.comboLevel;
+      area?.classList.remove('is-fever');
+    }
+    const fill = app.querySelector<HTMLElement>('[data-el="fever-fill"]');
+    if (fill) fill.style.width = `${Math.round(feverMeter(g.fever) * 100)}%`;
   }
   // HUD
   const pct = Math.floor(g.session.cleanliness * 100);
@@ -1751,9 +1794,18 @@ function finishLevel() {
   g.session.clearAll();
   sfx.complete();
   haptic('medium');
+  g.session.boost = 1;
+  app.querySelector('.stage-area')?.classList.remove('is-fever');
   const result = scoreSession(g.session, g.timing.parSec, g.level.tier);
   const st = getStore();
   const id = g.level.id;
+  // 보상: 고비 판 배수 × 연승 보너스 + 콤보 보너스. 새 기록인지도 본다
+  const prevBest = st.progress.bestTime[id];
+  const streak = (st.progress.winStreak ?? 0) + 1;
+  st.progress.winStreak = streak;
+  const reward = rewardFor(result.coins, { challenge: g.level.challenge, streak, maxCombo: g.maxCombo, tier: g.level.tier });
+  result.coins = reward.total;
+  const extra: ResultExtra = { reward, streak, maxCombo: g.maxCombo, record: prevBest !== undefined && result.timeSec < prevBest, challenge: g.level.challenge };
   // 관리자 테스트 플레이로 연 판(진행보다 앞)은 진행 저장을 건드리지 않는다
   if (id <= st.progress.unlocked) {
     st.progress.stars[id] = Math.max(st.progress.stars[id] ?? 0, result.stars);
@@ -1768,12 +1820,31 @@ function finishLevel() {
   persist();
   for (const id of missionNews) track('mission_done', { mission: id });
   void refreshComebackNotifications(todayKey());
-  track('level_complete', { level: id, tier: g.level.tier, stars: result.stars, time: result.timeSec, damage: Math.round(result.damage * 100), hazard: result.hazard, discoveries: g.discoveries.length });
+  track('level_complete', { level: id, tier: g.level.tier, stars: result.stars, time: result.timeSec, damage: Math.round(result.damage * 100), hazard: result.hazard, discoveries: g.discoveries.length, streak, combo: g.maxCombo, coins: result.coins });
   const level = g.level;
   const timing = g.timing;
   const discoveries = g.discoveries;
   // 전후 리빌(더러운 화면 → 깨끗한 화면) 뒤 결과
-  setTimeout(() => game?.renderer.startReveal(() => setTimeout(() => showResult(level, timing, result, discoveries), 350)), 300);
+  setTimeout(() => game?.renderer.startReveal(() => setTimeout(() => showResult(level, timing, result, discoveries, extra), 350)), 300);
+}
+
+interface ResultExtra {
+  reward: Reward;
+  streak: number;
+  maxCombo: number;
+  /** 이 판의 예전 최고 기록보다 빨랐나 */
+  record: boolean;
+  challenge?: LevelDef['challenge'];
+}
+
+/** 연승이 끊김 (실패 후 다시 하기·나가기, 청소 도중 나가기) */
+function breakStreak() {
+  const st = getStore();
+  const n = st.progress.winStreak ?? 0;
+  if (!n) return;
+  st.progress.winStreak = 0;
+  persist();
+  if (n >= 2) track('streak_end', { streak: n });
 }
 
 /** 실패 — 제한시간 초과(광고로 연장 가능) 또는 표면 손상(정밀 모드) */
@@ -1788,11 +1859,15 @@ function failLevel(reason: 'time' | 'ruined' = 'time') {
   track('level_fail', { level: g.level.id, clean: Math.round(g.session.cleanliness * 100), reason });
   // 다음엔 이 장비로 — 남은 오염 중 가장 많은 것에 맞는 프리미엄 장비
   const failDirt = reason === 'time' ? dominantDirt(g.session.dirtKinds, (d) => g.session.remainingOf(d)) : null;
+  const streakNow = getStore().progress.winStreak ?? 0;
+  if (reason === 'ruined') breakStreak(); // 표면을 망가뜨리면 이어 할 수 없다
+  const streakLine = streakNow >= 2 ? `<p class="result__streak is-risk" data-testid="streak-risk">🔥 ${esc(t(reason === 'ruined' ? 'streakLost' : 'streakRisk', { n: streakNow }))}</p>` : '';
   const failGear = failDirt && g.level.id > 3 ? premiumFor(failDirt, mainSurfaceOf(failDirt) as SurfaceType, [...getStore().owned, ...g.trials]) : null;
   modal(
     `<div class="result" data-testid="fail">
       <h2>${reason === 'ruined' ? `💔 ${t('ruinedTitle')}` : `⏱ ${t('failTitle')}`}</h2>
       <p class="muted">${esc(reason === 'ruined' ? t('ruinedText') : t('failText'))} · ${Math.floor(g.session.cleanliness * 100)}% / ${Math.round(g.level.passClean * 100)}%</p>
+      ${streakLine}
       ${reason === 'ruined' ? '' : `<button class="btn btn--ad btn--block" data-act="extend" data-testid="extend">${t('extendAd')}</button><button class="btn btn--block" data-act="extend-coins" data-testid="extend-coins" ${getStore().coins < CONTINUE_COINS ? 'disabled' : ''}>${esc(t('extendCoins', { c: CONTINUE_COINS, s: BOOSTERS.time.amount }))}</button>`}
       ${failGear ? `<p class="result__gear" data-testid="fail-gear">${iconFor(failGear.spec.base)} ${esc(t('gearLine_fail', { item: t(`item_${failGear.spec.base}`), dirt: t(`dirt_${failGear.dirt}`), x: failGear.x }))} <button class="link-btn small" data-act="fail-shop">${t('shop')} ›</button></p>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry" data-testid="fail-retry">${t('retry')}</button><button class="btn" data-act="menu">${t('menu')}</button></div>
@@ -1830,12 +1905,14 @@ function failLevel(reason: 'time' | 'ruined' = 'time') {
       });
       root.querySelector('[data-act="retry"]')!.addEventListener('click', async () => {
         close();
+        breakStreak();
         const id = g.level.id;
         await ads.maybeShowInterstitial();
         startLevel(id);
       });
       root.querySelector('[data-act="menu"]')!.addEventListener('click', () => {
         close();
+        breakStreak();
         renderArea(g.level.area);
       });
     },
@@ -1991,7 +2068,7 @@ function openJournal() {
   );
 }
 
-function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: GameState['discoveries']) {
+function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: GameState['discoveries'], extra?: ResultExtra) {
   const messCount = game?.session.messCount ?? 0;
   const penalties = [
     timing.parSec < r.timeSec ? t('slowPenalty') : '',
@@ -1999,6 +2076,17 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
     r.hazard ? t('hazardPenalty') : '',
   ].filter(Boolean);
   let coinsShown = r.coins;
+  // 보너스 내역: 고비 판 · 연승 · 콤보 · 새 기록
+  const bonusLines = extra
+    ? [
+        extra.challenge ? `<li data-testid="bonus-challenge">${extra.challenge === 'boss' ? '👑' : '🔥'} ${esc(t('bonusChallenge', { name: t(`challenge_${extra.challenge}`), x: extra.reward.challengeMul }))}</li>` : '',
+        extra.reward.streakPct > 0 ? `<li data-testid="bonus-streak">🔥 ${esc(t('bonusStreak', { n: extra.streak, p: Math.round(extra.reward.streakPct * 100) }))}</li>` : '',
+        extra.reward.comboCoins > 0 ? `<li data-testid="bonus-combo">⚡ ${esc(t('bonusCombo', { n: extra.maxCombo, c: extra.reward.comboCoins }))}</li>` : '',
+      ].filter(Boolean)
+    : [];
+  const bonusBlock = bonusLines.length ? `<ul class="result__bonus" data-testid="result-bonus">${bonusLines.join('')}</ul>` : '';
+  const recordBadge = extra?.record ? `<p class="result__record" data-testid="new-record">🏅 ${esc(t('newRecord', { s: r.timeSec }))}</p>` : '';
+  const confetti = r.stars === 3 ? `<div class="confetti" aria-hidden="true">${Array.from({ length: 26 }, (_, i) => `<i style="left:${(i * 37) % 100}%;animation-delay:${(i % 9) * 0.07}s;background:hsl(${(i * 47) % 360} 85% 60%)"></i>`).join('')}</div>` : '';
   const hasNext = level.id < LEVELS.length;
   const mainDirt = level.patches[0]?.type;
   const recBase = mainDirt ? DIRT_TO_ITEM[mainDirt][0] : undefined;
@@ -2025,11 +2113,14 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
     : '';
   modal(
     `<div class="result" data-testid="result">
+      ${confetti}
       <h2>${t('done')}</h2>
-      <div class="result__stars">${[0, 1, 2].map((i) => `<span class="${i < r.stars ? 'on' : ''}">★</span>`).join('')}</div>
+      <div class="result__stars">${[0, 1, 2].map((i) => `<span class="${i < r.stars ? 'on' : ''}" style="animation-delay:${0.25 + i * 0.2}s">★</span>`).join('')}</div>
       <p class="muted">${t('time')} ${r.timeSec}s · ${t('par', { s: timing.parSec })}</p>
+      ${recordBadge}
       ${penalties.length ? `<ul class="penalties">${penalties.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
       <p class="result__coins" data-el="coins">${t('reward', { c: coinsShown })}</p>
+      ${bonusBlock}
       <p class="small muted center">${esc(t('coinsUse'))} <button class="link-btn small" data-act="shop-result" data-testid="result-shop">${t('shop')} ›</button></p>
       ${messCount > 0 && level.mess ? `<p class="result__mess" data-testid="result-mess">${MESS_ICON[level.mess.kind]} ${esc(t('messResult', { n: messCount }))}</p>` : ''}
       ${polish}
@@ -2509,6 +2600,9 @@ declare global {
       sponsors: () => { id: string; affiliate: boolean }[];
       missions: () => { ids: string[]; prog: Record<string, number>; claimed: string[]; chest: boolean };
       missionClear: (stars: number, underPar: boolean, safe: boolean) => void;
+      streak: () => number;
+      fever: () => { charge: number; left: number; boost: number; maxCombo: number } | null;
+      setFever: (charge: number) => void;
       timing: () => Timing | null;
       forceExpire: () => void;
       level: () => number;
@@ -2561,6 +2655,12 @@ function exposeDebug() {
       recordClear(getStore(), { stars, underPar, safe }, todayKey());
       persist();
       renderHome();
+    },
+    streak: () => getStore().progress.winStreak ?? 0,
+    fever: () => (game ? { ...game.fever, boost: game.session.boost, maxCombo: game.maxCombo } : null),
+    // 테스트용: 반짝 타임 게이지를 채워 둔다 (다음에 닦으면 켜진다)
+    setFever: (charge: number) => {
+      if (game) game.fever.charge = charge;
     },
     timing: () => game?.timing ?? null,
     forceExpire: () => {

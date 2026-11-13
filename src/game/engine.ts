@@ -85,6 +85,8 @@ export class CleanSession {
   readonly spots: { x: number; y: number; r: number; done: boolean }[] = []
   /** 오염 배열이 바뀔 때마다 증가 — 렌더러가 오염층을 다시 합성할지 판단 */
   version = 0
+  /** 닦는 속도 배율 — 반짝 타임(연속으로 닦으면 잠깐 빨라짐) 동안 1보다 크다. 표면 손상에는 적용되지 않는다 */
+  boost = 1
   /** 광택 마감: 고성능 도구·세정제로 끝까지 지운 칸 (렌더링·결과 보너스) */
   readonly shine: Uint8Array
   shineCells = 0
@@ -773,7 +775,7 @@ export class CleanSession {
       }
       const mult = det ? det.mult[dirt] : 1
       const pro = Boolean(tool.pro || det?.pro)
-      let rate = (tool.power * tool.effect[dirt] * recipe.speed * mult * w) / (DIRT_RESIST[dirt] * resistMul)
+      let rate = (tool.power * tool.effect[dirt] * recipe.speed * mult * w * this.boost) / (DIRT_RESIST[dirt] * resistMul)
       // 찌든 때: 마지막 층은 일반 도구로는 더디다 (고성능 장비는 끝까지 같은 속도)
       if (!pro && a < TAIL_AMOUNT) rate *= tailRate
       const next = Math.max(0, a - rate * dt)
@@ -892,10 +894,13 @@ export interface Result {
 }
 
 /** 별점: 기본 3, 목표시간 초과 -1(2배 초과 -2), 손상 15% 이상 -1, 위험 혼합 -1, 최소 1. 광택 마감 50% 이상이면 보너스 코인 */
+/** 목표시간의 이 배수를 넘기면 별이 하나 더 깎인다 (목표시간 안 = 3개, 이 안 = 2개, 그 밖 = 1개) */
+export const SLOW_FACTOR = 1.5
+
 export function scoreSession(s: Pick<CleanSession, 'time' | 'damage' | 'hazard'> & { polish?: number }, parSec: number, tier = 1): Result {
   let stars = 3
   if (s.time > parSec) stars--
-  if (s.time > parSec * 2) stars--
+  if (s.time > parSec * SLOW_FACTOR) stars--
   if (s.damage >= 0.15) stars--
   if (s.hazard) stars--
   stars = Math.max(1, stars)

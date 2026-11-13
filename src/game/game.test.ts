@@ -18,6 +18,29 @@ function densest(s: CleanSession, dirt: DirtType): number {
   return best
 }
 
+/** 그 오염이 가장 진하면서, 주변(반경 r칸)에 다른 종류가 섞여 있지 않은 칸 — 판 배치가 바뀌어도 "그 오염만" 시험할 수 있게 */
+function isolated(s: CleanSession, dirt: DirtType, r = 7): number {
+  let best = -1
+  let bestA = 0
+  s.amount.forEach((a, i) => {
+    if (s.dirtAt(i) !== dirt || a <= bestA) return
+    const x = i % s.w
+    const y = Math.floor(i / s.w)
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = x + dx
+        const ny = y + dy
+        if (nx < 0 || ny < 0 || nx >= s.w || ny >= s.h) continue
+        const j = ny * s.w + nx
+        if (s.amount[j] > 0 && s.dirtAt(j) !== dirt) return
+      }
+    }
+    bestA = a
+    best = i
+  })
+  return best >= 0 ? best : densest(s, dirt)
+}
+
 describe('engine', () => {
   it('generates dirt deterministically and starts dirty', () => {
     const a = new CleanSession(LEVELS[0])
@@ -31,7 +54,7 @@ describe('engine', () => {
   it('wrong tool does nothing; the right tool (and cleaner) cleans — and reports why it failed', () => {
     const lv = LEVELS.find((l) => l.scene === 'stove')! // 기름때 on steel
     const s = new CleanSession(lv)
-    const best = densest(s, 'grease')
+    const best = isolated(s, 'grease')
     const cx = (best % s.w) + 0.5
     const cy = Math.floor(best / s.w) + 0.5
     // 1) 청소기: 기름때에 아예 안 통함

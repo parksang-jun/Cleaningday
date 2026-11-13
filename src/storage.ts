@@ -80,6 +80,8 @@ export interface Progress {
   unlocked: number; // 열린 최고 스테이지
   stars: Record<string, number>; // levelId -> 최고 별
   bestTime: Record<string, number>;
+  /** 연속으로 깬 판 수 — 실패하면 0 (연승 보너스) */
+  winStreak?: number;
 }
 
 export interface Store {
