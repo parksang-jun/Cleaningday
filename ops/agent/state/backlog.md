@@ -18,5 +18,5 @@
 - [승인] 쿠팡 파트너스·Amazon Associates 가입과 제휴 링크 발급 → `affiliate-accounts` (목록: `state/affiliate-links.md`, 25개 전부 비어 있음)
 
 ## 끝난 것
-- 2026-11-13 [auto] 첫 판 조작 안내: 세제가 없는 판에서는 세제 단계 문구를 '이번 판은 세제 없이 도구만으로'로 교체 → PR `agent/2026-11-13-improve-tour-cleaners`
+- 2026-11-13 [auto] 첫 판 조작 안내: 세제가 없는 판에서는 세제 단계 문구를 '이번 판은 세제 없이 도구만으로'로 교체 → PR #1
 - 2026-11-13 [auto] 제휴 링크가 비어 있는 실제 제품 목록 정리 → `state/affiliate-links.md`
