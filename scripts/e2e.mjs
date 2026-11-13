@@ -885,6 +885,19 @@ try {
 } catch (e) {
   console.error('\nE2E FAILED:', e.message);
   await page.screenshot({ path: resolve(shots, 'zz-fail.png') }).catch(() => {});
+  // 실패 순간의 게임 상태 — CI 에서만 나는 실패를 원인까지 볼 수 있게
+  const snap = await page.evaluate(() => {
+    const k = window.__sparkle; const s = k?.session?.();
+    return {
+      level: k?.level?.(), selected: k?.selected?.(), items: k?.items?.(), used: k?.used?.(), mixes: k?.mixes?.(),
+      session: s ? { time: s.time, engaged: s.engaged, hazard: s.hazard, damage: s.damage, cleanliness: s.cleanliness, limitSec: s.limitSec, passed: s.passed } : null,
+      modal: document.querySelector('.modal')?.innerText?.slice(0, 200) ?? null,
+      overlays: [...document.querySelectorAll('[data-testid="host"], [data-testid="intro"], [data-testid="fail"], [data-testid="result"], .tour, [data-testid="shop"]')].map((e) => e.getAttribute('data-testid') || e.className),
+      canvas: (() => { const c = document.querySelector('[data-testid="canvas"]')?.getBoundingClientRect(); return c ? [Math.round(c.x), Math.round(c.y), Math.round(c.width), Math.round(c.height)] : null; })(),
+      viewport: [innerWidth, innerHeight],
+    };
+  }).catch((err) => ({ error: String(err) }));
+  console.error('state at failure:', JSON.stringify(snap));
   process.exitCode = 1;
 } finally {
   await browser.close();
