@@ -5,6 +5,7 @@ import type { Store } from './storage'
 function store(over: Partial<Store['daily']> = {}): Store {
   return {
     coins: 0,
+    boosters: { time: 0, bomb: 0, scan: 0, shield: 0 },
     daily: { day: '', adCoins: 0, adBoosters: 0, bonusDay: '', streak: 0, ...over },
     ads: { lastInterstitialAt: 0, gamesSinceInterstitial: 0, adFreeUntil: 0 },
   } as unknown as Store
@@ -27,19 +28,23 @@ describe('economy', () => {
     expect(adBoostersLeft(fresh)).toBe(AD_BOOSTERS_PER_DAY - 1)
   })
 
-  it('daily bonus pays once a day and grows with the streak (capped), then restarts after a missed day', () => {
+  it('daily bonus follows the 7-day check-in calendar, pays once a day, and restarts after a missed day', () => {
     const st = store()
     const d1 = new Date(2026, 10, 1, 9)
     expect(claimDailyBonus(st, d1)).toEqual({ coins: 30, streak: 1 })
     expect(claimDailyBonus(st, new Date(2026, 10, 1, 20))).toBeNull()
     expect(st.coins).toBe(30)
-    let day = 2
-    let last = { coins: 0, streak: 0 }
-    for (; day <= 8; day++) last = claimDailyBonus(st, new Date(2026, 10, day, 9))!
-    expect(last).toEqual({ coins: 80, streak: 8 }) // 30 + 10 × min(7, 5)
-    // 하루 건너뛰면 연속 끊김
+    const got = []
+    for (let day = 2; day <= 8; day++) got.push(claimDailyBonus(st, new Date(2026, 10, day, 9))!)
+    expect(got.map((g) => g.coins)).toEqual([40, 50, 60, 80, 100, 200, 30]) // 8일째는 다시 1일째 보상
+    expect(got.map((g) => g.booster)).toEqual([undefined, 'scan', undefined, 'time', undefined, 'bomb', undefined])
+    expect(got[6].streak).toBe(8)
+    expect(st.boosters).toEqual({ time: 1, bomb: 1, scan: 1, shield: 0 })
+    // 하루 건너뛰면 연속 끊김 (이틀 차이는 복귀 보너스 없음)
     expect(claimDailyBonus(st, new Date(2026, 10, 10, 9))).toEqual({ coins: 30, streak: 1 })
-    expect(st.coins).toBe(30 + 40 + 50 + 60 + 70 + 80 + 80 + 80 + 30)
+    expect(st.coins).toBe(30 + 40 + 50 + 60 + 80 + 100 + 200 + 30 + 30)
+    // 3일 이상 쉬었다 오면 복귀 보너스가 붙는다
+    expect(claimDailyBonus(st, new Date(2026, 10, 14, 9))).toEqual({ coins: 30 + 50, streak: 1, comeback: true })
   })
 
   it('todayKey is a local calendar date', () => {

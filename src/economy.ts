@@ -2,6 +2,7 @@
 //  벌기: 판 클리어(20+별×10)×티어 · 결과 화면 광고로 2배 · 상점 "광고 보고 +80"(하루 5회) · 매일 첫 접속 보너스(연속 접속 가산)
 //  쓰기: 부스터(판 안에서 바로 체감되는 소모품) · 실패 화면 코인 이어하기 · 수첩 힌트(30) · 프로 장비(400~1200, 영구)
 //  광고 접점: 부스터는 코인이 모자라면 "광고 보고 1개"(하루 3회) — 코인이 부족한 순간이 곧 광고를 보는 순간이다.
+import { attendanceReward, COMEBACK_AFTER_DAYS, COMEBACK_COINS, daysBetween } from './retention';
 import type { Store } from './storage';
 
 export type BoosterId = 'time' | 'bomb' | 'scan' | 'shield';
@@ -46,18 +47,24 @@ export function daily(st: Store, today = todayKey()) {
   return st.daily;
 }
 
-/** 매일 첫 접속 보너스: 30 + 연속 접속일 × 10 (최대 5일 가산). 이미 받았으면 0 */
-export function claimDailyBonus(st: Store, now = new Date()): { coins: number; streak: number } | null {
+/**
+ * 매일 첫 접속 보너스 = 출석 달력(retention.ATTENDANCE): 7일 주기로 30→200코인, 3·5·7일째는 부스터도.
+ * 하루 빠지면 1일째부터. 3일 이상 쉬었다 돌아오면 복귀 보너스가 한 번 더 붙는다. 이미 받았으면 null
+ */
+export function claimDailyBonus(st: Store, now = new Date()): { coins: number; streak: number; booster?: BoosterId; comeback?: boolean } | null {
   const today = todayKey(now);
   if (st.daily.bonusDay === today) return null;
   const y = new Date(now);
   y.setDate(y.getDate() - 1);
-  const streak = st.daily.bonusDay === todayKey(y) ? Math.min(st.daily.streak + 1, 99) : 1;
-  const coins = 30 + 10 * Math.min(streak - 1, 5);
+  const streak = st.daily.bonusDay === todayKey(y) ? Math.min(st.daily.streak + 1, 9999) : 1;
+  const reward = attendanceReward(streak);
+  const comeback = Boolean(st.daily.bonusDay) && daysBetween(st.daily.bonusDay, today) >= COMEBACK_AFTER_DAYS;
+  const coins = reward.coins + (comeback ? COMEBACK_COINS : 0);
   st.daily.bonusDay = today;
   st.daily.streak = streak;
   st.coins += coins;
-  return { coins, streak };
+  if (reward.booster) st.boosters[reward.booster]++;
+  return { coins, streak, ...(reward.booster ? { booster: reward.booster } : {}), ...(comeback ? { comeback } : {}) };
 }
 
 export function adCoinsLeft(st: Store): number {

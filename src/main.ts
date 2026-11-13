@@ -24,8 +24,10 @@ import { renderAdmin } from './admin';
 import { Renderer } from './render/renderer';
 import type { View3D } from './render/view3d';
 import { getStore, loadStore, persist, resetStore, type HostConfig } from './storage';
-import { AD_COINS, AD_COINS_PER_DAY, AD_FREE_PASSES, adFree, buyAdFree, adBoostersLeft, adCoinsLeft, BOOSTER_IDS, BOOSTERS, claimDailyBonus, CONTINUE_COINS, daily, type BoosterId } from './economy';
+import { AD_COINS, AD_COINS_PER_DAY, AD_FREE_PASSES, adFree, buyAdFree, adBoostersLeft, adCoinsLeft, BOOSTER_IDS, BOOSTERS, claimDailyBonus, todayKey, CONTINUE_COINS, daily, type BoosterId } from './economy';
 import { iconFor } from './ui/icons';
+import { COMEBACK_COINS, ATTENDANCE, attendanceIndex, attendanceReward, CHEST_COINS, chestReady, claimChest, claimMission, MISSION_COINS, missionDone, missionProgress, MISSIONS, missions, recordClear, recordVisit, type MissionId } from './retention';
+import { cancelComebackNotifications, notifySupported, refreshComebackNotifications } from './notify';
 
 const app = document.getElementById('app')!;
 const ads = new AdsController();
@@ -204,6 +206,12 @@ function renderHome() {
   ads.setBanner(true);
   duckMusic(false);
   const st = getStore();
+  // 매일 첫 접속 보너스(출석 달력) — 홈에 들어올 때 한 번. 화면을 그리기 전에 받아야 달력이 오늘 칸을 가리킨다
+  const bonus = claimDailyBonus(st);
+  if (bonus) {
+    persist();
+    track('daily_bonus', { coins: bonus.coins, streak: bonus.streak, comeback: Boolean(bonus.comeback) });
+  }
   const totalStars = Object.values(st.progress.stars).reduce((a, b) => a + b, 0);
   const next = getLevel(nextLevelId())!;
   const worldCard = (w: WorldInfo) => `
@@ -239,7 +247,9 @@ function renderHome() {
         ${import.meta.env.VITE_BETA === 'true' && import.meta.env.VITE_FEEDBACK_URL ? `<a class="btn btn--ghost btn--sm beta-feedback" href="${esc(import.meta.env.VITE_FEEDBACK_URL)}" target="_blank" rel="noopener" data-testid="beta-feedback">💬 ${esc(t('feedback'))}</a>` : ''}
         <button class="btn btn--primary btn--big" data-act="continue" data-testid="play">${t('play')} · ${t('stage', { n: next.id })} ${esc(t(`scene_${next.scene}`))}</button>
         <p class="muted small">★ ${totalStars} / ${LEVELS.length * 3} · 📖 ${st.journal.length}</p>
+        ${nextAreaGoalHtml()}
       </section>
+      ${todayCardHtml()}
       ${WORLDS.map(worldCard).join('')}
       <p class="muted small center">${t('adsFree')}</p>
       ${adminEnabled() ? `<p class="center"><button class="link-btn small" data-act="admin" data-testid="admin-entry">🛠 ${t('adminEntry')}</button></p>` : ''}
@@ -250,14 +260,95 @@ function renderHome() {
   app.querySelector('[data-act="shop-coins"]')!.addEventListener('click', () => openShop());
   app.querySelector('[data-act="settings"]')!.addEventListener('click', openSettings);
   app.querySelectorAll<HTMLButtonElement>('.area').forEach((b) => b.addEventListener('click', () => renderArea(b.dataset.area!)));
-  // 매일 첫 접속 보너스 — 홈에 들어올 때 한 번
-  const bonus = claimDailyBonus(st);
+  bindTodayCard();
   if (bonus) {
-    persist();
-    track('daily_bonus', { coins: bonus.coins, streak: bonus.streak });
-    app.querySelector('[data-testid="coins"]')!.textContent = `● ${st.coins}`;
-    setTimeout(() => toast(esc(t('dailyBonus', { c: bonus.coins, d: bonus.streak })), 'good'), 400);
+    const base = bonus.coins - (bonus.comeback ? COMEBACK_COINS : 0);
+    const line = bonus.booster ? t('dailyBonusBooster', { c: base, d: bonus.streak, b: t(`booster_${bonus.booster}_short`) }) : t('dailyBonus', { c: base, d: bonus.streak });
+    setTimeout(() => toast(esc(line), 'good'), 400);
+    if (bonus.comeback) setTimeout(() => toast(esc(t('comebackBonus', { c: COMEBACK_COINS })), 'good'), 2600);
   }
+  void refreshComebackNotifications(todayKey());
+}
+
+/** 다음 구역이 열리기까지 남은 판 수 — "조금만 더 하면 새 곳이 열린다"를 보여 준다 */
+function nextAreaGoalHtml(): string {
+  const st = getStore();
+  const nextArea = WORLDS.flatMap((w) => w.areas).find((a) => a.levelIds[0] > st.progress.unlocked);
+  if (!nextArea) return '';
+  const left = nextArea.levelIds[0] - st.progress.unlocked;
+  return `<p class="goal" data-testid="next-area-goal">🔓 ${esc(t('nextAreaGoal', { area: t(`area_${nextArea.id}`), n: left }))}</p>`;
+}
+
+function missionRowsHtml(withClaim: boolean): string {
+  const m = missions(getStore(), todayKey());
+  return m.ids
+    .map((id) => {
+      const def = MISSIONS[id];
+      const n = missionProgress(m, id);
+      const done = missionDone(m, id);
+      const claimed = m.claimed.includes(id);
+      const action = !withClaim
+        ? `<span class="mission__n">${done ? '✓' : `${n}/${def.target}`}</span>`
+        : claimed
+          ? `<span class="mission__n is-claimed">✓ ${esc(t('missionClaimed'))}</span>`
+          : done
+            ? `<button class="btn btn--sm btn--primary" data-mission="${id}" data-testid="mission-claim-${id}">${esc(t('missionClaim', { c: MISSION_COINS }))}</button>`
+            : `<span class="mission__n">${n}/${def.target}</span>`;
+      return `<li class="mission${done ? ' is-done' : ''}${claimed ? ' is-claimed' : ''}" data-testid="mission-${id}">
+        <span class="mission__icon">${def.icon}</span>
+        <span class="mission__body"><span class="mission__name">${esc(t(`mission_${id}`, { n: def.target }))}</span><span class="mission__bar"><i style="width:${Math.round((n / def.target) * 100)}%"></i></span></span>
+        ${action}
+      </li>`;
+    })
+    .join('');
+}
+
+/** 홈의 "오늘" 카드: 출석 달력 + 오늘의 미션 + 보너스 상자 */
+function todayCardHtml(): string {
+  const st = getStore();
+  const m = missions(st, todayKey());
+  const idx = attendanceIndex(st.daily.streak);
+  const tomorrow = attendanceReward(st.daily.streak + 1);
+  const days = ATTENDANCE.map((d, i) => `<li class="attend__day${i < idx ? ' is-done' : ''}${i === idx ? ' is-today' : ''}${i === ATTENDANCE.length - 1 ? ' is-big' : ''}"><span class="attend__c">${i <= idx ? '✓' : d.coins}</span><span class="attend__b">${d.booster ? BOOSTERS[d.booster].icon : ''}</span><span class="attend__n">${esc(t('attendDay', { n: i + 1 }))}</span></li>`).join('');
+  const ready = chestReady(m);
+  return `<section class="today" data-testid="today">
+      <div class="today__head"><b data-testid="attend-title">📅 ${esc(t('attendTitle', { d: st.daily.streak }))}</b><span class="small muted">${esc(t('attendTomorrow', { c: tomorrow.coins }))}${tomorrow.booster ? ` ${BOOSTERS[tomorrow.booster].icon}` : ''}</span></div>
+      <ol class="attend" data-testid="attend">${days}</ol>
+      <div class="today__head"><b>🎯 ${esc(t('missionsTitle'))}</b><span class="small muted">${esc(t('missionsReset'))}</span></div>
+      <ul class="missions" data-testid="missions">${missionRowsHtml(true)}</ul>
+      <div class="chest${ready ? ' is-ready' : ''}${m.chest ? ' is-open' : ''}" data-testid="chest">
+        <span class="chest__icon">${m.chest ? '📭' : '🎁'}</span>
+        <span class="chest__body"><b>${esc(t('chestTitle'))}</b><span class="small muted">${esc(t('chestDesc', { c: CHEST_COINS }))}</span></span>
+        ${m.chest ? `<span class="mission__n is-claimed">✓</span>` : `<button class="btn btn--sm btn--ad" data-act="chest" data-testid="chest-open" ${ready ? '' : 'disabled'}>${esc(t('chestOpen'))}</button>`}
+      </div>
+    </section>`;
+}
+
+function bindTodayCard() {
+  app.querySelectorAll<HTMLButtonElement>('[data-mission]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const st = getStore();
+      const got = claimMission(st, b.dataset.mission as MissionId, todayKey());
+      if (!got) return;
+      persist();
+      sfx.coin(0);
+      haptic('light');
+      track('mission_claim', { mission: b.dataset.mission! });
+      renderHome();
+      toast(esc(t('missionGot', { c: got })), 'good');
+    }),
+  );
+  app.querySelector('[data-act="chest"]')?.addEventListener('click', () => {
+    const st = getStore();
+    const got = claimChest(st, todayKey());
+    if (!got) return;
+    persist();
+    sfx.buy();
+    haptic('medium');
+    track('mission_chest', { booster: got.booster });
+    renderHome();
+    toast(esc(t('chestGot', { c: got.coins, b: t(`booster_${got.booster}_short`) })), 'big');
+  });
 }
 
 const AREA_ICON: Record<string, string> = {
@@ -1672,7 +1763,11 @@ function finishLevel() {
   st.coins += result.coins;
   st.stats.gamesPlayed++;
   st.stats.totalCleanedCells += g.cleanedCells;
+  // 오늘의 미션 진행 (보상은 홈에서 직접 받는다)
+  const missionNews = recordClear(st, { stars: result.stars, underPar: result.timeSec <= g.timing.parSec, safe: result.damage < 0.15 && !result.hazard }, todayKey());
   persist();
+  for (const id of missionNews) track('mission_done', { mission: id });
+  void refreshComebackNotifications(todayKey());
   track('level_complete', { level: id, tier: g.level.tier, stars: result.stars, time: result.timeSec, damage: Math.round(result.damage * 100), hazard: result.hazard, discoveries: g.discoveries.length });
   const level = g.level;
   const timing = g.timing;
@@ -1940,6 +2035,7 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
       ${polish}
       ${found}
       ${tipsBlock}
+      <div class="result__today" data-testid="result-missions"><b>🎯 ${esc(t('resultMissions'))}</b><ul class="missions missions--compact">${missionRowsHtml(false)}</ul>${nextAreaGoalHtml()}</div>
       <button class="btn btn--ad btn--block" data-act="double" data-testid="double">${t('doubleAd')}</button>
       ${hasNext ? `<button class="btn btn--primary btn--block" data-act="next" data-testid="next">${t('next')}</button>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry">${t('retry')}</button><button class="btn" data-act="menu" data-testid="to-menu">${t('menu')}</button></div>
@@ -2304,6 +2400,7 @@ function openSettings() {
     <label class="setting"><span>${t('music')}</span><input type="checkbox" data-k="music" ${s.music ? 'checked' : ''}></label>
     <label class="setting"><span>${t('haptics')}</span><input type="checkbox" data-k="haptics" ${s.haptics ? 'checked' : ''}></label>
     <label class="setting"><span>${t('hostVoice')}</span><input type="checkbox" data-k="hostVoice" ${s.hostVoice ? 'checked' : ''}></label>
+    ${notifySupported() ? `<label class="setting"><span>${t('notifications')}</span><input type="checkbox" data-k="notify" data-testid="setting-notify" ${s.notify !== false ? 'checked' : ''}></label>` : ''}
     <label class="setting"><span>${t('language')}</span>
       <select data-k="lang">${(['auto', 'ko', 'en', 'ja'] as const).map((l) => `<option value="${l}" ${s.lang === l ? 'selected' : ''}>${l === 'auto' ? t('auto') : l === 'ko' ? '한국어' : l === 'en' ? 'English' : '日本語'}</option>`).join('')}</select>
     </label>
@@ -2320,6 +2417,7 @@ function openSettings() {
           setMusicEnabled(s.music);
           if (s.sound) sfx.ui();
           persist();
+          if (inp.dataset.k === 'notify') void (inp.checked ? refreshComebackNotifications(todayKey()) : cancelComebackNotifications());
         }),
       );
       root.querySelector<HTMLSelectElement>('select[data-k="lang"]')!.addEventListener('change', (e) => {
@@ -2409,6 +2507,8 @@ declare global {
       select: (id: string) => void;
       items: () => string[];
       sponsors: () => { id: string; affiliate: boolean }[];
+      missions: () => { ids: string[]; prog: Record<string, number>; claimed: string[]; chest: boolean };
+      missionClear: (stars: number, underPar: boolean, safe: boolean) => void;
       timing: () => Timing | null;
       forceExpire: () => void;
       level: () => number;
@@ -2452,6 +2552,16 @@ function exposeDebug() {
     },
     items: () => items.map((e) => e.spec.id),
     sponsors: () => sponsorList().map((p) => ({ id: p.id, affiliate: Boolean(p.affiliate) })),
+    missions: () => {
+      const m = missions(getStore(), todayKey());
+      return { ids: [...m.ids], prog: { ...m.prog } as Record<string, number>, claimed: [...m.claimed], chest: m.chest };
+    },
+    // 테스트용: 판을 깬 것으로 치고 미션만 진행시킨 뒤 홈을 다시 그린다
+    missionClear: (stars: number, underPar: boolean, safe: boolean) => {
+      recordClear(getStore(), { stars, underPar, safe }, todayKey());
+      persist();
+      renderHome();
+    },
     timing: () => game?.timing ?? null,
     forceExpire: () => {
       if (game && game.session.limitSec !== undefined) {
@@ -2535,6 +2645,11 @@ async function boot() {
   installAudioUnlock(); // 첫 터치에서 오디오 잠금 해제 (+ iOS 무음 스위치 우회) → 배경음악 시작
   installOpsCounters();
   reloadItems();
+  const visit = recordVisit(getStore(), todayKey());
+  if (visit) {
+    persist();
+    track('session_start', { day_n: visit.dayN, days_played: visit.days, streak: getStore().daily.streak });
+  }
   renderHome();
   exposeDebug();
   void ads.init();

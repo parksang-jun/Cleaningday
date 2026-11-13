@@ -2155,3 +2155,172 @@ body.has-banner .ad-banner {
 .tour__foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .tour__n { margin-right: auto; }
 .tour__foot .btn { padding: 8px 14px; }
+
+/* ---------- 오늘 카드: 출석 달력 · 오늘의 미션 · 보너스 상자 ---------- */
+.goal {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+}
+.today {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.today__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.attend {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.attend__day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 0 4px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  min-width: 0;
+}
+.attend__c {
+  font-weight: 800;
+  color: #b88300;
+}
+.attend__b {
+  position: absolute;
+  top: -6px;
+  right: -2px;
+  font-size: 12px;
+}
+.attend__n {
+  font-size: 10px;
+  color: var(--ink2);
+}
+.attend__day.is-done {
+  background: var(--bg2);
+}
+.attend__day.is-done .attend__c,
+.attend__day.is-today .attend__c {
+  color: var(--primary);
+}
+.attend__day.is-today {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(18, 181, 166, 0.2);
+  background: #fff;
+}
+.attend__day.is-big:not(.is-done):not(.is-today) {
+  background: #fff6d9;
+  border-color: var(--ad);
+}
+.missions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mission {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+.mission__icon {
+  width: 24px;
+  text-align: center;
+  flex: none;
+}
+.mission__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mission__name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.mission__bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg2);
+  overflow: hidden;
+}
+.mission__bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--primary);
+}
+.mission__n {
+  flex: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+.mission__n.is-claimed,
+.mission.is-done .mission__n {
+  color: var(--primary);
+}
+.mission.is-claimed .mission__name {
+  color: var(--ink2);
+}
+.chest {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px dashed var(--line);
+}
+.chest.is-ready {
+  background: #fff6d9;
+  border: 1px solid var(--ad);
+}
+.chest__icon {
+  font-size: 22px;
+}
+.chest__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+.result__today {
+  text-align: left;
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.missions--compact .mission {
+  min-height: 0;
+}
+.missions--compact .mission__name {
+  font-size: 13px;
+}

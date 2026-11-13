@@ -94,14 +94,31 @@ const fpsOf = (pg) => pg.evaluate(() => new Promise((res) => { let n = 0; const 
 const ctx = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: false });
 // 출시판 기본값(실제 브랜드 제품 소개 없음)부터 확인한 뒤, 나머지 검사는 그 기능을 켜고 돌린다
 {
-  const p0 = await ctx.newPage();
+  const ctx0 = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: false });
+  const p0 = await ctx0.newPage();
   await p0.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
   await p0.waitForSelector('[data-testid="play"]');
   const real = await p0.evaluate(() => window.__sparkle.sponsors().filter((x) => x.affiliate).length);
   assert(real === 0, 'launch default: no real brand products are listed (VITE_REAL_PRODUCTS off)');
   assert((await p0.evaluate(() => window.__sparkle.sponsors().length)) === 0, 'launch default: no sample advertisers either, so the show host has nothing to present');
   assert((await p0.evaluate(() => window.__sparkle.items().filter((id) => id.startsWith('sp:')).length)) === 0, 'launch default: no sponsored items in the game');
-  await p0.close();
+  // 잔존 장치: 출석 달력 + 오늘의 미션 + 보너스 상자 (보상은 홈에서 직접 받는다)
+  await p0.waitForSelector('[data-testid="today"]');
+  assert((await p0.locator('[data-testid="attend"] .attend__day').count()) === 7 && (await p0.locator('[data-testid="attend"] .attend__day.is-today').count()) === 1, 'home shows the 7-day check-in calendar with today marked');
+  assert((await p0.locator('[data-testid="missions"] .mission').count()) === 3, "home lists today's 3 missions");
+  assert(await p0.locator('[data-testid="chest-open"]').isDisabled(), 'bonus chest is locked until all missions are claimed');
+  assert((await p0.locator('[data-testid="next-area-goal"]').count()) === 1, 'home shows how many stages are left to unlock the next area');
+  const c0 = await p0.evaluate(() => window.__sparkle.coins());
+  for (let i = 0; i < 3; i++) await p0.evaluate(() => window.__sparkle.missionClear(3, true, true));
+  assert((await p0.locator('[data-mission]').count()) === 3, 'three clears complete all three missions (claim buttons appear)');
+  assert((await p0.evaluate(() => window.__sparkle.coins())) === c0, 'mission rewards are not paid until claimed');
+  for (let i = 0; i < 3; i++) await p0.locator('[data-mission]').first().click();
+  assert((await p0.evaluate(() => window.__sparkle.coins())) === c0 + 120, 'claiming three missions pays 3 x 40 coins');
+  await p0.click('[data-testid="chest-open"]');
+  assert((await p0.evaluate(() => window.__sparkle.coins())) === c0 + 220 && (await p0.evaluate(() => window.__sparkle.missions().chest)), 'bonus chest pays 100 coins once all are claimed');
+  assert((await p0.locator('[data-testid="chest-open"]').count()) === 0, 'opened chest cannot be opened again');
+  await p0.screenshot({ path: resolve(shots, '00-today.png'), fullPage: true });
+  await ctx0.close();
 }
 await ctx.addInitScript(() => { try { localStorage.setItem('sc_real_products', '1'); localStorage.setItem('sc_sample_sponsors', '1'); } catch {} });
 const page = await ctx.newPage();
@@ -175,6 +192,7 @@ try {
   await page.screenshot({ path: resolve(shots, '03-stage1-cleaning.png') });
   assert(await cleanUntilDone(page), 'stage 1 completes by dragging');
   await page.waitForSelector('[data-testid="result"]', { timeout: 8000 });
+  assert((await page.locator('[data-testid="result-missions"] .mission').count()) === 3 && (await page.evaluate(() => window.__sparkle.missions().prog.clear)) === 1, "result shows today's missions and the first clear counts 1/3");
   await page.waitForTimeout(500);
   assert((await page.evaluate(() => window.__sparkle.audio())).scrub === null, 'scrub sound stops when the stage ends');
   const stars = await page.locator('.result__stars .on').count();

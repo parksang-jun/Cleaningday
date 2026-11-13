@@ -2,6 +2,7 @@
 import { Preferences } from '@capacitor/preferences';
 import { Capacitor } from '@capacitor/core';
 import type { SponsorProduct } from './game/sponsor';
+import type { MissionState } from './retention';
 
 export interface Settings {
   sound: boolean;
@@ -18,6 +19,9 @@ export interface Settings {
   tourDone?: boolean;
   /** 테스트용: 조작 안내 끔 (UI 에 없음) */
   tourOff?: boolean;
+  /** 복귀 알림(앱 전용): 켬/끔, 권한을 이미 물어봤나 */
+  notify?: boolean;
+  notifyAsked?: boolean;
 }
 
 /** 쇼호스트 전역 설정 (운영자 모드에서 편집) */
@@ -66,6 +70,10 @@ export interface AdState {
 export interface Stats {
   gamesPlayed: number; // 플레이한 스테이지 수 (광고 정책용)
   totalCleanedCells: number;
+  /** 잔존 측정: 처음 실행한 날·마지막 접속일(YYYY-MM-DD)·접속한 날 수 */
+  firstDay?: string;
+  lastDay?: string;
+  daysPlayed?: number;
 }
 
 export interface Progress {
@@ -83,7 +91,7 @@ export interface Store {
   /** 부스터 보유 개수 (economy.ts) */
   boosters: { time: number; bomb: number; scan: number; shield: number };
   /** 일일 카운터: 광고 코인·광고 부스터 횟수, 접속 보너스 */
-  daily: { day: string; adCoins: number; adBoosters: number; bonusDay: string; streak: number };
+  daily: { day: string; adCoins: number; adBoosters: number; bonusDay: string; streak: number; missions?: MissionState | null };
   owned: string[]; // 보유 아이템 id
   journal: string[]; // 발견한 조합 키 "dirt|tool|cleaner" (recipeKey)
   ops: Ops;
