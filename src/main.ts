@@ -470,8 +470,13 @@ function presentHost(entry: ItemEntry, placement: Placement, dirt?: DirtType, ct
   persist();
   game?.hostShown.add(p.id);
   if (game && (placement === 'intro' || placement === 'struggle' || placement === 'result')) game.hostAuto = true;
-  void hostMedia(p).then((media) => presentHostWith(entry, placement, dirt, ctx, media));
+  hostPending++;
+  void hostMedia(p)
+    .then((media) => presentHostWith(entry, placement, dirt, ctx, media))
+    .finally(() => hostPending--);
 }
+/** 쇼호스트 카드를 띄우려고 미디어를 불러오는 중인 건수 (테스트가 "곧 뜰 카드"를 기다릴 수 있게) */
+let hostPending = 0;
 
 function presentHostWith(entry: ItemEntry, placement: Placement, dirt: DirtType | undefined, ctx: { context: PitchContext; usedItem?: string } | undefined, media: HostMedia & { audio?: string }) {
   const p = entry.sponsor!;
@@ -2393,6 +2398,7 @@ declare global {
   interface Window {
     __sparkle?: {
       session: () => CleanSession | null;
+      hostPending: () => boolean;
       select: (id: string) => void;
       items: () => string[];
       timing: () => Timing | null;
@@ -2502,6 +2508,7 @@ function exposeDebug() {
     audio: () => audioDebug(),
     polish: () => game?.session.polish ?? 0,
     paused: () => game?.paused ?? false,
+    hostPending: () => hostPending > 0,
     openAdmin: () => {
       adminUnlocked = true;
       enterAdmin();

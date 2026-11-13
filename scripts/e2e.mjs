@@ -36,6 +36,8 @@ function assert(cond, msg) {
 
 /** 쇼호스트 카드가 떠 있으면 닫는다 */
 async function closeHostIfOpen(page) {
+  // 카드는 미디어를 불러온 뒤에 뜬다 — 불러오는 중이면 끝날 때까지 기다렸다가 확인한다 (느린 러너에서 카드가 뒤늦게 떠 문지르기를 가리는 일 방지)
+  await page.waitForFunction(() => !window.__sparkle?.hostPending?.(), null, { timeout: 5000 }).catch(() => {});
   if (await page.locator('[data-testid="host"]').count()) {
     await page.click('[data-testid="host-close"]');
     await page.waitForTimeout(350);
@@ -46,6 +48,8 @@ async function closeHostIfOpen(page) {
 // CI(1배 해상도, 60fps)에서는 한 점당 22ms 로 맞춘다 — 3배 해상도 로컬에서 자연스럽게 나오던 빠르기와 비슷해 같은 기준으로 검사된다
 const PACE_MS = Number(process.env.E2E_PACE_MS ?? (process.env.CI ? 22 : 0));
 async function sweep(page, passes = 1, rows = 14, stepMs = 8) {
+  // 도구를 막 바꾼 직후에는 화면 배치(안내 문구·캔버스 크기)가 한두 프레임 뒤에 자리 잡는다 — 그 뒤에 좌표를 잰다
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const box = await page.locator('[data-testid="canvas"]').boundingBox();
   for (let p = 0; p < passes; p++) {
     await page.mouse.move(box.x + 5, box.y + 5);
@@ -545,7 +549,17 @@ try {
   await page.waitForSelector('[data-testid="item-moldremover"]');
   await page.waitForSelector('[data-testid="item-descaler"]');
   await page.click('[data-testid="item-moldremover"]');
-  await sweep(page, 1, 4, 4);
+  for (let i = 0; i < 3; i++) {
+    await sweep(page, 1, 4, 4);
+    if ((await page.evaluate(() => window.__sparkle.used())).includes('moldremover')) break;
+    // 첫 분사가 반영되지 않았으면 이유를 남기고 다시 (CI 전용 실패 추적)
+    console.log('info - mold remover sweep did not register:', JSON.stringify(await page.evaluate(() => {
+      const c = document.querySelector('[data-testid="canvas"]').getBoundingClientRect();
+      const el = document.elementFromPoint(c.x + 5, c.y + 5);
+      return { paused: window.__sparkle.paused(), selected: window.__sparkle.selected(), at: el ? `${el.tagName}.${el.className}[${el.getAttribute('data-testid') ?? ''}]` : null, canvas: [c.x, c.y, c.width, c.height].map(Math.round) };
+    })));
+    await page.waitForTimeout(300);
+  }
   await page.click('[data-testid="item-descaler"]');
   await sweep(page, 1, 4, 4);
   await page.waitForTimeout(200);
