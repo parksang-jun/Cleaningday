@@ -1,6 +1,6 @@
 #!/bin/bash
 # 싹싹 클린 운영센터 — 바탕화면 앱 만들기
-#   터미널에서:  bash install-app.sh
+#   처음 한 번만 터미널에서:  bash install-app.sh  (이후에는 앱이 스스로 업데이트한다)
 # 결과: 바탕화면(과 응용 프로그램 폴더)에 "싹싹클린 운영센터" 앱. 더블클릭하면 관리 화면이 창으로 열린다.
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
@@ -15,38 +15,40 @@ fi
 
 echo "1/3 운영센터 파일 복사 → $DEST"
 mkdir -p "$DEST" "$HOME_DIR/logs"
-cp "$SRC/server.mjs" "$SRC/diagnose.mjs" "$SRC/index.html" "$SRC/icon.png" "$DEST/"
+for f in server.mjs diagnose.mjs index.html icon.png launch.sh install-app.sh; do
+  [ "$SRC/$f" -ef "$DEST/$f" ] || cp "$SRC/$f" "$DEST/$f"
+done
 # 실행 스크립트도 최신으로 (저장소 안에서 실행된 경우)
-if [ -f "$SRC/../run-routine.sh" ]; then cp "$SRC/../run-routine.sh" "$HOME_DIR/run-routine.sh"; chmod +x "$HOME_DIR/run-routine.sh"; fi
+if [ -f "$SRC/../run-routine.sh" ] && ! [ "$SRC/../run-routine.sh" -ef "$HOME_DIR/run-routine.sh" ]; then cp "$SRC/../run-routine.sh" "$HOME_DIR/run-routine.sh"; chmod +x "$HOME_DIR/run-routine.sh"; fi
 mkdir -p "$HOME_DIR/feedback"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
 echo "2/3 앱 만들기"
+chmod +x "$DEST/launch.sh"
 build_app() {
   local APP="$1"
   rm -rf "$APP"
+  if command -v osacompile >/dev/null 2>&1; then
+    # 진짜 맥 앱(애플스크립트 앱)으로 만든다 — 더블클릭하면 터미널 창 없이 실행기를 돌린다
+    local AS; AS="$(mktemp -t sparkle).applescript"
+    cat > "$AS" <<'AS'
+set launcher to (POSIX path of (path to home folder)) & "SparkleCleanOps/console/launch.sh"
+do shell script "/bin/bash " & quoted form of launcher & " >/dev/null 2>&1 &"
+AS
+    osacompile -o "$APP" "$AS" >/dev/null 2>&1; rm -f "$AS"
+    if [ -d "$APP" ]; then
+      [ -f "$ICNS" ] && cp "$ICNS" "$APP/Contents/Resources/applet.icns"
+      /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+      /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.sparkleclean.console" "$APP/Contents/Info.plist" >/dev/null 2>&1 || /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.sparkleclean.console" "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+      /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+      xattr -cr "$APP" 2>/dev/null || true
+      codesign --force --deep -s - "$APP" >/dev/null 2>&1 || true   # 아이콘을 바꿨으니 다시 서명(이 맥 전용)
+      touch "$APP"; return 0
+    fi
+  fi
+  # osacompile 을 못 쓰는 경우의 대체: 실행기를 부르는 단순 앱 묶음
   mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-  cat > "$APP/Contents/MacOS/launcher" <<'SH'
-#!/bin/bash
-# 서버가 안 떠 있으면 띄우고, 관리 화면을 앱 창으로 연다
-HOME_DIR="$HOME/SparkleCleanOps"
-[ -f "$HOME_DIR/env.sh" ] && . "$HOME_DIR/env.sh"
-export PATH="$PATH:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"
-URL="http://127.0.0.1:4777"
-if ! curl -s -m 1 "$URL/api/ping" >/dev/null 2>&1; then
-  mkdir -p "$HOME_DIR/logs"
-  nohup node "$HOME_DIR/console/server.mjs" >> "$HOME_DIR/logs/console.log" 2>&1 &
-  disown
-  for _ in $(seq 1 40); do curl -s -m 1 "$URL/api/ping" >/dev/null 2>&1 && break; sleep 0.25; done
-fi
-if [ -d "/Applications/Google Chrome.app" ]; then
-  open -na "Google Chrome" --args --app="$URL" --window-size=1320,860
-elif [ -d "/Applications/Microsoft Edge.app" ]; then
-  open -na "Microsoft Edge" --args --app="$URL" --window-size=1320,860
-else
-  open "$URL"
-fi
-SH
+  printf '#!/bin/bash\nexec /bin/bash "$HOME/SparkleCleanOps/console/launch.sh"\n' > "$APP/Contents/MacOS/launcher"
   chmod +x "$APP/Contents/MacOS/launcher"
   cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -84,6 +86,8 @@ mkdir -p "$HOME/Applications"
 build_app "$HOME/Applications/$APP_NAME.app"
 rm -f "$HOME/Desktop/싹싹클린운영.command" 2>/dev/null || true   # 예전 임시 실행 파일 정리
 
+if [ -n "${SC_FROM_CONSOLE:-}" ]; then echo "✓ 앱을 다시 만들었습니다"; exit 0; fi   # 운영센터가 스스로 업데이트하는 중이면 여기까지
+
 echo "3/3 실행"
 # 이미 떠 있던 예전 서버가 있으면 내리고 새로 띄운다
 curl -s -m 1 -X POST -H 'X-SC: 1' http://127.0.0.1:4777/api/quit >/dev/null 2>&1 || true
@@ -91,3 +95,4 @@ sleep 0.5
 open "$HOME/Desktop/$APP_NAME.app"
 echo
 echo "✅ 완료 — 바탕화면의 '$APP_NAME' 을 더블클릭하면 열립니다. (Dock 에 끌어다 두면 더 편해요)"
+echo "   앞으로 업데이트는 앱이 스스로 합니다. 터미널을 다시 쓸 일은 없습니다."

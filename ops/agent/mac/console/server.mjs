@@ -19,6 +19,8 @@ const PORT = Number(process.env.SC_PORT || 4777);
 const REPO_URL = 'https://github.com/parksang-jun/Cleaningday';
 const GAME_URL = 'https://claude.ai/artifact/BdmTkpBwacf1cv3dHKCbDE';
 const IDLE_MS = 45 * 60 * 1000;
+const STARTED = Date.now();
+const uiVersion = () => { try { return `${STARTED}:${fs.statSync(path.join(HERE, 'index.html')).mtimeMs}`; } catch { return String(STARTED); } };
 
 // launchd 로 열린 앱은 PATH 가 비어 있다 — 설치기가 적어 둔 env.sh 와 흔한 경로를 더한다
 (() => {
@@ -113,7 +115,7 @@ async function status() {
     }
     routines[k] = { ...r, scheduled: exists(path.join(LAUNCH, `${label}.plist`)) && ll.includes(label), plist: exists(path.join(LAUNCH, `${label}.plist`)), next: nextRun(r.cal), last, running, runs: logs.length };
   }
-  return { now: new Date().toISOString(), host: os.hostname(), tools: { git: gitBin, node: nodeBin, claude: claudeBin, gh: ghBin }, repo, runner: exists(runner) ? runner : null, homeDir: HOME_DIR, routines, links: { repo: REPO_URL, game: GAME_URL }, sync: syncState, github: gh, update: { restartNeeded } };
+  return { now: new Date().toISOString(), host: os.hostname(), tools: { git: gitBin, node: nodeBin, claude: claudeBin, gh: ghBin }, repo, runner: exists(runner) ? runner : null, homeDir: HOME_DIR, routines, links: { repo: REPO_URL, game: GAME_URL }, sync: syncState, github: gh, update: { restartNeeded }, ui: uiVersion() };
 }
 
 // ---- 상태 파일: main 과 에이전트 브랜치(agent/*) 중 가장 최근 것을 읽는다 (에이전트는 브랜치에 커밋하고 PR 을 연다)
@@ -376,11 +378,16 @@ function selfUpdate() {
   try { if (!/refs\/heads\/main\s*$/.test(fs.readFileSync(path.join(REPO, '.git', 'HEAD'), 'utf8'))) return; } catch { return; } // main 일 때만
   const same = (a, b) => { try { return fs.readFileSync(a).equals(fs.readFileSync(b)); } catch { return false; } };
   try {
-    for (const f of ['index.html', 'diagnose.mjs', 'icon.png', 'server.mjs']) {
+    let rebuild = false;
+    for (const f of ['index.html', 'diagnose.mjs', 'icon.png', 'launch.sh', 'install-app.sh', 'server.mjs']) {
       const from = path.join(src, 'console', f); if (!exists(from) || same(from, path.join(installed, f))) continue;
-      fs.copyFileSync(from, path.join(installed, f));
+      const tmp = path.join(installed, `.${f}.new`); fs.copyFileSync(from, tmp); fs.renameSync(tmp, path.join(installed, f)); // 한 번에 교체
       if (f === 'server.mjs' || f === 'diagnose.mjs') restartNeeded = true;
+      if (f === 'install-app.sh') rebuild = true;
+      if (f === 'launch.sh') fs.chmodSync(path.join(installed, f), 0o755);
     }
+    // 바탕화면 앱 자체가 바뀌었으면 다시 만든다 (터미널 없이)
+    if (rebuild) run('/bin/bash', [path.join(installed, 'install-app.sh')], { timeout: 120000, env: { ...process.env, SC_FROM_CONSOLE: '1' } }).then((r) => { try { fs.appendFileSync(path.join(LOGS, 'console.log'), `${new Date().toISOString()} 앱 다시 만들기: ${r.ok ? '완료' : r.err.slice(0, 200)}\n`); } catch {} });
     const runner = path.join(src, 'run-routine.sh');
     if (exists(runner) && !same(runner, path.join(HOME_DIR, 'run-routine.sh'))) { fs.copyFileSync(runner, path.join(HOME_DIR, 'run-routine.sh')); fs.chmodSync(path.join(HOME_DIR, 'run-routine.sh'), 0o755); }
   } catch {}
