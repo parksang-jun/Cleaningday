@@ -866,6 +866,7 @@ try {
       await p3.click('[data-testid="tour-next"]');
     }
     assert(tourTexts.length === 9 && new Set(tourTexts).size === 9 && tourTexts[1].startsWith('Tools') && tourTexts[4].startsWith('Boosters'), 'first stage walks through what each control does (9 steps)');
+    assert(/needs none/.test(tourTexts[2]) && !/tap one/.test(tourTexts[2]), 'stage 1 has no cleaners, so the walkthrough says none are needed instead of telling you to tap one');
     assert(await p3.waitForFunction(() => JSON.parse(localStorage.getItem('sparkle-clean-v1') || '{}').settings?.tourDone === true, null, { timeout: 5000 }).then(() => true, () => false), 'finishing the walkthrough is remembered');
     // 1판은 다시 해도 안내가 나온다
     await p3.click('[data-testid="back"]');
