@@ -1,1 +1,4 @@
 month,source,type,amount,currency,due_date,received,evidence,notes
+2026-10,ALL,revenue,0,KRW,,해당 없음,"Gmail 검색(2026-10-01~11-13): AdMob·Google 결제·쿠팡 파트너스·Amazon Associates·CrazyGames·Poki·스폰서 수익 메일 0건","출시 전·제휴/광고 계정 미개설. 계약상 받을 금액 없음 → 대사 불일치 없음"
+2026-10,ALL,cost,0,KRW,,해당 없음,"Gmail 검색: 10월 사업 비용 영수증 0건",""
+2026-11,Google Play,cost(개발자 등록비 1회),25.00,USD,2026-11-12,결제 완료,"Gmail: Google Payments 구매 영수증 2026-11-12 (Developer Registration Fee, 세금 0)","11월분. 11월 정산(2026-12-03)에 확정 집계. 카드·주문번호는 적지 않음"
