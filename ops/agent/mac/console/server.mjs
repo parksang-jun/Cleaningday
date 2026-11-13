@@ -290,7 +290,14 @@ async function installAgent() {
 // ---- GitHub 연동: 5분마다 받아 오고(fetch) main 을 최신으로 맞춘다. PR·자동 검사 상태는 GitHub API 에서 읽는다
 const SYNC_MS = 5 * 60 * 1000;
 let syncState = { at: null, ok: null, msg: '아직 동기화 전', pushOk: null, pushAt: 0, busy: false };
-let gh = { at: null, ok: null, prs: [], ci: null, issues: 0, msg: '' };
+let gh = { at: null, ok: null, prs: [], ci: null, issues: 0, msg: '', commands: [], authed: false, private: false };
+const replyCache = new Map();
+let ghAuthCache = { at: 0, ok: false };
+async function ghAuthed() {
+  if (Date.now() - ghAuthCache.at < 60000) return ghAuthCache.ok;
+  const ok = Boolean(await which('gh')) && (await run('gh', ['auth', 'status', '-h', 'github.com'], { timeout: 10000 })).ok;
+  ghAuthCache = { at: Date.now(), ok }; return ok;
+}
 let restartNeeded = false;
 const anyRunning = () => children.size > 0 || Object.keys(ROUTINES).some((k) => exists(path.join(HOME_DIR, `.lock-${k}`)));
 
@@ -333,15 +340,31 @@ async function syncRepo(manual = false) {
 }
 async function syncGithub() {
   const api = 'https://api.github.com/repos/parksang-jun/Cleaningday';
-  const get = async (u) => { const r = await fetch(api + u, { headers: { 'User-Agent': 'sparkle-clean-console', Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error(`GitHub API ${r.status}`); return r.json(); };
+  const authed = await ghAuthed();
+  const get = async (u) => {
+    if (authed) { const r = await run('gh', ['api', `repos/parksang-jun/Cleaningday${u}`], { timeout: 20000 }); if (!r.ok) throw new Error(`gh api: ${r.err.slice(0, 80)}`); return JSON.parse(r.out); }
+    const r = await fetch(api + u, { headers: { 'User-Agent': 'sparkle-clean-console', Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error(`GitHub API ${r.status}`); return r.json();
+  };
   try {
-    const [prs, runs, repo] = await Promise.all([get('/pulls?state=open&per_page=30'), get('/actions/runs?branch=main&per_page=1'), get('')]);
+    const [prs, runs, repo, cmds] = await Promise.all([get('/pulls?state=open&per_page=30'), get('/actions/runs?branch=main&per_page=1'), get(''), get('/issues?labels=command&state=all&per_page=15&sort=created&direction=desc')]);
+    // 명령(이슈)마다 에이전트의 마지막 답글 — 바뀐 것만 다시 읽는다
+    const commands = [];
+    for (const c of cmds.filter((x) => !x.pull_request)) {
+      const key = `${c.number}:${c.updated_at}`; let reply = replyCache.get(key);
+      if (reply === undefined) {
+        reply = null;
+        if (c.comments > 0) { try { const cs = await get(`/issues/${c.number}/comments?per_page=100`); const last = cs[cs.length - 1]; reply = last ? { body: String(last.body || '').slice(0, 4000), at: last.created_at } : null; } catch {} }
+        replyCache.set(key, reply);
+      }
+      commands.push({ number: c.number, text: String(c.body || c.title || '').slice(0, 2000), state: c.state, at: c.created_at, updated: c.updated_at, url: c.html_url, by: c.user?.login, reply });
+    }
     const r0 = runs.workflow_runs?.[0];
     gh = {
       at: new Date().toISOString(), ok: true, msg: '',
       prs: prs.map((p) => ({ number: p.number, title: p.title, url: p.html_url, branch: p.head?.ref, at: p.created_at, draft: p.draft, body: String(p.body || '').slice(0, 1500), files: p.changed_files })),
       ci: r0 ? { status: r0.status, conclusion: r0.conclusion, url: r0.html_url, sha: (r0.head_sha || '').slice(0, 7), title: r0.display_title, at: r0.updated_at } : null,
-      issues: Math.max(0, (repo.open_issues_count || 0) - prs.length),
+      issues: Math.max(0, (repo.open_issues_count || 0) - prs.length - commands.filter((c) => c.state === 'open').length),
+      commands, authed, private: Boolean(repo.private),
     };
   } catch (e) { gh = { ...gh, at: new Date().toISOString(), ok: false, msg: /403|429/.test(String(e.message)) ? 'GitHub 조회 한도 — 잠시 뒤 자동으로 다시 읽습니다' : 'GitHub 상태를 읽지 못했습니다(인터넷 확인)' }; }
   return gh;
@@ -373,6 +396,45 @@ async function pull() {
 }
 setTimeout(() => { syncRepo(); syncGithub(); }, 500);
 setInterval(() => { syncRepo(); syncGithub(); }, SYNC_MS).unref();
+
+// ---- 명령: 사장님이 적은 지시를 (1) 클라우드 에이전트에게 보내거나(GitHub 이슈 → 어느 기기에서나 확인) (2) 이 맥에서 바로 실행한다
+const CMD_DIR = path.join(HOME_DIR, 'commands');
+async function sendCommand(text, where) {
+  text = String(text || '').replace(/\r/g, '').trim();
+  if (!text) return { ok: false, msg: '명령을 적어 주세요' };
+  if (text.length > 3000) return { ok: false, msg: '너무 깁니다 (3,000자 이내)' };
+  if (where === 'local') {
+    if (children.has('X') || exists(path.join(HOME_DIR, '.lock-X'))) return { ok: false, msg: '앞선 명령을 아직 처리 중입니다 — 끝난 뒤 다시 보내 주세요' };
+    const runner = exists(path.join(HOME_DIR, 'run-routine.sh')) ? path.join(HOME_DIR, 'run-routine.sh') : path.join(AGENT, 'mac', 'run-routine.sh');
+    if (!exists(runner)) return { ok: false, msg: '실행 스크립트가 없습니다 — 설정에서 "다시 설치·복구"를 먼저 하세요' };
+    fs.mkdirSync(CMD_DIR, { recursive: true }); fs.mkdirSync(LOGS, { recursive: true });
+    const f = path.join(CMD_DIR, `cmd-${Date.now()}.txt`); fs.writeFileSync(f, text);
+    const child = spawn('/bin/bash', [runner, 'X', f], { detached: true, stdio: 'ignore', env: process.env });
+    children.set('X', child); child.on('exit', () => children.delete('X')); child.unref();
+    return { ok: true, msg: '이 맥에서 바로 실행을 시작했습니다 — 아래 목록에서 진행과 결과를 볼 수 있습니다' };
+  }
+  const title = `[명령] ${text.split('\n')[0].slice(0, 60)}`;
+  if (await ghAuthed()) {
+    const r = await run('gh', ['issue', 'create', '-R', 'parksang-jun/Cleaningday', '--title', title, '--body', text, '--label', 'command'], { timeout: 30000 });
+    if (r.ok) { setTimeout(syncGithub, 1500); return { ok: true, msg: '클라우드 에이전트에게 보냈습니다 — 매시 정각 무렵 확인해 처리하고 여기에 답을 답니다' }; }
+    return { ok: false, msg: `보내지 못했습니다: ${r.err.trim().slice(0, 160)}` };
+  }
+  // GitHub 로그인이 없으면 브라우저에 내용이 채워진 등록 화면을 연다 (초록 버튼만 누르면 됨)
+  const u = `${REPO_URL}/issues/new?labels=command&title=${encodeURIComponent(title)}&body=${encodeURIComponent(text)}`;
+  spawn('open', [u], { detached: true, stdio: 'ignore' }).on('error', () => {}).unref();
+  return { ok: true, msg: '브라우저에 등록 화면을 열었습니다 — 맨 아래 초록색 버튼(Create / Submit new issue)을 누르면 전송됩니다.\n(설정에서 "GitHub 로그인"을 해 두면 다음부터 이 단계 없이 바로 보내집니다)' };
+}
+function localCommands() {
+  let files = []; try { files = fs.readdirSync(LOGS).filter((f) => /^routine-X-.*\.log$/.test(f)).sort().reverse().slice(0, 10); } catch {}
+  return files.map((f) => {
+    let txt = ''; try { txt = fs.readFileSync(path.join(LOGS, f), 'utf8'); } catch {}
+    const d = diagOf(f); const m = txt.match(/^=== 명령 ===\n([\s\S]*?)\n=== 명령 끝 ===\n?/);
+    const body = txt.replace(/^=== 명령 ===\n[\s\S]*?\n=== 명령 끝 ===\n?/, '').replace(/\n=== 종료 코드[\s\S]*$/, '').split('\n').filter((l) => !/^\((자동 조치|경고)\)|^Ignoring --allowedTools|index\.lock|Another git process/.test(l)).join('\n').trim();
+    const ended = /=== 종료 코드 \d+ ===/.test(txt);
+    const running = !ended && (children.has('X') || exists(path.join(HOME_DIR, '.lock-X'))) && f === files[0];
+    return { file: f, text: m ? m[1] : '', at: fs.statSync(path.join(LOGS, f)).birthtime.toISOString(), state: running ? 'running' : ended ? d.state : 'fail', reply: running ? '' : body.slice(-4000), problem: d.state === 'fail' ? d.primary : null };
+  });
+}
 
 // 터미널에서 해야 하는 로그인(브라우저 인증)을 버튼 하나로 열어 준다
 function openTerminalScript(name, body) {
@@ -434,6 +496,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/ping') return send(res, 200, { ok: true });
       if (url.pathname === '/api/status') return send(res, 200, await status());
       if (url.pathname === '/api/state') return send(res, 200, await stateData());
+      if (url.pathname === '/api/commands') return send(res, 200, { ok: true, cloud: gh.commands || [], local: localCommands(), authed: gh.authed, private: gh.private, synced: gh.at });
       if (url.pathname === '/api/report') {
         const rel = url.searchParams.get('path'); const ref = url.searchParams.get('ref') || 'main';
         if (!safeRel(rel) || !/^[\w\-./]+$/.test(ref)) return send(res, 400, { ok: false });
@@ -465,6 +528,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/pull') return send(res, 200, await pull());
       if (url.pathname === '/api/install') return send(res, 200, await installAgent());
       if (url.pathname === '/api/open') return send(res, 200, openTarget(body.target, body.arg));
+      if (url.pathname === '/api/command') return send(res, 200, await sendCommand(body.text, body.where === 'local' ? 'local' : 'cloud'));
       if (url.pathname === '/api/decide') return send(res, 200, decide(body));
       if (url.pathname === '/api/undecide') return send(res, 200, undecide(String(body.id || '')));
       if (url.pathname === '/api/pr') return send(res, 200, await prAction(body.number, body.action === 'merge' ? 'merge' : 'close', body.memo));

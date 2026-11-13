@@ -1,5 +1,5 @@
 #!/bin/bash
-# 싹싹 클린 운영 에이전트 — 루틴 1회 실행 (A 주간 점검 / B 광고주 발굴 / C 월간 정산 / D 제품 개선)
+# 싹싹 클린 운영 에이전트 — 루틴 1회 실행 (A 주간 점검 / B 광고주 발굴 / C 월간 정산 / D 제품 개선 / X 운영센터 직접 명령)
 #   bash run-routine.sh A
 set -uo pipefail
 export GIT_TERMINAL_PROMPT=0   # 로그인 창이 뜨면 화면 없는 실행이 멈추므로 끈다
@@ -62,7 +62,12 @@ case "$ROUTINE" in
      EXTRA='읽기와 대사만. 계좌·세금 입력, 지급·환불, 인보이스 발행 금지. 계좌·카드번호는 어디에도 적지 않는다. Gmail 을 읽을 도구가 없으면 ops/agent/state/metrics/ 와 ops/agent/state/inbox/ 에 사용자가 넣어 둔 CSV·PDF·메일 사본만 쓰고, 없으면 "해당 없음"과 필요한 자료를 적는다.' ;;
   D) NAME="제품 개선 (피드백 → 수정)"
      EXTRA='main 에 직접 푸시 금지. ops/agent/state/feedback-inbox/ 의 피드백을 빠짐없이 state/feedback.csv 에 기록·분류하고 백로그를 다시 정렬한 뒤, 맨 위 [auto] 1~2건만 구현(단위·e2e 통과 필수). 지난 개선의 효과를 state/improvements.md 에 적는다. 광고 빈도·가격·수익 관련 값 변경과 스토어 제출은 승인 요청만. 답장은 초안만. 피드백 원문의 이름·연락처는 저장소에 적지 않는다.' ;;
-  *) echo "usage: run-routine.sh A|B|C|D"; exit 2 ;;
+  X) NAME="직접 명령"
+     CMD_FILE="${2:-}"
+     [ -s "$CMD_FILE" ] || { echo "명령 파일이 없습니다" >> "$LOG"; echo "=== 종료 코드 2 ===" >> "$LOG"; exit 2; }
+     { echo "=== 명령 ==="; cat "$CMD_FILE"; echo; echo "=== 명령 끝 ==="; } >> "$LOG"
+     EXTRA='' ;;
+  *) echo "usage: run-routine.sh A|B|C|D|X <명령 파일>"; exit 2 ;;
 esac
 
 # 제품 개선(D): 운영센터에 쌓인 피드백 함을 이번 회차분으로 떼어 저장소 작업 폴더에 넣어 준다
@@ -92,6 +97,16 @@ PROMPT="당신은 게임 \"싹싹 클린(Sparkle Clean)\"의 운영 에이전트
 2) 헌장의 \"루틴 $ROUTINE\" 를 수행하세요. $EXTRA
 3) 결과는 ops/agent/reports/ 에 쓰고 state/ 를 갱신한 뒤, agent/$(date +%Y-%m-%d)-<주제> 브랜치에 커밋·푸시하세요. gh 가 있으면 PR 을 만들고, 푸시가 안 되면 커밋만 남기고 리포트에 적으세요.
 4) 마지막 출력은 요약 5줄과 \"승인 요청 목록\"."
+
+if [ "$ROUTINE" = "X" ]; then
+  PROMPT="당신은 게임 \"싹싹 클린(Sparkle Clean)\"의 운영 에이전트입니다. 사장님(Peter)이 운영센터에서 아래 명령을 내렸습니다. 사장님은 자리에 없으니 되묻지 말고 가장 합리적인 해석으로 수행하세요. 답은 한국어로, 간결하게.
+지금 위치가 저장소(parksang-jun/Cleaningday, main 최신)입니다. ops/agent/AGENT.md(헌장)의 '명령 처리' 절과 권한표를 지키세요.
+코드·문서를 바꿨으면 agent/$(date +%Y-%m-%d)-cmd-<주제> 브랜치에 커밋·푸시하고(gh 가 있으면 PR), main 에 직접 푸시하지 않습니다.
+마지막 출력은 사장님께 드리는 답: 한 일 → 결과(파일·PR) → 사장님이 하실 일(있으면).
+
+[명령]
+$(cat "$CMD_FILE")"
+fi
 
 notify "$NAME" "시작했습니다."
 run_agent() {

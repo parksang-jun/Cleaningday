@@ -101,7 +101,7 @@ export function diagnose(text) {
   const parts = all.split(/^=== 재시도.*===$/m);
   const last = parts[parts.length - 1];
   const exit = (all.match(/=== 종료 코드 (\d+) ===\s*(?:\n=== 진단[\s\S]*)?$/) || [])[1];
-  const body = last.replace(/\n=== 진단 ===[\s\S]*$/, '');
+  const body = last.replace(/\n=== 진단 ===[\s\S]*$/, '').replace(/^=== 명령 ===\n[\s\S]*?\n=== 명령 끝 ===\n?/m, ''); // 사장님이 적은 명령 문장은 진단 대상이 아니다
   const lines = body.split('\n').filter((l) => !NOISE.test(l.trim()));
   const clean = lines.join('\n');
   const findings = [];

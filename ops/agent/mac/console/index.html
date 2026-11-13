@@ -94,6 +94,12 @@ textarea:focus, select:focus { outline: 2px solid var(--brand); outline-offset: 
 .ap.decided { opacity: .92; } .ap.decided > summary .ttl { font-weight: 600; }
 .pr-body { white-space: pre-wrap; word-break: break-word; font-size: 13px; background: var(--soft); border-radius: 8px; padding: 10px 12px; max-height: 220px; overflow: auto; }
 h2.grp { font-size: 14px; margin: 22px 0 10px; display: flex; gap: 8px; align-items: center; } h2.grp small { color: var(--muted); font-weight: 400; }
+.chipbtn { border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 99px; padding: 4px 11px; font-size: 12.5px; }
+.chipbtn:hover { border-color: var(--brand); }
+.cmd { border-top: 1px solid var(--line); padding: 14px 0; display: grid; gap: 8px; } .cmd:first-child { border-top: 0; padding-top: 0; }
+.cmd .q { display: flex; gap: 10px; align-items: flex-start; } .cmd .q .t { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; font-weight: 600; }
+.cmd .a { background: var(--soft); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; } .cmd .a .doc { font-size: 13.5px; max-width: none; } .cmd .a .doc > :first-child { margin-top: 0; } .cmd .a .doc > :last-child { margin-bottom: 0; }
+.cmd .m { color: var(--muted); font-size: 12px; }
 .strip { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--muted); margin: -4px 2px 14px; }
 .strip b { color: var(--fg); font-weight: 600; } .strip a, .linkish { color: var(--info); cursor: pointer; background: none; border: 0; padding: 0; font: inherit; text-decoration: underline; }
 .rt { display: flex; flex-direction: column; gap: 8px; }
@@ -146,6 +152,7 @@ pre.log { background: #0c1219; color: #cfe0f2; padding: 14px; border-radius: 10p
   <aside>
     <div class="brand"><img src="/icon.png" alt="" onerror="this.style.display='none'"><div><b>싹싹 클린</b><small>운영센터</small></div></div>
     <button class="nav on" data-page="home"><span class="ic">▦</span>대시보드</button>
+    <button class="nav" data-page="command"><span class="ic">➤</span>명령<span class="badge" id="b-command" hidden></span></button>
     <button class="nav" data-page="approve"><span class="ic">✓</span>결재함<span class="badge" id="b-approve" hidden></span></button>
     <button class="nav" data-page="improve"><span class="ic">↗</span>제품 개선<span class="badge" id="b-improve" hidden></span></button>
     <button class="nav" data-page="sponsors"><span class="ic">◎</span>광고주 영업</button>
@@ -161,6 +168,7 @@ pre.log { background: #0c1219; color: #cfe0f2; padding: 14px; border-radius: 10p
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let C = { cloud: [], local: [], synced: null };
 let S = null, D = null, page = 'home', sel = { report: null, log: null, ap: null };
 try { page = localStorage.getItem('sc-page') || 'home'; } catch {}
 
@@ -259,6 +267,28 @@ const PAGES = {
       <div class="card"><h2>최근 보고서<span class="sp"></span><button class="btn sm" data-page-go="reports">전체 보기</button></h2>
         ${(D?.reports || []).length ? `<ul class="list">${D.reports.slice(0, 6).map((r) => `<li class="pick" data-report="${esc(r.path)}" data-ref="${esc(r.ref)}"><div class="t">${esc(title(r.path))}<div class="m">${r.draft ? '메일 초안 · ' : ''}${ago(r.date)}${r.branch !== 'main' ? ' · 결재 대기' : ''}</div></div></li>`).join('')}</ul>` : '<div class="empty">아직 보고서가 없습니다.<br>위에서 루틴을 한 번 실행해 보세요.</div>'}</div>
     </div>`;
+  },
+  command() {
+    const g = S?.github || {}, running = C.local.some((c) => c.state === 'running');
+    const where = (w) => w === 'cloud' ? '<span class="pill info">클라우드</span>' : '<span class="pill">이 맥</span>';
+    const st = (s) => ({ open: '<span class="pill warn">대기 · 처리 중</span>', closed: '<span class="pill ok">완료</span>', running: '<span class="pill info"><span class="dot run"></span>실행 중</span>', ok: '<span class="pill ok">완료</span>', fail: '<span class="pill bad">실패</span>', unknown: '<span class="pill">확인 필요</span>' }[s] || '');
+    const all = [...C.cloud.map((c) => ({ ...c, where: 'cloud' })), ...C.local.map((c) => ({ ...c, where: 'local' }))].sort((a, b) => (a.at < b.at ? 1 : -1));
+    const quick = ['제품 개선 루틴을 지금 실행해줘', '광고주 발굴 루틴을 지금 실행해줘', '이번 주에 한 일과 다음 주 계획을 5줄로 보고해줘', '지금 열려 있는 변경안(PR)을 쉬운 말로 설명해줘', '결재함에 올라온 일 중 가장 급한 것 하나와 이유를 알려줘'];
+    return `<div class="top"><h1>명령</h1><span class="sub">에이전트에게 직접 지시합니다 — 평소 말하듯 적으면 됩니다</span></div>
+    <div class="card"><div class="form">
+      <textarea id="cmd-text" data-memo="cmd" style="min-height:110px" placeholder="예) 욕실 단계가 너무 어렵다는 의견이 많아. 3~5판 난이도를 조금 낮추고 변경안으로 올려줘"></textarea>
+      <div class="chips" style="margin:0">${quick.map((q) => `<button class="chipbtn" data-quick="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+      <div class="row" style="flex-wrap:wrap"><button class="btn pri" data-cmd="cloud">클라우드로 보내기</button><button class="btn" data-cmd="local" ${running ? 'disabled' : ''}>이 맥에서 지금 실행</button>
+        <span class="muted" style="font-size:12px">클라우드: 매시 정각 무렵 처리 · 휴대폰 등 어디서나 결과 확인 &nbsp;|&nbsp; 이 맥: 즉시 시작 · 맥이 켜져 있어야 함</span></div>
+      <div class="muted" style="font-size:12px">${g.private ? '' : '⚠ 저장소가 공개 상태라 클라우드로 보낸 명령과 답은 인터넷에서 누구나 볼 수 있습니다. 비밀번호·계좌·연락처·미공개 금액은 적지 마세요. '}${g.authed ? '' : '이 맥이 GitHub 에 로그인되어 있지 않아, 보내기를 누르면 브라우저에서 초록색 버튼을 한 번 더 눌러야 합니다. <button class="linkish" data-act="gh-login">GitHub 로그인</button>'}</div>
+    </div></div>
+    <div class="card" style="margin-top:14px"><h2>보낸 명령과 답 <small>${all.length}건${C.synced ? ` · ${ago(C.synced)} 확인` : ''}</small><span class="sp"></span><button class="btn sm" data-act="pull">지금 확인</button></h2>
+      ${all.length ? all.map((c) => `<div class="cmd"><div class="q">${where(c.where)}<div class="t">${esc(c.text)}</div>${st(c.state)}</div>
+        <div class="m">${fmtDate(c.at)}${c.where === 'cloud' ? ` · #${c.number} <button class="linkish" data-url="${esc(c.url)}">GitHub에서 보기</button>` : ` <button class="linkish" data-log="${esc(c.file)}">실행 기록</button>`}</div>
+        ${c.problem ? `<div class="diag fatal"><h3>${esc(c.problem.title)}</h3><dl><dt>무엇이 문제였나</dt><dd>${esc(c.problem.cause)}</dd><dt>해결 방법</dt><dd>${esc(c.problem.fix)}</dd></dl><div class="btnrow">${actionBtns(c.problem.action)}</div></div>` : ''}
+        ${c.where === 'cloud' ? (c.reply ? `<div class="a"><div class="m" style="margin-bottom:4px">에이전트 답 · ${ago(c.reply.at)}</div><div class="doc">${md(c.reply.body)}</div></div>` : c.state === 'open' ? '<div class="m">아직 답이 없습니다 — 다음 정각 무렵 처리됩니다 (08~23시)</div>' : '')
+          : c.reply ? `<div class="a"><div class="m" style="margin-bottom:4px">에이전트 답</div><div class="doc">${md(c.reply)}</div></div>` : c.state === 'running' ? '<div class="m">작업 중입니다 — 보통 수 분 걸립니다</div>' : ''}
+      </div>`).join('') : '<div class="empty">아직 보낸 명령이 없습니다</div>'}</div>`;
   },
   approve() {
     const m = inboxModel(), auto = approvals().filter((x) => x.kind === 'auto');
@@ -475,7 +505,7 @@ async function loadReport() {
 async function loadLogs() {
   const el = $('#loglist'); if (!el) return;
   const r = await api('/api/logs');
-  const name = (f) => { const m = f.match(/^routine-([ABCD])-(\d{4}-\d\d-\d\d)_(\d\d)(\d\d)/); return m ? `${S?.routines?.[m[1]]?.name || m[1]} · ${m[2].slice(5).replace('-', '/')} ${m[3]}:${m[4]}` : f; };
+  const name = (f) => { const m = f.match(/^routine-([ABCDX])-(\d{4}-\d\d-\d\d)_(\d\d)(\d\d)/); return m ? `${m[1] === 'X' ? '직접 명령' : S?.routines?.[m[1]]?.name || m[1]} · ${m[2].slice(5).replace('-', '/')} ${m[3]}:${m[4]}` : f; };
   if (!sel.log && r.list[0]) sel.log = r.list[0].file;
   el.innerHTML = r.list.length ? `<ul class="list">${r.list.map((x) => `<li class="pick ${sel.log === x.file ? 'on' : ''}" data-log="${esc(x.file)}"><div class="t">${esc(name(x.file))}<div class="m">${ago(x.at)} · ${Math.max(1, Math.round(x.size / 1024))}KB</div></div>${resultPill(x.result)}</li>`).join('')}</ul>` : '<div class="empty">아직 실행 기록이 없습니다</div>';
   if (sel.log) { const v = await api(`/api/log?file=${encodeURIComponent(sel.log)}`); const pre = $('#logview'); sel.logRoutine = (sel.log.match(/^routine-([ABCD])-/) || [])[1] || null; const dv = $('#diagview'); if (dv && v.ok) dv.innerHTML = diagCard(v.diag); if (pre && v.ok) { const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30; pre.textContent = (v.truncated ? '… (앞부분 생략)\n' : '') + (v.text || '(아직 출력 없음 — 에이전트가 작업을 끝내면 결과가 한 번에 기록됩니다)'); if (atEnd) pre.scrollTop = pre.scrollHeight; } }
@@ -492,6 +522,7 @@ function render() {
   if (page === 'runs') loadLogs();
   const n = inboxModel().count;
   const b = $('#b-approve'); b.hidden = !n; b.textContent = n;
+  const ci = C.cloud.filter((c) => c.state === 'open').length + C.local.filter((c) => c.state === 'running').length; const bc = $('#b-command'); bc.hidden = !ci; bc.textContent = ci;
   const fi = D?.inbox?.items?.length || 0; const bi = $('#b-improve'); bi.hidden = !fi; bi.textContent = fi;
   const o = overall(); $('#side-foot').innerHTML = `<span class="dot ${o.run ? 'run' : o.cls}"></span>${esc(o.cls === 'ok' ? (o.run ? '작업 중' : '정상') : o.cls === 'warn' ? '확인 필요' : o.cls === 'bad' ? (o.fix ? '설치 필요' : '조치 필요') : '연결 중')}<br><span style="opacity:.7">GitHub ${S?.sync?.at ? ago(S.sync.at) + ' 동기화' : '동기화 중'}</span>`;
 }
@@ -501,7 +532,8 @@ async function refresh(force) {
   try {
     S = await api('/api/status');
     if (force || Date.now() - lastState > 30000) { D = await api('/api/state'); lastState = Date.now(); }
-    const sig = JSON.stringify([S.routines, S.repo, S.tools, D?.reports?.length, D?.pending?.length, D?.source, D?.inbox, D?.feedback?.rows?.length, S.sync?.at, S.sync?.msg, S.sync?.pushOk, S.github?.at, S.update, D?.approvals]);
+    if (force || page === 'command' || !C.synced) { try { const c = await api('/api/commands'); if (c.ok) C = c; } catch {} }
+    const sig = JSON.stringify([S.routines, S.repo, S.tools, D?.reports?.length, D?.pending?.length, D?.source, D?.inbox, D?.feedback?.rows?.length, S.sync?.at, S.sync?.msg, S.sync?.pushOk, S.github?.at, S.update, D?.approvals, C.cloud.map((c) => [c.number, c.state, c.reply?.at]), C.local.map((c) => [c.file, c.state])]);
     if (document.activeElement && ['TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && !force) { lastSig = lastSig || sig; return; } // 입력 중에는 화면을 다시 그리지 않는다
     if (force || sig !== lastSig) { lastSig = sig; render(); }
     else if (page === 'runs' && Object.values(S.routines).some((r) => r.running)) loadLogs();
@@ -523,6 +555,12 @@ document.addEventListener('click', (e) => {
   if (d.act === 'fb-add') { const text = $('#fb-text').value, source = $('#fb-src').value; if (!text.trim()) return toast('내용을 적어 주세요'); return act('/api/feedback', { source, text }, t); }
   if (d.fbDel) return act('/api/feedback/remove', { index: Number(d.fbDel) }, t);
   if (d.url) return act('/api/open', { target: 'url', arg: d.url }, t);
+  if (d.quick) { const ta = $('#cmd-text'); ta.value = d.quick; memos.cmd = d.quick; ta.focus(); return; }
+  if (d.cmd) {
+    const text = $('#cmd-text').value;
+    if (!text.trim()) return toast('명령을 적어 주세요');
+    return act('/api/command', { text, where: d.cmd }, t).then((r) => { if (r?.ok) { delete memos.cmd; const ta = $('#cmd-text'); if (ta) ta.value = ''; } });
+  }
   if (d.ext) return act('/api/open', { target: 'ext', arg: d.ext }, t);
   if (d.apGo) { apTouched = true; openAp.clear(); openAp.add(d.apGo); page = 'approve'; render(); document.querySelector(`[data-ap="${CSS.escape(d.apGo)}"]`)?.scrollIntoView({ block: 'start' }); return; }
   if (d.decide) {
