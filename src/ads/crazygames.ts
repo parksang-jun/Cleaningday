@@ -72,8 +72,9 @@ export class CrazyGamesAds implements AdsProvider {
   showRewarded(): Promise<boolean> {
     return this.request('rewarded');
   }
-  async showBanner(): Promise<void> {
+  async showBanner(): Promise<boolean> {
     /* 포털이 관리 */
+    return false;
   }
   async hideBanner(): Promise<void> {
     /* 없음 */

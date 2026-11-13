@@ -28,11 +28,15 @@ export class NoopAds implements AdsProvider {
     await showPlaceholder('REWARDED AD', 1200);
     return true;
   }
-  async showBanner(): Promise<void> {
-    /* 없음 */
+  async showBanner(): Promise<boolean> {
+    // 웹·개발용: 배너가 들어갈 자리를 눈으로 확인할 수 있게 표시만 한다
+    const slot = document.getElementById('ad-banner');
+    if (slot) slot.innerHTML = '<span class="ad-banner__ph" data-testid="ad-banner-placeholder">AD · BANNER</span>';
+    return true;
   }
   async hideBanner(): Promise<void> {
-    /* 없음 */
+    const slot = document.getElementById('ad-banner');
+    if (slot) slot.innerHTML = '';
   }
   gameplayStart(): void {
     /* 없음 */

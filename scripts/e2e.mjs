@@ -92,6 +92,16 @@ const DSF = process.env.E2E_DSF ? Number(process.env.E2E_DSF) : process.env.CI ?
 const phone = { ...devices['iPhone 13'], ...(DSF ? { deviceScaleFactor: DSF } : {}) };
 const fpsOf = (pg) => pg.evaluate(() => new Promise((res) => { let n = 0; const t0 = performance.now(); const f = () => { n++; performance.now() - t0 < 1000 ? requestAnimationFrame(f) : res(n); }; requestAnimationFrame(f); }));
 const ctx = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: false });
+// 출시판 기본값(실제 브랜드 제품 소개 없음)부터 확인한 뒤, 나머지 검사는 그 기능을 켜고 돌린다
+{
+  const p0 = await ctx.newPage();
+  await p0.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  await p0.waitForSelector('[data-testid="play"]');
+  const real = await p0.evaluate(() => window.__sparkle.sponsors().filter((x) => x.affiliate).length);
+  assert(real === 0, 'launch default: no real brand products are listed (VITE_REAL_PRODUCTS off)');
+  await p0.close();
+}
+await ctx.addInitScript(() => { try { localStorage.setItem('sc_real_products', '1'); } catch {} });
 const page = await ctx.newPage();
 // 느린 CI 러너 재현용: E2E_CPU_THROTTLE=4 처럼 주면 CPU 를 그만큼 느리게 한다
 if (process.env.E2E_CPU_THROTTLE) {
@@ -116,6 +126,13 @@ try {
   assert((await page.locator('[data-testid="coins"]').innerText()).includes('30'), 'home coin button shows the balance and opens the shop');
   assert((await page.locator('.area').count()) === 7, '7 areas listed');
   assert((await page.locator('.area.is-locked').count()) === 6, 'only the living room is unlocked at start');
+  // 하단 배너 자리: 메뉴 화면에서만, 화면이 배너 높이만큼 비켜난다
+  await page.waitForSelector('body.has-banner [data-testid="ad-banner-placeholder"]');
+  {
+    const g = await page.evaluate(() => { const b = document.getElementById('ad-banner').getBoundingClientRect(); const a = document.getElementById('app'); const last = a.querySelector('.home').getBoundingClientRect(); return { top: b.top, h: b.height, vh: innerHeight, contentBottom: last.bottom }; });
+    assert(g.h >= 50 && Math.abs(g.top + g.h - g.vh) < 1, `home shows the banner slot at the bottom (${g.h}px)`);
+    assert(g.contentBottom <= g.top + 1, 'home content ends above the banner slot (nothing hidden behind it)');
+  }
   await page.screenshot({ path: resolve(shots, '01-home.png'), fullPage: true });
 
   // 1단계(거실 바닥 먼지): 걸레로 드래그 → 발견 토스트 → 완료 → 전후 리빌 → 결과
@@ -126,6 +143,7 @@ try {
   await page.waitForSelector('[data-testid="canvas"]');
   await page.waitForTimeout(300);
   assert((await page.locator('.toolbar [data-item]').count()) === 2, 'toolbar lists only the needed items');
+  assert((await page.locator('body.has-banner').count()) === 0 && !(await page.locator('#ad-banner').isVisible()), 'no banner while cleaning');
   assert((await page.locator('[data-testid="limit"]').count()) === 0, 'tier 1 has no time limit');
   console.log(`info - in-game frame rate: ${await fpsOf(page)} fps (deviceScaleFactor ${DSF ?? 3}${process.env.E2E_CPU_THROTTLE ? ', CPU x' + process.env.E2E_CPU_THROTTLE + ' slower' : ''})`);
   assert((await page.locator('[data-el="unknown"]').innerText()) === '1', 'notebook badge shows 1 unknown mess');

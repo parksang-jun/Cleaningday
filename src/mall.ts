@@ -2,7 +2,7 @@
 // 수익: 쿠팡 파트너스(한국)·Amazon Associates(미국·일본)·라쿠텐 어필리에이트(일본) 구매 수수료.
 // 원칙: 모든 링크에 "광고/제휴" 표시, 가격·재고는 판매몰 기준(앱에 표시하지 않음), 포털(Poki/CrazyGames) 빌드는 기본 꺼짐.
 import type { DetergentId, DirtType, ToolId } from './game/catalog';
-import { REAL_PRODUCTS, realSearchUrl } from './game/realProducts';
+import { REAL_PRODUCTS, realProductsEnabled, realSearchUrl } from './game/realProducts';
 import type { SponsorProduct } from './game/sponsor';
 import type { Lang } from './i18n';
 
@@ -143,7 +143,7 @@ export interface MallProduct {
 }
 
 /** 판매몰 제품 = 실제 판매 제품 목록(realProducts.ts). 운영자가 관리자 패널에서 제휴 링크를 붙이면 그 링크가 우선 */
-export const MALL_PRODUCTS: MallProduct[] = REAL_PRODUCTS.map((p) => ({
+export const MALL_PRODUCTS: MallProduct[] = (realProductsEnabled() ? REAL_PRODUCTS : []).map((p) => ({
   id: p.id,
   base: p.base,
   brand: p.brand,

@@ -587,6 +587,42 @@ button {
   opacity: 0;
 }
 
+/* ---------- 하단 배너 자리 ----------
+   메뉴 화면에서 body.has-banner 가 붙으면 아래쪽 안전 영역(--safe-bottom)이 배너 높이만큼 늘어나
+   화면 전체(모달 포함)가 그만큼 위로 비켜난다. 앱에서는 이 자리 위에 AdMob 배너가 그려진다. */
+body.has-banner {
+  --safe-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--banner-h, 50px));
+}
+.ad-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  height: calc(env(safe-area-inset-bottom, 0px) + var(--banner-h, 50px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg2);
+  border-top: 1px solid var(--line);
+}
+body.has-banner .ad-banner {
+  display: flex;
+}
+.ad-banner__ph {
+  width: min(320px, 100% - 32px);
+  height: calc(100% - 8px);
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--ink2);
+  border-radius: 6px;
+  color: var(--ink2);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
 .ad-placeholder {
   position: fixed;
   inset: 0;

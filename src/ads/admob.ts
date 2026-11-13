@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import {
   AdMob,
   AdmobConsentStatus,
+  BannerAdPluginEvents,
   BannerAdPosition,
   BannerAdSize,
   InterstitialAdPluginEvents,
@@ -139,9 +140,24 @@ export class AdMobAds implements AdsProvider {
     }
   }
 
-  async showBanner(): Promise<void> {
-    if (import.meta.env.VITE_ADMOB_BANNER !== 'true') return;
+  private bannerListening = false;
+
+  /** 배너 높이를 CSS 변수(--banner-h)로 알려 화면이 그만큼 자리를 비우게 한다 */
+  private async listenBanner(): Promise<void> {
+    if (this.bannerListening) return;
+    this.bannerListening = true;
+    const setH = (px: number) => document.documentElement.style.setProperty('--banner-h', `${Math.max(0, Math.round(px))}px`);
+    await AdMob.addListener(BannerAdPluginEvents.SizeChanged, (size) => setH(size.height));
+    await AdMob.addListener(BannerAdPluginEvents.FailedToLoad, (err) => {
+      setH(0); // 광고가 없으면 빈 띠를 남기지 않는다
+      track('ads_banner_error', { message: String(err?.message ?? err) });
+    });
+  }
+
+  async showBanner(): Promise<boolean> {
+    if (import.meta.env.VITE_ADMOB_BANNER === 'false') return false; // 기본 켬. 'false' 로 끈다
     try {
+      await this.listenBanner();
       await AdMob.showBanner({
         adId: this.ids.banner,
         adSize: BannerAdSize.ADAPTIVE_BANNER,
@@ -150,14 +166,16 @@ export class AdMobAds implements AdsProvider {
         isTesting: this.ids.isTesting,
         npa: this.npa,
       });
+      return true;
     } catch (e) {
       track('ads_banner_error', { message: String(e) });
+      return false;
     }
   }
 
   async hideBanner(): Promise<void> {
     try {
-      await AdMob.hideBanner();
+      await AdMob.removeBanner();
     } catch {
       /* 배너가 없으면 무시 */
     }

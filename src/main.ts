@@ -201,6 +201,7 @@ function nextLevelId(): number {
 // ---------- 홈: 월드·구역 ----------
 function renderHome() {
   stopGame();
+  ads.setBanner(true);
   duckMusic(false);
   const st = getStore();
   const totalStars = Object.values(st.progress.stars).reduce((a, b) => a + b, 0);
@@ -537,6 +538,7 @@ function presentHostWith(entry: ItemEntry, placement: Placement, dirt: DirtType 
 // ---------- 구역: 스테이지 목록 ----------
 function renderArea(areaId: string) {
   stopGame();
+  ads.setBanner(true);
   const st = getStore();
   const area = WORLDS.flatMap((w) => w.areas).find((a) => a.id === areaId);
   if (!area) return renderHome();
@@ -668,6 +670,7 @@ function startLevel(id: number) {
   const level = getLevel(id);
   if (!level) return;
   stopGame();
+  ads.setBanner(false); // 청소 중에는 배너 없음 (화면을 넓게 쓰고, 문지르다 잘못 누르지 않게)
   const st = getStore();
   // 지급 아이템
   const newOnes = grantsUpTo(id).filter((g) => !st.owned.includes(g));
@@ -2139,6 +2142,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
           }
           persist();
           track('adfree_buy', { pass: id });
+          ads.refreshBanner(); // 이용권을 사면 배너도 바로 내린다
           sfx.buy();
           toast(esc(t('adFreeActive', { d: adFreeLeft(st2) })), 'good');
           close();
@@ -2375,6 +2379,7 @@ function openAdminGate() {
 }
 function enterAdmin() {
   stopGame();
+  ads.setBanner(false);
   closeHost();
   track('admin_open');
   renderAdmin(app, {
@@ -2403,6 +2408,7 @@ declare global {
       hostPending: () => boolean;
       select: (id: string) => void;
       items: () => string[];
+      sponsors: () => { id: string; affiliate: boolean }[];
       timing: () => Timing | null;
       forceExpire: () => void;
       level: () => number;
@@ -2445,6 +2451,7 @@ function exposeDebug() {
       }
     },
     items: () => items.map((e) => e.spec.id),
+    sponsors: () => sponsorList().map((p) => ({ id: p.id, affiliate: Boolean(p.affiliate) })),
     timing: () => game?.timing ?? null,
     forceExpire: () => {
       if (game && game.session.limitSec !== undefined) {

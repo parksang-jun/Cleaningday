@@ -66,8 +66,9 @@ export class PokiAds implements AdsProvider {
     return ok;
   }
 
-  async showBanner(): Promise<void> {
+  async showBanner(): Promise<boolean> {
     /* Poki는 포털이 광고 배치를 관리 */
+    return false;
   }
   async hideBanner(): Promise<void> {
     /* 없음 */

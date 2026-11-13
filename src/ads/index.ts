@@ -42,6 +42,7 @@ export class AdsController {
       await this.provider.init();
       this.ready = true;
       track('ads_init', { provider: name });
+      void this.applyBanner();
     } catch (e) {
       track('ads_init_error', { provider: name, message: String(e) });
       this.provider = new NoopAds();
@@ -102,10 +103,46 @@ export class AdsController {
     }
   }
 
-  showBanner(): Promise<void> {
-    return this.provider.showBanner();
+  private bannerWanted = false;
+  private bannerShown = false;
+
+  /**
+   * 하단 배너 자리. 메뉴 화면(홈·구역·결과)에서만 켜고, 청소 중에는 끈다(잘못 누름 방지 — AdMob 정책).
+   * 광고 제거 이용권 기간에는 켜지지 않는다. 화면은 body.has-banner 일 때 배너 높이만큼 아래를 비운다.
+   */
+  setBanner(on: boolean): void {
+    this.bannerWanted = on;
+    void this.applyBanner();
   }
-  hideBanner(): Promise<void> {
-    return this.provider.hideBanner();
+
+  /** 광고 제거 이용권 상태가 바뀌었을 때 다시 맞춘다 */
+  refreshBanner(): void {
+    void this.applyBanner();
+  }
+
+  private async applyBanner(): Promise<void> {
+    if (!this.ready) return;
+    const want = this.bannerWanted && (getStore().ads.adFreeUntil ?? 0) <= Date.now();
+    if (want === this.bannerShown) return;
+    this.bannerShown = want;
+    if (!want) {
+      document.body.classList.remove('has-banner');
+      await this.provider.hideBanner();
+      return;
+    }
+    let slot = document.getElementById('ad-banner');
+    if (!slot) {
+      slot = document.createElement('div');
+      slot.id = 'ad-banner';
+      slot.className = 'ad-banner';
+      slot.setAttribute('data-testid', 'ad-banner');
+      document.body.appendChild(slot);
+    }
+    const used = await this.provider.showBanner();
+    if (!this.bannerShown) return; // 기다리는 사이 꺼졌다
+    if (used) {
+      document.body.classList.add('has-banner');
+      track('ad_banner_shown', { provider: this.provider.name });
+    } else this.bannerShown = false;
   }
 }
