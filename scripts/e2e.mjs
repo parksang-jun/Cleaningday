@@ -99,9 +99,11 @@ const ctx = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: fals
   await p0.waitForSelector('[data-testid="play"]');
   const real = await p0.evaluate(() => window.__sparkle.sponsors().filter((x) => x.affiliate).length);
   assert(real === 0, 'launch default: no real brand products are listed (VITE_REAL_PRODUCTS off)');
+  assert((await p0.evaluate(() => window.__sparkle.sponsors().length)) === 0, 'launch default: no sample advertisers either, so the show host has nothing to present');
+  assert((await p0.evaluate(() => window.__sparkle.items().filter((id) => id.startsWith('sp:')).length)) === 0, 'launch default: no sponsored items in the game');
   await p0.close();
 }
-await ctx.addInitScript(() => { try { localStorage.setItem('sc_real_products', '1'); } catch {} });
+await ctx.addInitScript(() => { try { localStorage.setItem('sc_real_products', '1'); localStorage.setItem('sc_sample_sponsors', '1'); } catch {} });
 const page = await ctx.newPage();
 // 느린 CI 러너 재현용: E2E_CPU_THROTTLE=4 처럼 주면 CPU 를 그만큼 느리게 한다
 if (process.env.E2E_CPU_THROTTLE) {

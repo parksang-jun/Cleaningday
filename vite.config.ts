@@ -13,6 +13,6 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
-    env: { VITE_REAL_PRODUCTS: 'true' }, // 실제 제품 기능은 출시판에서 꺼져 있어도 검사는 계속한다
+    env: { VITE_REAL_PRODUCTS: 'true', VITE_SAMPLE_SPONSORS: 'true' }, // 실제 제품 기능은 출시판에서 꺼져 있어도 검사는 계속한다
   },
 });

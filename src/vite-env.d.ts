@@ -23,6 +23,8 @@ interface ImportMetaEnv {
   readonly VITE_MALL_ENABLED?: 'true' | 'false';
   /** 실제 브랜드 제품 소개 (기본 꺼짐) */
   readonly VITE_REAL_PRODUCTS?: 'true' | 'false';
+  /** 가상 샘플 광고주 = 쇼호스트 시범 (기본 꺼짐) */
+  readonly VITE_SAMPLE_SPONSORS?: 'true' | 'false';
   /** 제휴 추적 코드 */
   readonly VITE_AMAZON_TAG_US?: string;
   readonly VITE_AMAZON_TAG_JP?: string;

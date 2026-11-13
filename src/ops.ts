@@ -3,14 +3,15 @@
 import { Capacitor } from '@capacitor/core';
 import { onTrack } from './analytics';
 import { BASE_DETERGENTS, BASE_TOOLS, DIRT_TYPES, type DirtType } from './game/catalog';
-import { realProductsEnabled, realSponsors } from './game/realProducts';
+import { realProductsEnabled, realSponsors, sampleSponsorsEnabled } from './game/realProducts';
 import { SAMPLE_SPONSORS, validateSponsor, type SponsorProduct } from './game/sponsor';
 import { DEFAULT_HOST, getStore, persist, type HostConfig } from './storage';
 
 /** 내장 제품 = 실제 판매 제품(제휴 추천) + 가상 샘플 광고주 */
 export function builtInSponsors(): SponsorProduct[] {
   const env = import.meta.env as unknown as Record<string, string | undefined>;
-  return [...(realProductsEnabled(env) ? realSponsors(env) : []), ...SAMPLE_SPONSORS]; // 실제 브랜드 제품은 기본 꺼짐
+  // 출시판 기본값: 실제 브랜드 제품도, 가상 샘플 광고주도 없음 → 쇼호스트가 나오지 않는다. 운영자가 등록한 진짜 광고주만 나온다
+  return [...(realProductsEnabled(env) ? realSponsors(env) : []), ...(sampleSponsorsEnabled(env) ? SAMPLE_SPONSORS : [])];
 }
 
 /** 내장(실제 제품·샘플) + 덮어쓰기 + 운영자 추가 제품 (id 중복이면 운영자 제품이 우선). 우선순위 높은 순 */

@@ -81,6 +81,20 @@ export function realProductsEnabled(env: Record<string, string | undefined> = im
   }
 }
 
+/**
+ * 가상 샘플 광고주(쇼호스트가 소개하는 시범 제품)를 켤지 — **기본 꺼짐**.
+ * 꺼져 있으면 소개할 제품이 없어 쇼호스트가 나오지 않는다. 진짜 광고주를 관리자 화면에 등록하면 그 제품으로 쇼호스트가 다시 나온다.
+ * 시범 제품까지 보려면 VITE_SAMPLE_SPONSORS=true (자동 검사는 localStorage 'sc_sample_sponsors'='1').
+ */
+export function sampleSponsorsEnabled(env: Record<string, string | undefined> = import.meta.env as unknown as Record<string, string | undefined>): boolean {
+  if (env.VITE_SAMPLE_SPONSORS === 'true') return true;
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem('sc_sample_sponsors') === '1';
+  } catch {
+    return false;
+  }
+}
+
 const LANG_OF: Record<RealProductDef['market'], 'ko' | 'en' | 'ja'> = { coupang: 'ko', amazon_us: 'en', amazon_jp: 'ja' };
 const COUNTRY_OF: Record<RealProductDef['market'], string> = { coupang: 'KR', amazon_us: 'US', amazon_jp: 'JP' };
 
