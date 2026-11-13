@@ -1294,8 +1294,19 @@ function bindInput(canvas: HTMLCanvasElement) {
     const p = gridAt(e.clientX, e.clientY);
     if (!p) return;
     const item = findItem(game.selected, items)!.spec;
-    game.renderer.cursor = { x: p.x, y: p.y, item, active: Boolean(game.pointer) };
-    if (!game.pointer) return;
+    if (!game.pointer) {
+      // 면 밖(3D 방 바닥·벽)에서 누른 채 면 위로 끌고 들어오면 그때부터 문지르기 시작
+      if (!(e.buttons & 1) || game.finished || game.failed) {
+        game.renderer.cursor = { x: p.x, y: p.y, item, active: false };
+        return;
+      }
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); // 캔버스 밖에서 손을 떼도 up 이 오게
+      game.view3d?.setPressing(true);
+      game.pointer = p;
+      game.pending = [];
+      game.queue = [p];
+    }
+    game.renderer.cursor = { x: p.x, y: p.y, item, active: true };
     // 빠른 드래그 사이를 메워 빈틈 없이
     const last = game.queue[game.queue.length - 1] ?? game.pointer;
     const dist = Math.hypot(p.x - last.x, p.y - last.y);
