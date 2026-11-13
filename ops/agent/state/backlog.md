@@ -17,6 +17,9 @@
 ## 결재 대기 (요청서는 approvals.json)
 - [승인] 쿠팡 파트너스·Amazon Associates 가입과 제휴 링크 발급 → `affiliate-accounts` (목록: `state/affiliate-links.md`, 25개 전부 비어 있음)
 
+- [승인] 광고주 제안 메일 4건 발송 시점 → `sponsor-drafts-2026-11-13`
+- [승인] 공개 웹 데모 주소(GitHub Pages 등) — 영업 메일에 넣을 데모가 없음. 저장소 설정 변경이라 결정 필요(요청서 미작성, 다음 루틴 A/B 에서 작성)
+
 ## 끝난 것
 - 2026-11-13 [auto] 첫 판 조작 안내: 세제가 없는 판에서는 세제 단계 문구를 '이번 판은 세제 없이 도구만으로'로 교체 → PR #1
 - 2026-11-13 [auto] 제휴 링크가 비어 있는 실제 제품 목록 정리 → `state/affiliate-links.md`
