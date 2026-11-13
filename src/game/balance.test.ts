@@ -1,7 +1,7 @@
 // 난이도 검증 — 숙련자 봇이 96단계를 모두 깰 수 있고(보유 아이템·레시피로), 단계·구역 평균 시간이 올라가는지
 import { appendFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { kitFor, premiumKitFor, resolveTiming, simulateBot } from './bot'
+import { kitFor, PAR_REACH, premiumKitFor, resolveTiming, simulateBot } from './bot'
 import { BASE_DETERGENTS, BASE_TOOLS, DIRT_SURFACES, DIRT_TYPES, recipesFor } from './catalog'
 import { LEVELS, MESS_FROM, TIERS, WORLDS } from './levels'
 
@@ -58,6 +58,15 @@ describe('difficulty curve', () => {
     for (let i = 1; i < tierAvg.length; i++) expect(tierAvg[i], `tier ${i + 1} harder than ${i}`).toBeGreaterThan(tierAvg[i - 1])
     for (let i = 1; i < areaAvg.length; i++) expect(areaAvg[i], `area ${i + 1} harder than ${i}`).toBeGreaterThan(areaAvg[i - 1])
     expect(tierAvg[tierAvg.length - 1]).toBeGreaterThan(tierAvg[0] * 2)
+  }, 60_000)
+
+  it('3 stars stay reachable: the basic-gear expert bot beats every target time with a small margin, even while being messed up', () => {
+    // 2026-11-13 제품개선팀: 끝 단계(목표시간 배수 1.1~1.2 + 재오염 절반 반영)에서 숙련 봇도 목표시간을 넘겨 별 3개가 불가능한 판이 있었다(84·85·88·90)
+    for (const lv of LEVELS) {
+      const r = simulateBot(lv)
+      const { parSec } = resolveTiming(lv)
+      expect(r.time * PAR_REACH, `level ${lv.id} par ${parSec}s reachable (bot ${r.time.toFixed(1)}s)`).toBeLessThanOrEqual(parSec)
+    }
   }, 60_000)
 
   it('every stage is at least as tough as the one before: grime resistance never drops, time factors never loosen within a mode, re-soiling comes faster', () => {

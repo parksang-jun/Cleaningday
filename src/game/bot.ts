@@ -263,13 +263,18 @@ const cache = new Map<number, Timing>()
 /** 재오염이 목표시간에 반영되는 비율 — 절반만. 나머지 절반은 플레이어의 여유를 갉아먹는다(빨리 끝내거나 좋은 장비를 쓸 이유) */
 export const MESS_PAR_WEIGHT = 0.5
 
+/** 별 3개 보장 여유 — 기본 장비 숙련자(봇)가 재오염을 다 맞고도 목표시간보다 이만큼(5%) 빨라야 한다 */
+export const PAR_REACH = 1.05
+
 /** 목표시간·제한시간 = 봇 시간 × 단계 배수 (최초 1회 계산 후 캐시). 재오염 판은 조용할 때와 어지럽힐 때의 중간을 기준으로 */
 export function resolveTiming(level: LevelDef): Timing {
   const hit = cache.get(level.id)
   if (hit) return hit
   const quiet = simulateBot(level, 900, kitFor(level), { mess: false })
-  const botSec = level.mess ? quiet.time + MESS_PAR_WEIGHT * (simulateBot(level).time - quiet.time) : quiet.time
-  const parSec = Math.max(15, Math.round(botSec * level.parFactor))
+  const messy = level.mess ? simulateBot(level).time : quiet.time
+  const botSec = quiet.time + MESS_PAR_WEIGHT * (messy - quiet.time)
+  // 끝 단계는 배수가 1.1 까지 내려가 재오염을 다 맞으면 숙련자도 넘길 수 있다 → 별 3개가 늘 가능하도록 바닥을 둔다
+  const parSec = Math.max(15, Math.round(botSec * level.parFactor), Math.ceil(messy * PAR_REACH))
   const timing: Timing = { parSec, limitSec: level.limitFactor ? Math.round(parSec * level.limitFactor) : undefined }
   cache.set(level.id, timing)
   return timing
