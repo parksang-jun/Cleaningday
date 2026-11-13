@@ -866,6 +866,8 @@ function startTour(after: () => void) {
   const spot = wrap.querySelector<HTMLElement>('.tour__spot')!;
   const card = wrap.querySelector<HTMLElement>('.tour__card')!;
   const steps = TOUR_STEPS.filter((s) => app.querySelector(s.sel));
+  // 이 판에 세제가 하나도 없으면(1판 등) "눌러서 고르세요" 대신 "이번 판은 세제가 필요 없어요"라고 알려 준다 — 누를 게 없는 칸을 누르라고 하지 않게
+  const noCleaners = !app.querySelector('[data-el="toolbar"] .toolbar__group:nth-child(2) [data-item]');
   let i = 0;
   const place = () => {
     const s = steps[i];
@@ -875,7 +877,7 @@ function startTour(after: () => void) {
     spot.style.top = `${r.top - pad}px`;
     spot.style.width = `${r.width + pad * 2}px`;
     spot.style.height = `${r.height + pad * 2}px`;
-    wrap.querySelector('.tour__text')!.textContent = t(s.key);
+    wrap.querySelector('.tour__text')!.textContent = t(s.key === 'tour_cleaners' && noCleaners ? 'tour_cleaners_none' : s.key);
     wrap.querySelector('.tour__list')!.innerHTML = s.boosters
       ? BOOSTER_IDS.map((b) => `<div class="tour__item"><span>${BOOSTERS[b].icon}</span><span><b>${esc(t(`booster_${b}_short`))}</b> ${esc(t(`booster_${b}_desc`))}</span></div>`).join('')
       : '';
