@@ -25,8 +25,11 @@
       ],
       "ask": "스토어에 표시할 개발자 이름을 적어 주세요 (예: Sparkle Clean Studio)",
       "after": "완료를 누르면 에이전트가 스토어 등록 자료(설명문·스크린샷·개인정보처리방침)와 비공개 테스트 안내문을 준비합니다.",
-      "status": "open",
-      "created": "2026-11-13"
+      "status": "done",
+      "created": "2026-11-13",
+      "decision": "done",
+      "decided": "2026-11-13 09:56",
+      "result": "계정 완료. 개발자 이름은 메모에 없어 따로 요청(play-developer-name). 후속: backlog [auto] 스토어 등록 자료·비공개 테스트 안내문 준비"
     },
     {
       "id": "apple-developer",
@@ -51,8 +54,11 @@
       ],
       "ask": "메모(선택): 가입에 쓴 Apple ID가 평소 쓰는 것과 다르면 '다른 계정'이라고만 적어 주세요. 이메일 주소는 적지 마세요.",
       "after": "완료를 누르면 에이전트가 iOS 빌드 설정과 App Store 등록 자료를 준비합니다.",
-      "status": "open",
-      "created": "2026-11-13"
+      "status": "hold",
+      "created": "2026-11-13",
+      "decision": "hold",
+      "decided": "2026-11-13 09:56",
+      "result": "보류. 안드로이드 먼저 출시. iOS 작업은 가입 완료 후 시작"
     },
     {
       "id": "admob",
@@ -79,8 +85,11 @@
       ],
       "ask": "앱 ID와 광고 단위 ID 3개(전면·보상형·배너)를 붙여 넣어 주세요",
       "after": "에이전트가 ID를 게임 설정에 넣고 app-ads.txt 파일을 만들어 변경안으로 올립니다.",
-      "status": "open",
-      "created": "2026-11-13"
+      "status": "done",
+      "created": "2026-11-13",
+      "decision": "done",
+      "decided": "2026-11-13 09:54",
+      "result": "광고 단위 ID 3개(배너·전면·보상형) 받음. 앱 ID(ca-app-pub-…~…)는 메모에 없어 따로 요청(admob-app-id). 후속: backlog [auto] \"AdMob 실제 광고 단위 ID 반영 + app-ads.txt\""
     },
     {
       "id": "affiliate-disclosure",
@@ -109,8 +118,11 @@
         }
       ],
       "after": "선택하면 에이전트가 그대로 반영해 변경안으로 올립니다.",
-      "status": "open",
-      "created": "2026-11-13"
+      "status": "done",
+      "created": "2026-11-13",
+      "decision": "restore",
+      "decided": "2026-11-13 09:55",
+      "result": "반영함: 판매몰 맨 아래 작은 글씨로 마켓별 수수료 고지(PR agent/2026-11-13-affiliate-disclosure)"
     },
     {
       "id": "host-voice",
@@ -139,8 +151,11 @@
         }
       ],
       "after": "음성을 넣는 쪽을 고르면 에이전트가 요금·이용 조건·견본을 조사해 비용 결재를 따로 올립니다.",
-      "status": "open",
-      "created": "2026-11-13"
+      "status": "done",
+      "created": "2026-11-13",
+      "decision": "none",
+      "decided": "2026-11-13 09:55",
+      "result": "이번 출시는 음성 없이 진행. 출시 후 반응 보고 재검토(추가 작업 없음)"
     },
     {
       "id": "app-names-zh-hi",
@@ -169,6 +184,58 @@
         }
       ],
       "after": "선택에 따라 에이전트가 후보 조사 또는 스토어 자료 반영을 진행합니다.",
+      "status": "done",
+      "created": "2026-11-13",
+      "decision": "propose",
+      "decided": "2026-11-13 09:56",
+      "result": "후속: backlog [auto] 중국어·힌디어 이름 후보 3개씩 조사 → 선택 요청서로 다시 올림"
+    },
+    {
+      "id": "admob-app-id",
+      "kind": "do",
+      "title": "AdMob 앱 ID 알려 주기",
+      "summary": "광고 단위 ID 3개는 잘 받았습니다. 그런데 안드로이드 앱 설정에 넣어야 하는 \"앱 ID\"(ca-app-pub-숫자~숫자, 물결표 ~ 가 들어간 것)가 빠져 있습니다.",
+      "why": "앱 ID가 없으면 실제 광고 ID를 넣어도 안드로이드 앱이 광고를 불러오지 못하고, 잘못 넣으면 앱이 시작하자마자 꺼질 수 있습니다.",
+      "cost": "무료",
+      "time": "2분",
+      "steps": [
+        "아래 \"AdMob 열기\"를 눌러 로그인합니다.",
+        "왼쪽 메뉴 \"앱\" › \"모든 앱 보기\"에서 \"싹싹 클린\"을 누릅니다.",
+        "\"앱 설정\"을 누르면 \"앱 ID\"가 보입니다(ca-app-pub-숫자~숫자). 오른쪽 복사 버튼을 누릅니다.",
+        "아래 메모 칸에 붙여 넣고 \"완료했어요\"를 누릅니다. 앱 안에 공개되는 값이라 적어도 안전합니다."
+      ],
+      "links": [
+        {
+          "label": "AdMob 열기",
+          "url": "https://admob.google.com/"
+        }
+      ],
+      "ask": "안드로이드 앱 ID(ca-app-pub-…~…)를 붙여 넣어 주세요",
+      "after": "에이전트가 앱 ID와 광고 단위 ID 3개를 게임 설정에 넣고 app-ads.txt 를 만들어 변경안(PR)으로 올립니다. 병합은 사장님 승인 후.",
+      "status": "open",
+      "created": "2026-11-13"
+    },
+    {
+      "id": "play-developer-name",
+      "kind": "do",
+      "title": "Play 스토어에 표시되는 개발자 이름 알려 주기",
+      "summary": "Google Play 개발자 계정 완료 감사합니다. 가입 때 정한 \"개발자 이름\"이 메모에 없어서, 스토어 등록 자료와 개인정보처리방침에 쓸 이름을 아직 모릅니다.",
+      "why": "스토어 설명문·개인정보처리방침·app-ads.txt 안내문에 같은 이름이 들어가야 심사에서 불일치 지적을 받지 않습니다.",
+      "cost": "무료",
+      "time": "1분",
+      "steps": [
+        "아래 \"Play Console 열기\"를 눌러 로그인합니다.",
+        "왼쪽 아래 \"설정\" › \"개발자 계정\" › \"계정 세부정보\"에서 \"개발자 이름\"을 확인합니다.",
+        "그 이름을 메모 칸에 그대로 적고 \"완료했어요\"를 누릅니다."
+      ],
+      "links": [
+        {
+          "label": "Play Console 열기",
+          "url": "https://play.google.com/console/"
+        }
+      ],
+      "ask": "스토어에 표시되는 개발자 이름 (예: Sparkle Clean Studio)",
+      "after": "에이전트가 그 이름으로 스토어 등록 자료(설명문·스크린샷 목록·개인정보처리방침)와 비공개 테스트 안내문을 준비합니다.",
       "status": "open",
       "created": "2026-11-13"
     }

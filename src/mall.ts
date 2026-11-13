@@ -157,6 +157,38 @@ export function sponsorBuyUrl(p: SponsorProduct, m: Market): string | undefined 
   return p.links?.[m] ?? p.productUrl;
 }
 
+/**
+ * 제휴(수수료) 고지 문구 — 판매몰 맨 아래 작은 글씨로 표시한다(사장님 결재 2026-11-13: affiliate-disclosure=restore).
+ * 쿠팡 파트너스·Amazon Associates 약관과 공정위 추천·보증 심사지침(경제적 이해관계 표시)을 따르기 위한 것.
+ * 쿠팡(ko)·Amazon.com(en)은 각 프로그램이 안내하는 문구 그대로, 나머지는 같은 뜻의 번역.
+ */
+const DISCLOSURE: Record<Market, Record<Lang, string>> = {
+  coupang: {
+    ko: '이 게시물은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.',
+    en: 'As part of the Coupang Partners program, we earn a commission from qualifying purchases.',
+    ja: 'Coupangパートナーズの活動の一環として、購入に応じて一定の手数料を受け取ります。',
+  },
+  amazon_us: {
+    ko: '아마존 어소시에이트로서, 적격 구매에 대해 수수료를 받습니다.',
+    en: 'As an Amazon Associate I earn from qualifying purchases.',
+    ja: 'Amazonのアソシエイトとして、適格販売により収入を得ています。',
+  },
+  amazon_jp: {
+    ko: 'Amazon.co.jp 어소시에이트로서, 적격 구매에 대해 수수료를 받습니다.',
+    en: 'As an Amazon.co.jp Associate I earn from qualifying purchases.',
+    ja: 'Amazonのアソシエイトとして、当アプリは適格販売により収入を得ています。',
+  },
+  rakuten: {
+    ko: '라쿠텐 어필리에이트를 이용하며, 구매 시 소개료를 받을 수 있습니다.',
+    en: 'We use Rakuten Affiliate and may earn a referral fee from purchases.',
+    ja: '楽天アフィリエイトを利用しており、購入により紹介料を得ることがあります。',
+  },
+};
+
+export function affiliateDisclosure(m: Market, lang: Lang): string {
+  return DISCLOSURE[m][lang];
+}
+
 /** 외부 URL 검증 (https 만) */
 export function isSafeUrl(url: string | undefined): url is string {
   return typeof url === 'string' && /^https:\/\/[^\s]+$/.test(url);

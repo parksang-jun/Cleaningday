@@ -591,7 +591,9 @@ try {
   assert((await page.locator('[data-testid="market-amazon_us"].is-on').count()) === 1, 'English UI defaults to Amazon');
   await page.click('[data-testid="market-coupang"]');
   await page.waitForTimeout(100);
-  { const mallText = await page.locator('[data-testid="mall"]').innerText(); assert(/Ad ·|광고/.test(mallText) && !/수수료|commission/i.test(mallText), 'Coupang market is labelled as ads, with no commission wording'); }
+  { const mallText = await page.locator('[data-testid="mall"]').innerText(); assert(/Ad ·|광고/.test(mallText), 'Coupang market is labelled as ads'); }
+  { const disc = page.locator('[data-testid="mall-disclosure"]'); assert((await disc.count()) === 1 && /Coupang Partners/.test(await disc.innerText()), 'mall shows the Coupang Partners commission notice at the bottom'); }
+  { const last = await page.locator('[data-testid="mall"] > :last-child').getAttribute('data-testid'); assert(last === 'mall-disclosure', 'commission notice is the last line of the mall'); }
   await page.screenshot({ path: resolve(shots, '13-mall.png'), fullPage: true });
   await page.click('[data-testid="shop"] [data-act="close"]');
   assert((await page.locator('[data-testid="item-cordlessvac"]').count()) === 0, 'premium vacuum stays hidden where it is not needed (bathtub)');
