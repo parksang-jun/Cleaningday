@@ -39,6 +39,9 @@
 - 계정 개설 후: AdMob 월간 수익 보고서(CSV), 쿠팡 파트너스 정산 내역, Amazon 결제 보고서를 `state/metrics/` 에.
 - 참고: AdMob·쿠팡·Amazon 모두 최소 지급액 기준이 있어 초기에는 "지급 보류"가 정상입니다(기준 금액은 각 공식 페이지에서 확인 필요).
 
+## 커밋·PR
+- 브랜치 `agent/2026-11-13-settlement-2026-10` 푸시 완료. PR은 만들지 못함(`gh` 로그인 안 됨, GitHub 커넥터는 권한 거부). 직접 열기: https://github.com/parksang-jun/Cleaningday/pull/new/agent/2026-11-13-settlement-2026-10
+
 ## 승인 요청 목록
 - 신규 결재 없음. 기존 `play-console` 요청서에 진행 상황 메모 추가: **Google Play 본인 확인(휴대전화 인증) 마무리**가 남음 — Play Console 또는 Google Payments 메일의 안내대로 진행.
 - 수익이 생기려면 기존 결재 `admob`, `affiliate-accounts`, `affiliate-disclosure` 가 먼저 필요(변동 없음).
