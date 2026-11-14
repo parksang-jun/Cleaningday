@@ -188,7 +188,7 @@ const ctx = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: fals
   assert((await p0.locator('[data-testid="bonus-challenge"]').count()) === 1 && (await p0.evaluate(() => window.__sparkle.coins())) - coins2 === 100, 'boss stage pays double coins (50 x 2)');
   await ctx0.close();
 }
-await ctx.addInitScript(() => { try { localStorage.setItem('sc_real_products', '1'); localStorage.setItem('sc_sample_sponsors', '1'); localStorage.setItem('sc_host', '1'); } catch {} });
+await ctx.addInitScript(() => { try { localStorage.setItem('sc_real_products', '1'); localStorage.setItem('sc_sample_sponsors', '1'); localStorage.setItem('sc_host', '1'); localStorage.setItem('sc_mall', '1'); } catch {} });
 const page = await ctx.newPage();
 // 느린 CI 러너 재현용: E2E_CPU_THROTTLE=4 처럼 주면 CPU 를 그만큼 느리게 한다
 if (process.env.E2E_CPU_THROTTLE) {
@@ -206,7 +206,8 @@ try {
   await page.evaluate(() => window.__sparkle.hostConfig({ affiliate: false }));
   await page.evaluate(() => window.__sparkle.skipTour()); // 첫 판 조작 안내는 3D 브라우저 구간에서 검사
   await page.evaluate(() => window.__sparkle.force2d(true)); // 본 흐름은 2D 로 검사, 3D 는 아래 WebGL 브라우저에서
-  assert((await page.locator('[data-testid="beta-tag"]').count()) === 1, 'home shows the BETA tag on production builds (VITE_BETA)');
+  // 스토어 출시 빌드는 BETA 배지를 달지 않는다 (.env.production 의 VITE_BETA=false). 베타 배포 때만 true 로 올린다
+  assert((await page.locator('[data-testid="beta-tag"]').count()) === 0, 'store build shows no BETA tag (VITE_BETA=false)');
   assert((await page.locator('.world').count()) === 3, '3 worlds listed (apartment, house, car)');
   await page.waitForTimeout(700);
   assert((await page.evaluate(() => window.__sparkle.coins())) === 30, 'first visit of the day pays the 30-coin daily bonus');

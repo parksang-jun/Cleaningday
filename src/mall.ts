@@ -24,9 +24,18 @@ export function marketsFor(lang: Lang): Market[] {
   return ['amazon_us', 'coupang'];
 }
 
-/** 판매몰 노출 여부 — 포털 빌드는 외부 링크 제한으로 기본 꺼짐 */
+/**
+ * 판매몰(결과 화면의 실제 제품 추천) 노출 여부.
+ * 포털 빌드는 외부 링크 제한으로, 앱 스토어 1.0 은 '앱과 무관한 쇼핑 링크' 심사 지적을 피하려고 꺼 둔다
+ * (.env.production 의 VITE_MALL_ENABLED=false). 시험용으로 켤 때는 localStorage sc_mall=1.
+ */
 export function mallEnabled(): boolean {
   const env = import.meta.env;
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('sc_mall') === '1') return true;
+  } catch {
+    /* 저장소를 못 읽으면 환경 변수로 판단 */
+  }
   if (env.VITE_MALL_ENABLED === 'false') return false;
   if (env.VITE_MALL_ENABLED === 'true') return true;
   return env.VITE_AD_PROVIDER !== 'poki' && env.VITE_AD_PROVIDER !== 'crazygames';
