@@ -19,7 +19,7 @@ import { closeHost, hostAvatarSmall, hostOpen, showHost, type PitchContext, type
 import { type HostMedia } from './avatar';
 import { resolveMediaUrl } from './media';
 import { detectLang, getLang, setLang, t, type Lang } from './i18n';
-import { CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MARKET_LABEL, marketsFor, searchUrl, sponsorBuyUrl, type Market } from './mall';
+import { affiliateDisclosure, CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MARKET_LABEL, marketsFor, searchUrl, sponsorBuyUrl, type Market } from './mall';
 import { adminEnabled, adminPin, hostConfig, installOpsCounters, saveHostConfig, sponsorList } from './ops';
 import { renderAdmin } from './admin';
 import { Renderer } from './render/renderer';
@@ -2416,6 +2416,7 @@ function mallPanel(market: Market): string {
         )
         .join('')}</ul>
       <p class="small muted">${esc(t('affiliateFoot'))}</p>
+      <p class="mall__disclosure muted" data-testid="mall-disclosure">${esc(affiliateDisclosure(market, lang))}</p>
     </div>`;
 }
 

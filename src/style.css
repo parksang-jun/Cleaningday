@@ -776,6 +776,11 @@ body.has-banner .ad-banner {
   margin: 12px 0 4px;
   font-size: 14px;
 }
+.mall__disclosure {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
 .rec {
   display: flex;
   align-items: center;
