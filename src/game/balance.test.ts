@@ -60,6 +60,13 @@ describe('difficulty curve', () => {
     expect(tierAvg[tierAvg.length - 1]).toBeGreaterThan(tierAvg[0] * 2)
   }, 60_000)
 
+  it('three stars are reachable with basic gear: the target time is at least 5% above the expert bot run with every re-soiling', () => {
+    for (const lv of LEVELS) {
+      const messy = simulateBot(lv).time
+      expect(resolveTiming(lv).parSec, `level ${lv.id} target ${resolveTiming(lv).parSec}s vs messy bot ${messy.toFixed(1)}s`).toBeGreaterThanOrEqual(messy * 1.05)
+    }
+  }, 120_000)
+
   it('every stage is at least as tough as the one before: grime resistance never drops, time factors never loosen within a mode, re-soiling comes faster', () => {
     for (let i = 1; i < LEVELS.length; i++) {
       const a = LEVELS[i - 1]

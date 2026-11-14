@@ -1,7 +1,7 @@
 // 기준 플레이어 봇 — 레시피(맞는 도구·세정제)를 모두 아는 "숙련자"가 플레이하는 시간을 재서 목표·제한시간의 기준으로 쓴다.
 // 결정적(같은 입력 → 같은 결과)이라 모든 기기에서 같은 목표시간이 나온다.
 import { BASE_DETERGENTS, BASE_TOOLS, DIRT_TYPES, isHazardMix, recipesFor, type DetergentSpec, type Recipe, type ToolSpec } from './catalog'
-import { CleanSession, type Timing } from './engine'
+import { CleanSession, SLOW_FACTOR, type Timing } from './engine'
 import { grantsUpTo, type LevelDef } from './levels'
 
 export interface BotResult {
@@ -263,14 +263,24 @@ const cache = new Map<number, Timing>()
 /** 재오염이 목표시간에 반영되는 비율 — 절반만. 나머지 절반은 플레이어의 여유를 갉아먹는다(빨리 끝내거나 좋은 장비를 쓸 이유) */
 export const MESS_PAR_WEIGHT = 0.5
 
+/**
+ * 목표시간 하한 — 기본 장비 숙련자가 재오염까지 다 겪으며 실수 없이 깬 시간 × 이 배수.
+ * 이게 없으면 뒤쪽 판(62·84·85·88·90·93)은 기본 장비로는 아무리 잘해도 별 3개가 안 나왔다(2026-11-14 봇 측정).
+ */
+export const PAR_FLOOR_OVER_MESSY_BOT = 1.05
+
 /** 목표시간·제한시간 = 봇 시간 × 단계 배수 (최초 1회 계산 후 캐시). 재오염 판은 조용할 때와 어지럽힐 때의 중간을 기준으로 */
 export function resolveTiming(level: LevelDef): Timing {
   const hit = cache.get(level.id)
   if (hit) return hit
   const quiet = simulateBot(level, 900, kitFor(level), { mess: false })
-  const botSec = level.mess ? quiet.time + MESS_PAR_WEIGHT * (simulateBot(level).time - quiet.time) : quiet.time
-  const parSec = Math.max(15, Math.round(botSec * level.parFactor))
-  const timing: Timing = { parSec, limitSec: level.limitFactor ? Math.round(parSec * level.limitFactor) : undefined }
+  const messy = level.mess ? simulateBot(level).time : quiet.time
+  const botSec = quiet.time + MESS_PAR_WEIGHT * (messy - quiet.time)
+  const basePar = Math.max(15, Math.round(botSec * level.parFactor))
+  const parSec = Math.max(basePar, Math.ceil(messy * PAR_FLOOR_OVER_MESSY_BOT))
+  // 제한시간은 하한 보정 전 목표로 계산해 빠듯함을 그대로 둔다. 단, 별 1개 구간(목표 × SLOW_FACTOR 초과)은 남긴다
+  const limitSec = level.limitFactor ? Math.max(Math.round(basePar * level.limitFactor), Math.floor(parSec * SLOW_FACTOR) + 1) : undefined
+  const timing: Timing = { parSec, limitSec }
   cache.set(level.id, timing)
   return timing
 }
