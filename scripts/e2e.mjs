@@ -962,10 +962,22 @@ try {
     await p3.evaluate(() => window.__sparkle.force2d(false)); // 3D 는 실험 기능 — 기본은 2D
     await p3.click('[data-testid="play"]');
     await p3.waitForSelector('[data-testid="intro"]');
+    // '새 아이템' 알림을 기록: 언제(조작 안내 중인지) 무엇이 떴는지
+    await p3.evaluate(() => {
+      window.__newToasts = [];
+      new MutationObserver((ms) => {
+        for (const m of ms) for (const n of m.addedNodes) {
+          if (n instanceof HTMLElement && n.classList.contains('toast') && /^New:/.test(n.textContent || '')) {
+            window.__newToasts.push({ text: n.textContent, duringTour: Boolean(document.querySelector('[data-testid="tour"]')), duringIntro: Boolean(document.querySelector('[data-testid="intro"]')) });
+          }
+        }
+      }).observe(document.body, { childList: true });
+    });
     await p3.click('[data-testid="start"]');
     await p3.waitForSelector('[data-testid="canvas"]');
     // 첫 판 조작 안내: 버튼을 하나씩 비추며 설명, 그동안 게임은 멈춤
     await p3.waitForSelector('[data-testid="tour"]');
+    assert((await p3.evaluate(() => window.__newToasts.length)) === 0, 'no "New item" toast while the stage intro or walkthrough is on screen');
     const tourTexts = [];
     for (let n = 0; n < 12 && (await p3.locator('[data-testid="tour"]').count()); n++) {
       tourTexts.push(await p3.locator('[data-testid="tour-text"]').innerText());
@@ -973,6 +985,10 @@ try {
     }
     assert(tourTexts.length === 9 && new Set(tourTexts).size === 9 && tourTexts[1].startsWith('Tools') && tourTexts[4].startsWith('Boosters'), 'first stage walks through what each control does (9 steps)');
     assert(/needs none/.test(tourTexts[2]) && !/tap one/.test(tourTexts[2]), 'stage 1 has no cleaners, so the walkthrough says none are needed instead of telling you to tap one');
+    {
+      const nt = await p3.evaluate(() => window.__newToasts);
+      assert(nt.length >= 1 && nt.every((x) => !x.duringTour && !x.duringIntro) && nt.every((x) => !/All-purpose/.test(x.text)), `stage 1 "New item" toast comes after the walkthrough and lists only what this stage uses (got ${JSON.stringify(nt)})`);
+    }
     assert(await p3.waitForFunction(() => JSON.parse(localStorage.getItem('sparkle-clean-v1') || '{}').settings?.tourDone === true, null, { timeout: 5000 }).then(() => true, () => false), 'finishing the walkthrough is remembered');
     // 1판은 다시 해도 안내가 나온다
     await p3.click('[data-testid="back"]');
