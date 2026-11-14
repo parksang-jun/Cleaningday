@@ -64,6 +64,7 @@ export class Renderer {
   private textures = new Map<number, HTMLCanvasElement>();
   private foamTex = new Map<SprayStyle, HTMLCanvasElement>();
   private lastSprayFx = 0;
+  private lastToolFx = 0;
   private foamImg: ImageData | null = null;
   private glossImg: ImageData | null = null;
   private glossCount = -1;
@@ -858,6 +859,7 @@ export class Renderer {
           ctx.stroke();
         }
       }
+      if (active && item.kind === 'tool' && !shaking) this.toolFx(item.families, x, y, r, cw, now, hot);
       if (shaking) {
         ctx.setLineDash([]);
         ctx.lineWidth = 3 * this.dpr;
@@ -877,6 +879,139 @@ export class Renderer {
       }
       this.prevCursor = { x, y };
     } else this.prevCursor = null;
+  }
+
+  /**
+   * 도구마다 쓰는 느낌 — 닿는 모양(커서 안쪽 그림)과 튀는 것(입자)을 도구군별로 다르게.
+   * 호스는 물줄기가 튀고, 고압세척기는 가는 물안개가 세게 퍼지고, 스팀은 김이 오르고,
+   * 스펀지·세차 미트는 거품이 일고, 수세미는 긁힌 가루가, 스퀴지는 날(직선) 뒤로 물이 밀려 흐른다.
+   */
+  private toolFx(families: string[], x: number, y: number, r: number, cw: number, now: number, hot: boolean) {
+    const { ctx } = this;
+    const px = x * cw;
+    const py = y * cw;
+    let dx = 0;
+    let dy = 0;
+    if (this.prevCursor) {
+      dx = x - this.prevCursor.x;
+      dy = y - this.prevCursor.y;
+    }
+    const moving = Math.hypot(dx, dy) > 0.02;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const has = (f: string) => families.includes(f);
+    const emit = now - this.lastToolFx > 45;
+    if (emit) this.lastToolFx = now;
+    const R = r / cw; // 칸 단위 반경
+    const push = (o: Partial<Debris> & { shape: Debris['shape']; color: string }) =>
+      this.debris.push({ x, y, vx: 0, vy: 0, g: 0, life: 0.4, max: 0.4, size: 0.15, rot: 0, spin: 0, suck: false, ...o });
+    ctx.save();
+    ctx.setLineDash([]);
+    if (has('squeegee')) {
+      // 고무 날: 움직이는 방향에 직각인 굵은 직선
+      const nx = moving ? -uy : 1;
+      const ny = moving ? ux : 0;
+      ctx.strokeStyle = 'rgba(40,50,60,0.85)';
+      ctx.lineWidth = 3.5 * this.dpr;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(px - nx * r, py - ny * r);
+      ctx.lineTo(px + nx * r, py + ny * r);
+      ctx.stroke();
+      if (emit && hot) for (let q = 0; q < 2; q++) push({ shape: 'drop', color: 'rgba(170,215,255,0.85)', x: x + (Math.random() - 0.5) * R * 1.6, y, vx: 0, vy: 1.5, g: 10, life: 0.45, max: 0.45, size: 0.1 });
+    } else if (has('hose') || has('washer') || has('rinse')) {
+      const washer = has('washer');
+      const rinse = has('rinse') && !has('hose') && !washer;
+      // 물이 닿는 자리: 밝은 물 고리
+      ctx.strokeStyle = 'rgba(170,220,255,0.7)';
+      ctx.lineWidth = (washer ? 1.5 : 2.5) * this.dpr;
+      const ph = (now / 120) % 1;
+      ctx.beginPath();
+      ctx.arc(px, py, r * (0.25 + ph * 0.7), 0, Math.PI * 2);
+      ctx.stroke();
+      if (emit) {
+        if (washer) {
+          // 고압: 가는 물안개가 사방으로 세게
+          for (let q = 0; q < 12; q++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 9 + Math.random() * 9;
+            const life = 0.14 + Math.random() * 0.14;
+            push({ shape: 'dot', color: 'rgba(225,242,255,0.8)', vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 4, life, max: life, size: 0.04 + Math.random() * 0.06 });
+          }
+        } else if (rinse) {
+          // 헹굼: 물이 조용히 흘러내린다
+          for (let q = 0; q < 4; q++) push({ shape: 'drop', color: 'rgba(160,210,255,0.8)', x: x + (Math.random() - 0.5) * R * 1.4, y: y + (Math.random() - 0.5) * R * 0.6, vx: 0, vy: 2 + Math.random() * 2, g: 14, life: 0.5, max: 0.5, size: 0.12 });
+        } else {
+          // 호스: 굵은 물방울이 튄다
+          for (let q = 0; q < 7; q++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 4 + Math.random() * 6;
+            const life = 0.28 + Math.random() * 0.2;
+            push({ shape: 'drop', color: 'rgba(150,205,255,0.85)', vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, g: 16, life, max: life, size: 0.1 + Math.random() * 0.08 });
+          }
+        }
+      }
+    } else if (has('steam')) {
+      // 스팀: 김이 뭉게뭉게 오른다
+      if (emit) for (let q = 0; q < 3; q++) push({ shape: 'puff', color: 'rgba(255,255,255,0.5)', x: x + (Math.random() - 0.5) * R, y: y + (Math.random() - 0.5) * R * 0.5, vx: (Math.random() - 0.5) * 1.5, vy: -2 - Math.random() * 2, g: -3, life: 0.8, max: 0.8, size: 0.6 + Math.random() * 0.5 });
+    } else if (has('sponge') || has('mitt')) {
+      // 스펀지·미트: 구멍 난 표면 + 닦일 때 거품
+      ctx.fillStyle = has('mitt') ? 'rgba(255,255,255,0.35)' : 'rgba(255,225,120,0.4)';
+      for (let k = 0; k < 9; k++) {
+        const a = (k / 9) * Math.PI * 2 + 0.4;
+        const d = r * (0.25 + ((k * 53) % 7) / 12);
+        ctx.beginPath();
+        ctx.arc(px + Math.cos(a) * d, py + Math.sin(a) * d, (has('mitt') ? 2.6 : 1.8) * this.dpr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (emit && hot) for (let q = 0; q < 2; q++) push({ shape: 'bubble', color: 'rgba(235,248,255,0.9)', x: x + (Math.random() - 0.5) * R * 1.4, y: y + (Math.random() - 0.5) * R * 1.4, vx: (Math.random() - 0.5) * 1.5, vy: -1 - Math.random() * 1.5, g: -2, life: 0.5, max: 0.5, size: 0.12 + Math.random() * 0.16 });
+    } else if (has('scrubpad')) {
+      // 수세미: 거친 격자 + 긁혀 나온 가루
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1 * this.dpr;
+      for (let k = -2; k <= 2; k++) {
+        ctx.beginPath();
+        ctx.moveTo(px + (k * r) / 3 - r * 0.5, py - r * 0.5);
+        ctx.lineTo(px + (k * r) / 3 + r * 0.5, py + r * 0.5);
+        ctx.moveTo(px + (k * r) / 3 + r * 0.5, py - r * 0.5);
+        ctx.lineTo(px + (k * r) / 3 - r * 0.5, py + r * 0.5);
+        ctx.stroke();
+      }
+      if (emit && hot) for (let q = 0; q < 3; q++) push({ shape: 'speck', color: 'rgba(90,110,70,0.8)', vx: -ux * 4 + (Math.random() - 0.5) * 4, vy: -uy * 4 + (Math.random() - 0.5) * 4, g: 12, life: 0.3, max: 0.3, size: 0.06 + Math.random() * 0.05, rot: Math.random() * 6, spin: 8 });
+    } else if (has('tilebrush') || has('deckbrush') || has('wheelbrush')) {
+      // 솔: 솔 끝에서 물이 뒤로 튄다 (빗살 점은 위에서 그림)
+      if (emit && hot && moving) for (let q = 0; q < 4; q++) push({ shape: 'dot', color: 'rgba(220,235,245,0.8)', vx: -ux * (5 + Math.random() * 5) + (Math.random() - 0.5) * 3, vy: -uy * (5 + Math.random() * 5) + (Math.random() - 0.5) * 3, g: 8, life: 0.22, max: 0.22, size: 0.05 + Math.random() * 0.05 });
+    } else if (has('eraser')) {
+      // 멜라민 스펀지: 하얀 부스러기
+      if (emit && hot) for (let q = 0; q < 3; q++) push({ shape: 'speck', color: 'rgba(255,255,255,0.95)', vx: (Math.random() - 0.5) * 3, vy: 1, g: 14, life: 0.35, max: 0.35, size: 0.07, rot: Math.random() * 6, spin: 6 });
+    } else if (has('lintroller')) {
+      // 돌돌이: 굴러가는 롤러 줄무늬
+      const nx = moving ? -uy : 1;
+      const ny = moving ? ux : 0;
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = 1.5 * this.dpr;
+      const ph = ((now / 90) % 1) - 0.5;
+      for (let k = -1; k <= 1; k++) {
+        const o = (k * 0.5 + ph * 0.5) * r;
+        ctx.beginPath();
+        ctx.moveTo(px - nx * r * 0.8 + ux * o, py - ny * r * 0.8 + uy * o);
+        ctx.lineTo(px + nx * r * 0.8 + ux * o, py + ny * r * 0.8 + uy * o);
+        ctx.stroke();
+      }
+    } else if (has('cloth')) {
+      // 걸레: 접힌 천의 결
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = 1 * this.dpr;
+      for (let k = -1; k <= 1; k++) {
+        ctx.beginPath();
+        ctx.moveTo(px - r * 0.6, py + (k * r) / 3);
+        ctx.quadraticCurveTo(px, py + (k * r) / 3 - r * 0.12, px + r * 0.6, py + (k * r) / 3);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+    if (this.debris.length > 520) this.debris.splice(0, this.debris.length - 520);
   }
 
   /** 커서 궤적: wet=true 면 오염층 아래 젖은 광택, false 면 위에 닦는 빛 */
