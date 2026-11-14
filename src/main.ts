@@ -2755,7 +2755,14 @@ async function boot() {
   renderHome();
   exposeDebug();
   void ads.init();
-  if (location.hash === '#admin' && adminEnabled()) openAdminGate();
+  if (location.hash === '#admin' && adminEnabled()) {
+    // 운영센터(이 맥의 127.0.0.1/game/)에서 열면 PIN 없이 바로 — 운영센터는 운영자 본인 컴퓨터에서만 열린다
+    const viaOpsCenter = ['127.0.0.1', 'localhost'].includes(location.hostname) && location.pathname.startsWith('/game/');
+    if (viaOpsCenter) {
+      adminUnlocked = true;
+      enterAdmin();
+    } else openAdminGate();
+  }
 }
 
 void boot();

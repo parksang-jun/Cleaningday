@@ -36,6 +36,12 @@ aside { background: var(--side); color: var(--side-fg); display: flex; flex-dire
 .dot.ok { background: #2fd27f; } .dot.warn { background: #f3b23c; } .dot.bad { background: #ff6b5e; } .dot.run { background: #5aa0ff; animation: pulse 1.2s infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
 main { padding: 22px 28px 40px; min-width: 0; }
+#gamewrap { display: flex; flex-direction: column; min-width: 0; height: 100vh; }
+#gamewrap[hidden] { display: none; }
+.gamebar { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid rgba(128,128,128,.25); }
+.gamebar .sp { flex: 1; }
+.gamebar .sub { opacity: .65; font-size: 12px; }
+#gameframe { flex: 1; width: 100%; border: 0; background: #fff; }
 .top { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 .top h1 { font-size: 20px; margin: 0; letter-spacing: -.02em; }
 .top .sub { color: var(--muted); font-size: 12.5px; }
@@ -159,6 +165,7 @@ pre.log { background: #0c1219; color: #cfe0f2; padding: 14px; border-radius: 10p
     <button class="nav" data-page="approve"><span class="ic">✓</span>결재함<span class="badge" id="b-approve" hidden></span></button>
     <button class="nav" data-page="improve"><span class="ic">↗</span>제품 개선<span class="badge" id="b-improve" hidden></span></button>
     <button class="nav" data-page="adstudio"><span class="ic">▶</span>광고 제작·배포<span class="badge" id="b-adstudio" hidden></span></button>
+    <button class="nav" data-page="gameadmin"><span class="ic">🛠</span>게임 운영자 모드</button>
     <button class="nav" data-page="sponsors"><span class="ic">◎</span>광고주 영업</button>
     <button class="nav" data-page="money"><span class="ic">₩</span>정산</button>
     <button class="nav" data-page="reports"><span class="ic">▤</span>보고서</button>
@@ -167,6 +174,10 @@ pre.log { background: #0c1219; color: #cfe0f2; padding: 14px; border-radius: 10p
     <div class="side-foot" id="side-foot"><span class="dot"></span>연결 중…</div>
   </aside>
   <main id="main"></main>
+  <section id="gamewrap" hidden>
+    <div class="gamebar"><b>게임 운영자 모드</b><span class="sub" id="game-built"></span><span class="sp"></span><button class="btn sm" data-game="reload">새로 고침</button><button class="btn sm" data-game="build">게임 새로 만들기</button><button class="btn sm" data-url-game="1">새 창으로 열기</button></div>
+    <iframe id="gameframe" title="게임 운영자 모드"></iframe>
+  </section>
 </div>
 <div class="toast" id="toast"></div>
 <script>
@@ -433,6 +444,13 @@ const PAGES = {
     return `<div class="top"><h1>실행 기록</h1><span class="sub">에이전트가 실제로 한 일의 원본 기록</span><span class="sp"></span><button class="btn" data-open="logs">폴더 열기</button></div>
     <div class="split"><div class="card" id="loglist"><div class="empty">불러오는 중…</div></div><div class="card"><div id="diagview"></div><h2 style="margin-top:4px">원본 기록 <small>에이전트가 남긴 그대로</small><span class="sp"></span><button class="btn sm" data-copylog="">기록 복사</button></h2><pre class="log" id="logview">기록을 고르세요</pre></div></div>`;
   },
+  gameadmin() {
+    const g = S?.game || {};
+    return `<div class="top"><h1>게임 운영자 모드</h1><span class="sub">광고 제품 등록·쇼호스트 설정·판 시험 플레이·집계</span></div>
+    <div class="card"><h2>${g.busy ? '게임을 만드는 중…' : '게임을 먼저 만들어야 합니다'}</h2>
+      <p class="m">${g.busy ? '1분쯤 걸립니다. 끝나면 이 화면이 자동으로 운영자 모드로 바뀝니다.' : esc(g.ok === false ? g.msg : '운영자 모드는 이 맥에서 만든 게임 안에 들어 있습니다. 아래 버튼을 한 번 누르면 준비됩니다.')}</p>
+      <div class="acts"><button class="btn pri" data-game="build" ${g.busy ? 'disabled' : ''}>${g.busy ? '만드는 중…' : '게임 만들기'}</button></div></div>`;
+  },
   settings() {
     const t = S?.tools || {}, r = S?.repo || {}, rs = Object.values(S?.routines || {});
     const row = (ok, name, val, fix = '') => `<div class="check"><span class="dot ${ok ? 'ok' : 'bad'}"></span><div class="t"><b>${name}</b><div class="m">${esc(val || '없음')}</div></div>${fix}</div>`;
@@ -548,6 +566,13 @@ document.addEventListener('toggle', (e) => { const d = e.target; if (!d.matches?
 document.addEventListener('input', (e) => { const k = e.target.dataset?.memo; if (k) memos[k] = e.target.value; });
 function render() {
   document.querySelectorAll('.nav').forEach((b) => b.classList.toggle('on', b.dataset.page === page));
+  // 게임 운영자 모드는 화면을 다시 그릴 때마다 새로 열리지 않게 따로 둔 틀에 띄운다
+  const showGame = page === 'gameadmin' && S?.game?.built && !S.game.busy;
+  $('#gamewrap').hidden = !showGame; $('#main').hidden = showGame;
+  if (showGame) {
+    const f = $('#gameframe'); if (f.dataset.at !== S.game.builtAt) { f.dataset.at = S.game.builtAt; f.src = `/game/?v=${encodeURIComponent(S.game.builtAt)}#admin`; }
+    $('#game-built').textContent = `만든 때 ${new Date(S.game.builtAt).toLocaleString('ko-KR')} · 여기서 바꾼 설정은 이 맥에만 저장됩니다`;
+  }
   $('#main').innerHTML = S ? PAGES[page]() : '<div class="empty" style="padding:80px">운영센터 불러오는 중…</div>';
   document.querySelectorAll('[data-memo]').forEach((el) => { if (memos[el.dataset.memo]) el.value = memos[el.dataset.memo]; }); // 다시 그려도 적던 메모 유지
   if (page === 'reports') loadReport();
@@ -568,7 +593,7 @@ async function refresh(force) {
     if (S.ui) { if (uiSeen === null) uiSeen = S.ui; else if (S.ui !== uiSeen && !['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement?.tagName) && !Object.values(memos).some((v) => v)) { location.reload(); return; } }
     if (force || Date.now() - lastState > 30000) { D = await api('/api/state'); lastState = Date.now(); }
     if (force || page === 'command' || !C.synced) { try { const c = await api('/api/commands'); if (c.ok) C = c; } catch {} }
-    const sig = JSON.stringify([S.routines, S.repo, S.tools, D?.reports?.length, D?.pending?.length, D?.source, D?.inbox, D?.feedback?.rows?.length, S.sync?.at, S.sync?.msg, S.sync?.pushOk, S.github?.at, S.update, D?.approvals, C.cloud.map((c) => [c.number, c.state, c.reply?.at]), C.local.map((c) => [c.file, c.state])]);
+    const sig = JSON.stringify([S.game, S.routines, S.repo, S.tools, D?.reports?.length, D?.pending?.length, D?.source, D?.inbox, D?.feedback?.rows?.length, S.sync?.at, S.sync?.msg, S.sync?.pushOk, S.github?.at, S.update, D?.approvals, C.cloud.map((c) => [c.number, c.state, c.reply?.at]), C.local.map((c) => [c.file, c.state])]);
     if (document.activeElement && ['TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && !force) { lastSig = lastSig || sig; return; } // 입력 중에는 화면을 다시 그리지 않는다
     if (force || sig !== lastSig) { lastSig = sig; render(); }
     else if (page === 'runs' && Object.values(S.routines).some((r) => r.running)) loadLogs();
@@ -580,6 +605,9 @@ document.addEventListener('click', (e) => {
   const d = t.dataset;
   if (t.tagName === 'SUMMARY') return;
   if (d.page || d.pageGo) { page = d.page || d.pageGo; try { localStorage.setItem('sc-page', page); } catch {} render(); return; }
+  if (d.game === 'build') return act('/api/game-build', {}, t);
+  if (d.game === 'reload') { const f = $('#gameframe'); f.src = `/game/?v=${Date.now()}#admin`; return; }
+  if (d.urlGame) { window.open('/game/#admin', '_blank'); return; }
   if (d.run) return act('/api/run', { routine: d.run }, t);
   if (d.stop) return act('/api/stop', { routine: d.stop }, t);
   if (d.sched) return act('/api/schedule', { on: d.sched === '1' }, t);

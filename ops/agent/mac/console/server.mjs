@@ -116,7 +116,7 @@ async function status() {
     }
     routines[k] = { ...r, scheduled: exists(path.join(LAUNCH, `${label}.plist`)) && ll.includes(label), plist: exists(path.join(LAUNCH, `${label}.plist`)), next: nextRun(r.cal), last, running, runs: logs.length };
   }
-  return { now: new Date().toISOString(), host: os.hostname(), tools: { git: gitBin, node: nodeBin, claude: claudeBin, gh: ghBin }, repo, runner: exists(runner) ? runner : null, homeDir: HOME_DIR, routines, links: { repo: REPO_URL, game: GAME_URL }, sync: syncState, github: gh, update: { restartNeeded }, ui: uiVersion() };
+  return { now: new Date().toISOString(), host: os.hostname(), tools: { git: gitBin, node: nodeBin, claude: claudeBin, gh: ghBin }, repo, runner: exists(runner) ? runner : null, homeDir: HOME_DIR, routines, links: { repo: REPO_URL, game: GAME_URL }, sync: syncState, github: gh, update: { restartNeeded }, ui: uiVersion(), game: gameState() };
 }
 
 // ---- 상태 파일: main 과 에이전트 브랜치(agent/*) 중 가장 최근 것을 읽는다 (에이전트는 브랜치에 커밋하고 PR 을 연다)
@@ -526,6 +526,36 @@ function readBody(req) {
   return new Promise((resolve) => { let b = ''; req.on('data', (c) => { b += c; if (b.length > 1e5) req.destroy(); }); req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch { resolve({}); } }); });
 }
 
+// ---- 게임 운영자 모드: 이 맥에서 빌드한 게임(dist)을 /game/ 으로 내보내 운영센터 안에서 연다
+const GAME_DIST = path.join(REPO, 'dist');
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp3': 'audio/mpeg', '.mp4': 'video/mp4', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
+let gameBuild = { busy: false, ok: null, msg: '', at: null };
+function gameState() {
+  const idx = path.join(GAME_DIST, 'index.html');
+  let builtAt = null;
+  try { builtAt = fs.statSync(idx).mtime.toISOString(); } catch { /* 아직 빌드 전 */ }
+  return { built: Boolean(builtAt), builtAt, ...gameBuild };
+}
+function serveGame(res, pathname) {
+  let rel = decodeURIComponent(pathname.slice('/game/'.length)) || 'index.html';
+  const file = path.resolve(GAME_DIST, rel);
+  if (file !== GAME_DIST && !file.startsWith(GAME_DIST + path.sep)) return send(res, 403, { ok: false });
+  if (!exists(file) || fs.statSync(file).isDirectory()) return send(res, 404, 'not found', 'text/plain; charset=utf-8');
+  return send(res, 200, fs.readFileSync(file), MIME[path.extname(file).toLowerCase()] || 'application/octet-stream');
+}
+async function buildGame() {
+  if (gameBuild.busy) return { ok: true, msg: '이미 만드는 중입니다' };
+  if (!exists(path.join(REPO, 'package.json'))) return { ok: false, msg: '게임 폴더를 찾지 못했습니다' };
+  gameBuild = { busy: true, ok: null, msg: '게임을 만드는 중…', at: new Date().toISOString() };
+  (async () => {
+    let r = { ok: true, err: '' };
+    if (!exists(path.join(REPO, 'node_modules'))) r = await run('npm', ['install', '--no-audit', '--no-fund'], { cwd: REPO, timeout: 600000 });
+    if (r.ok) r = await run('npm', ['run', 'build'], { cwd: REPO, timeout: 300000 });
+    gameBuild = { busy: false, ok: r.ok, msg: r.ok ? '게임을 새로 만들었습니다' : `만들기 실패: ${(r.err || r.out || '').trim().split('\n').slice(-3).join(' / ').slice(0, 300)}`, at: new Date().toISOString() };
+  })();
+  return { ok: true, msg: '게임을 만들기 시작했습니다 (1분쯤 걸립니다)' };
+}
+
 const server = http.createServer(async (req, res) => {
   lastHit = Date.now();
   const host = (req.headers.host || '').split(':')[0];
@@ -535,6 +565,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET') {
       if (url.pathname === '/' || url.pathname === '/index.html') return send(res, 200, fs.readFileSync(path.join(HERE, 'index.html')), 'text/html; charset=utf-8');
       if (url.pathname === '/icon.png' && exists(path.join(HERE, 'icon.png'))) return send(res, 200, fs.readFileSync(path.join(HERE, 'icon.png')), 'image/png');
+      if (url.pathname === '/game') { res.writeHead(302, { Location: '/game/' }); return res.end(); }
+      if (url.pathname.startsWith('/game/')) return serveGame(res, url.pathname);
       if (url.pathname === '/api/ping') return send(res, 200, { ok: true });
       if (url.pathname === '/api/status') return send(res, 200, await status());
       if (url.pathname === '/api/state') return send(res, 200, await stateData());
@@ -568,6 +600,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/feedback/remove') return send(res, 200, removeFeedback(Number(body.index)));
       if (url.pathname === '/api/schedule') return send(res, 200, await setSchedule(Boolean(body.on)));
       if (url.pathname === '/api/pull') return send(res, 200, await pull());
+      if (url.pathname === '/api/game-build') return send(res, 200, await buildGame());
       if (url.pathname === '/api/install') return send(res, 200, await installAgent());
       if (url.pathname === '/api/open') return send(res, 200, openTarget(body.target, body.arg));
       if (url.pathname === '/api/command') return send(res, 200, await sendCommand(body.text, body.where === 'local' ? 'local' : 'cloud'));
