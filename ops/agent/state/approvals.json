@@ -207,6 +207,37 @@
       "after": "에이전트가 코드를 게임 설정에 넣어 25개 구매 버튼 전부에 수수료 추적이 붙게 하고 변경안으로 올립니다. 비어 있는 제품 목록은 ops/agent/state/affiliate-links.md 에 있습니다.",
       "status": "open",
       "created": "2026-11-13"
+    },
+    {
+      "id": "app-ads-host",
+      "kind": "choose",
+      "title": "광고 인증 파일(app-ads.txt)을 올릴 주소 정하기",
+      "summary": "AdMob 이 '이 앱의 광고 수익은 사장님 계정 것'임을 확인하는 한 줄짜리 파일(app-ads.txt)을 만들어 두었습니다(store/app-ads.txt, 브랜치 agent/2026-11-14-app-ads-txt). 그런데 AdMob 은 이 파일을 스토어에 적은 개발자 웹사이트 주소의 '맨 앞(최상위)'에서만 찾습니다. 지금 게임 페이지는 parksang-jun.github.io/Cleaningday/ 처럼 한 단계 아래에 있어서 그대로는 못 찾습니다.",
+      "why": "파일이 확인되지 않으면 AdMob 이 광고 게재를 제한할 수 있어 광고 수익 전체에 걸립니다. 출시 전에 해 두는 것이 안전합니다(AdMob 도움말 9363762).",
+      "cost": "가안 A·C 0원 / 가안 B 도메인 연 비용(확인 필요)",
+      "time": "A: 5분 + AdMob 확인 최대 24시간",
+      "options": [
+        {
+          "id": "user-site",
+          "label": "A. GitHub 에 'parksang-jun.github.io' 저장소를 새로 만들어 그 맨 앞에 파일을 둔다",
+          "desc": "돈이 들지 않고 지금 쓰는 게임 페이지 주소는 그대로입니다. 새 공개 저장소가 하나 생기는 일이라 사장님 허락이 필요합니다. 허락하시면 에이전트가 저장소를 만들고 app-ads.txt 한 파일만 올린 뒤, 스토어 '개발자 웹사이트'에 https://parksang-jun.github.io/Cleaningday/ 를 적으시도록 안내합니다(AdMob 은 주소의 앞부분 parksang-jun.github.io 에서 파일을 찾습니다).",
+          "recommended": true,
+          "why_recommended": "비용 0원, 5분이면 끝나고, 나중에 자체 도메인으로 옮기기도 쉽습니다."
+        },
+        {
+          "id": "own-domain",
+          "label": "B. 게임용 도메인(예: sparkleclean.app)을 사서 거기에 둔다",
+          "desc": "브랜드 주소가 생기지만 도메인 구입·연결(사장님 결제)이 필요하고 매년 비용이 듭니다. 가격은 확인 필요."
+        },
+        {
+          "id": "later",
+          "label": "C. 나중에 한다",
+          "desc": "출시는 가능하지만 그동안 AdMob 이 광고를 제한할 수 있습니다."
+        }
+      ],
+      "after": "A 면 에이전트가 저장소를 만들고 파일을 올린 뒤 주소가 열리는지 확인하고, AdMob 'app-ads.txt' 화면에서 '업데이트 확인'을 누르는 방법을 안내합니다. B 면 도메인 연결 절차를 요청서로 다시 올립니다.",
+      "status": "open",
+      "created": "2026-11-14"
     }
   ]
 }
