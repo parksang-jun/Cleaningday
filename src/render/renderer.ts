@@ -3,6 +3,7 @@ import { DIRT_TYPES, type ItemSpec } from '../game/catalog';
 import type { CleanSession } from '../game/engine';
 import { DEBRIS, makeFoamTexture, makeGrimeTexture } from './grime';
 import { paintLevel } from './scene';
+import { loadScenePhotos } from './photos';
 
 interface Sparkle {
   x: number;
@@ -192,6 +193,7 @@ export class Renderer {
     }
     this.cssW = Math.floor(w);
     this.cssH = Math.floor(h);
+    // 배율 3배는 자동 검사에서 시간 제한 판이 느려져 실패했다 — 실제 기기에서 속도를 확인하기 전까지 2배 유지
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.canvas.style.width = `${this.cssW}px`;
     this.canvas.style.height = `${this.cssH}px`;
@@ -200,6 +202,13 @@ export class Renderer {
     this.base.width = this.canvas.width;
     this.base.height = this.canvas.height;
     paintLevel(this.base.getContext('2d')!, s.level, this.base.width, this.base.height);
+    // 실사 사진이 뒤늦게 도착하면 바탕만 다시 그린다
+    const lv = s.level;
+    void loadScenePhotos(lv.zones ? lv.zones.map((z) => z.scene) : [lv.scene]).then((fresh) => {
+      if (!fresh || this.session?.level !== lv || !this.base.width) return;
+      paintLevel(this.base.getContext('2d')!, lv, this.base.width, this.base.height);
+      this.hasSnap = false;
+    });
     // 오염층 해상도 (상한 적용)
     const scale = Math.min(1, Math.sqrt(LAYER_MAX_PX / (this.canvas.width * this.canvas.height)));
     this.layer.width = Math.max(1, Math.round(this.canvas.width * scale));

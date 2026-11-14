@@ -8,6 +8,7 @@ import type { LevelDef, SceneId } from '../game/levels';
 import { mulberry32 } from '../game/rng';
 import * as M from './materials';
 import * as P from './props';
+import { drawCover, scenePhoto } from './photos';
 
 type Ctx = CanvasRenderingContext2D;
 type Rnd = () => number;
@@ -59,6 +60,13 @@ export function paintScene(ctx: Ctx, scene: SceneId, w: number, h: number): void
   ctx.beginPath();
   ctx.rect(0, 0, w, h);
   ctx.clip();
+  // 실사 사진이 준비된 장면은 사진으로
+  const photo = scenePhoto(scene);
+  if (photo) {
+    drawCover(ctx, photo, w, h);
+    ctx.restore();
+    return;
+  }
   switch (scene) {
     case 'floor':
       floorScene(ctx, w, h, rnd);
