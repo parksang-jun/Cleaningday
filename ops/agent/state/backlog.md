@@ -10,7 +10,7 @@
 ## 진행 중 (PR 올림, 병합은 승인)
 - [auto] 판매몰 맨 아래 제휴(수수료) 고지 복원 → PR #7 `agent/2026-11-14-affiliate-disclosure` (결재 affiliate-disclosure=restore)
 - [auto] 목표 시간 하한 보정(16판, 기본 장비로 별 3개 가능하게) → PR #6 `agent/2026-11-14-improve-par-floor` (근거: 봇 플레이테스트 11-13·11-14)
-- [auto] '새 아이템' 알림: 그 판 도구 칸에 나오는 것만, 인트로·조작 안내가 끝난 뒤에 → PR `agent/2026-11-14-improve-newitem-toast` (근거: 2026-11-13 조작 안내 화면 점검, 11-14 코드 확인)
+- [auto] '새 아이템' 알림: 그 판 도구 칸에 나오는 것만, 인트로·조작 안내가 끝난 뒤에 → PR #9 `agent/2026-11-14-improve-newitem-toast` (CI 통과) (근거: 2026-11-13 조작 안내 화면 점검, 11-14 코드 확인)
 
 ## 다음에 처리 (위에서부터)
 - [auto] app-ads.txt: 내용 초안(`google.com, pub-5724346706486152, DIRECT, f08c47fec0942fa0`)과 올릴 위치 조사. AdMob 은 스토어에 적은 개발자 웹사이트의 **최상위 주소**에서 찾는데, 지금 공개 페이지는 `parksang-jun.github.io/Cleaningday/`(하위 경로)라 그대로는 안 됨(확인 필요). 새 저장소·도메인이 필요하면 결재 요청서로 (근거: 11-14 자체 점검)
