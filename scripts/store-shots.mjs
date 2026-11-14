@@ -104,13 +104,13 @@ const fever = async (box) => {
   return null;
 };
 
-// ---------- 1~5 장면 ----------
+// ---------- 1~5 장면: 시작 · 카페트 · 주방 · 자동차 · 리워드 ----------
 let box;
-await home(); await shot('1-home.png');                                   // 1. 시작 페이지
-box = await enter('exterior', 73); await cleanLeft(0.5); await rub(box, 0.5); await p.waitForTimeout(400); await shot('2-car.png'); await p.mouse.up();
+await home(); await shot('1-home.png');
+box = await enter('living', 5); await cleanLeft(0.5); await rub(box, 0.5); await p.waitForTimeout(400); await shot('2-rug.png'); await p.mouse.up();
 box = await enter('kitchen', 25); await cleanLeft(0.5); await rub(box, 0.5); await p.waitForTimeout(400); await shot('3-kitchen.png'); await p.mouse.up();
-box = await enter('interior', 93); await cleanLeft(0.55); console.log('반짝 타임 -', await fever(box)); await shot('4-fever.png'); await p.mouse.up();
-box = await enter('garden', 60);                                           // 5. 리워드(결과)
+box = await enter('exterior', 73); await cleanLeft(0.5); await rub(box, 0.5); await p.waitForTimeout(400); await shot('4-car.png'); await p.mouse.up();
+box = await enter('garden', 60);
 await p.evaluate(() => window.__sparkle.clearAll());
 await p.waitForSelector('[data-testid="result"]', { timeout: 30000 });
 await p.waitForTimeout(1800); await shot('5-result.png', true);
@@ -119,16 +119,16 @@ await p.waitForTimeout(1800); await shot('5-result.png', true);
 const COPY = {
   ko: [
     ['1-home', '96개 스테이지', '집 · 정원 · 자동차까지', ['#1b2a4a', '#0d1628'], '#7cc4ff'],
-    ['2-car', '문지르면\n반짝!', '더러운 차가 새 차로', ['#06433f', '#02211f'], '#2fe0c6'],
+    ['2-rug', '카페트도\n새것처럼', '진흙도 머리카락도 싹', ['#14342a', '#071913'], '#5fe0a0'],
     ['3-kitchen', '찌든 기름때도\n싹싹', '얼룩마다 딱 맞는 세제', ['#5a2708', '#2a1104'], '#ffa743'],
-    ['4-fever', '반짝 타임!\n콤보 폭발', '멈출 수 없는 청소 쾌감', ['#6b4a00', '#2e1f00'], '#ffd24a'],
+    ['4-car', '문지르면\n반짝!', '더러운 차가 새 차로', ['#0b2f52', '#04121f'], '#56b8ff'],
     ['5-result', '별 3개\n클리어!', '보상으로 장비를 모아요', ['#3a1060', '#17062b'], '#c08bff'],
   ],
   en: [
     ['1-home', '96 Stages', 'Home · Garden · Car', ['#1b2a4a', '#0d1628'], '#7cc4ff'],
-    ['2-car', 'Swipe.\nSparkle!', 'From filthy to brand new', ['#06433f', '#02211f'], '#2fe0c6'],
+    ['2-rug', 'Rugs Like\nNew Again', 'Mud and pet hair, gone', ['#14342a', '#071913'], '#5fe0a0'],
     ['3-kitchen', 'Grease?\nGone.', 'The right cleaner for every mess', ['#5a2708', '#2a1104'], '#ffa743'],
-    ['4-fever', 'Sparkle Time!\nCombo rush', "Cleaning you can't stop", ['#6b4a00', '#2e1f00'], '#ffd24a'],
+    ['4-car', 'Swipe.\nSparkle!', 'From filthy to brand new', ['#0b2f52', '#04121f'], '#56b8ff'],
     ['5-result', '3 Stars\nCleared!', 'Earn gear with your rewards', ['#3a1060', '#17062b'], '#c08bff'],
   ],
 }[LANG === 'ko' ? 'ko' : 'en'];
