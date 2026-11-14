@@ -23,6 +23,7 @@ import { CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MA
 import { adminEnabled, adminPin, hostConfig, hostEnabled, installOpsCounters, saveHostConfig, sponsorList } from './ops';
 import { renderAdmin } from './admin';
 import { Renderer } from './render/renderer';
+import { sprayLook } from './render/sprayfx';
 import type { View3D } from './render/view3d';
 import { getStore, loadStore, persist, resetStore, type HostConfig } from './storage';
 import { AD_COINS, AD_COINS_PER_DAY, AD_FREE_PASSES, adFree, buyAdFree, adBoostersLeft, adCoinsLeft, BOOSTER_IDS, BOOSTERS, claimDailyBonus, todayKey, CONTINUE_COINS, daily, type BoosterId } from './economy';
@@ -1647,8 +1648,9 @@ function step(dt: number) {
       handleEvents(evs);
     }
     if (spec.kind === 'detergent') {
+      g.renderer.sprayFx(spec, at.x, at.y, spec.radius);
       if (g.sprayCooldown <= 0) {
-        sfx.spray();
+        sfx.spray(sprayLook(spec).style);
         g.sprayCooldown = 0.35;
         updateBudgets();
       }

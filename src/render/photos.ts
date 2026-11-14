@@ -9,17 +9,22 @@ for (const [path, url] of Object.entries(urls)) URL_OF.set(path.split('/').pop()
 const loaded = new Map<string, HTMLImageElement>();
 const loading = new Map<string, Promise<void>>();
 
-export function hasScenePhoto(scene: SceneId): boolean {
+/** 판 전용 사진의 이름 — src/assets/scenes/L<판 번호>.jpg. 있으면 장면 사진보다 먼저 쓴다(판마다 다른 사진) */
+export function levelPhotoKey(id: number): string {
+  return `L${id}`;
+}
+
+export function hasScenePhoto(scene: SceneId | string): boolean {
   return URL_OF.has(scene);
 }
 
 /** 이미 불러온 사진만 돌려준다(그리기는 동기라서) */
-export function scenePhoto(scene: SceneId): HTMLImageElement | null {
+export function scenePhoto(scene: SceneId | string): HTMLImageElement | null {
   return loaded.get(scene) ?? null;
 }
 
 /** 필요한 장면 사진을 불러온다. 새로 불러온 것이 있으면 true */
-export async function loadScenePhotos(scenes: SceneId[]): Promise<boolean> {
+export async function loadScenePhotos(scenes: (SceneId | string)[]): Promise<boolean> {
   if (typeof Image === 'undefined') return false;
   let fresh = false;
   await Promise.all(

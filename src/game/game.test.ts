@@ -255,13 +255,13 @@ describe('engine', () => {
     expect(s.hasLayers).toBe(true)
     const bot = simulateBot(lv)
     expect(bot.passed).toBe(true)
-    // 직접: 아래층이 있는 칸을 찾아 윗층을 지움 (desk: stain over dust → allpurpose + cloth)
+    // 직접: 아래층이 있는 칸을 찾아 윗층을 지움 (선반: 얼룩 위의 손때 → 주방세제 푼 물 + 걸레)
     let cell = -1
     for (let i = 0; i < s.under.length; i++) if (s.under[i] > 0 && s.amount[i] > 0) { cell = i; break }
     expect(cell).toBeGreaterThanOrEqual(0)
     const cx = (cell % s.w) + 0.5
     const cy = Math.floor(cell / s.w) + 0.5
-    s.spray(BASE_DETERGENTS.allpurpose, cx, cy, 0.2)
+    s.spray(BASE_DETERGENTS.dishsoap, cx, cy, 0.2)
     let revealed = false
     for (let k = 0; k < 600 && !revealed; k++) {
       revealed = s.scrub(BASE_TOOLS.cloth, cx, cy, 1 / 30).some((e) => e.kind === 'revealed')

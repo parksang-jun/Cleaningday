@@ -422,8 +422,30 @@ export function stopScrub(): void {
 
 export const sfx = {
   /** 분사 — 치익 */
-  spray(): void {
-    noise(0.28, 0.35, { type: 'highpass', from: 3200, to: 5000, q: 0.6 });
+  /** 세정제 나오는 소리 — 분무는 '칙', 폼건은 길고 굵게 '쉬이익', 락스는 가늘게 '찍', 점성 세제는 '뿍', 가루는 '사락', 기름은 '쪼르륵' */
+  spray(style: 'mist' | 'foam' | 'bleach' | 'gel' | 'powder' | 'oil' = 'mist'): void {
+    switch (style) {
+      case 'foam':
+        noise(0.42, 0.34, { type: 'bandpass', from: 1400, to: 2600, q: 0.5 });
+        noise(0.3, 0.12, { type: 'highpass', from: 5200, q: 0.5 }, 0.05);
+        break;
+      case 'bleach':
+        noise(0.16, 0.3, { type: 'bandpass', from: 5200, to: 3600, q: 2.2 });
+        break;
+      case 'gel':
+        tone(210, 0.16, 'sine', 0.2, 0, 120);
+        noise(0.12, 0.1, { type: 'lowpass', from: 700, to: 300, q: 0.9 }, 0.03);
+        break;
+      case 'powder':
+        noise(0.2, 0.2, { type: 'highpass', from: 6500, to: 8000, q: 0.4 });
+        noise(0.12, 0.12, { type: 'highpass', from: 7000, q: 0.4 }, 0.1);
+        break;
+      case 'oil':
+        noise(0.3, 0.16, { type: 'lowpass', from: 900, to: 500, q: 1.2 });
+        break;
+      default:
+        noise(0.28, 0.35, { type: 'highpass', from: 3200, to: 5000, q: 0.6 });
+    }
   },
   /** 반짝임 — 콤보가 오를수록 높고 또렷하게 */
   sparkle(combo = 0): void {

@@ -370,7 +370,13 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['steam'], speed: 1.2 },
   ],
   stain: [
-    { tools: ['cloth', 'sponge'], cleaner: 'allpurpose', not: ['fabric', 'glass'], speed: 1.0 },
+    // 다목적 세정제(중성)는 원목·도장 가구 얼룩 전용 — 주방·욕실·차량·실외 얼룩은 그 자리에 맞는 세제가 따로 있다
+    { tools: ['cloth', 'sponge'], cleaner: 'allpurpose', on: ['wood'], speed: 1.0 },
+    { tools: ['cloth', 'sponge'], cleaner: 'allpurpose', on: ['paint'], speed: 0.6 },
+    { tools: ['sponge', 'tilebrush'], cleaner: 'bathroom', on: ['ceramic', 'tile'], speed: 1.0 }, // 욕실 얼룩은 욕실 세정제
+    { tools: ['sponge', 'deckbrush'], cleaner: 'deck', on: ['plastic', 'paint', 'wood', 'stone', 'brick'], speed: 0.9 }, // 실외 가구·담장 얼룩은 산소계 데크 클리너
+    { tools: ['sponge'], cleaner: 'dishsoap', on: ['plastic'], speed: 0.9 }, // 플라스틱 의자·통의 얼룩은 주방세제 푼 물
+    { tools: ['scrubpad', 'sponge'], cleaner: 'degreaser', on: ['metal', 'steel'], speed: 0.9 }, // 그릴·후드의 눌어붙은 얼룩은 기름때 제거제
     { tools: ['cloth', 'sponge'], cleaner: 'bakingsoda', on: ['steel', 'ceramic', 'tile'], speed: 0.85 }, // 꿀팁: 싱크대·컵 얼룩은 베이킹소다로
     { tools: ['cloth', 'sponge', 'tilebrush'], cleaner: 'soapsoda', on: ['steel', 'ceramic', 'tile'], speed: 1.1 }, // 섞어 쓰기: 베이킹소다 + 주방세제 (욕조·싱크·변기 레시피)
     { tools: ['sponge', 'tilebrush'], cleaner: 'descaler', on: ['ceramic'], speed: 0.8 }, // 꿀팁: 변기 얼룩은 구연산 10분
@@ -429,7 +435,8 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['squeegee', 'cloth'], cleaner: 'dishsoap', on: ['glass'], speed: 0.8 },
     { tools: ['cloth', 'sponge', 'eraser'], cleaner: 'polish', on: ['plastic'], speed: 0.8 }, // 꿀팁: 헤드라이트 황변은 흰 치약으로 5~10분
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 1.0 },
-    { tools: ['cloth', 'sponge'], cleaner: 'allpurpose', not: ['glass', 'fabric'], speed: 0.9 },
+    { tools: ['sponge', 'deckbrush'], cleaner: 'deck', on: ['plastic', 'paint'], speed: 0.9 }, // 실외 가구의 뿌연 막
+    { tools: ['cloth', 'sponge'], cleaner: 'dishsoap', on: ['wood', 'steel', 'tile', 'ceramic', 'paint'], speed: 0.9 }, // 손때·기름막은 주방세제 희석액을 꼭 짠 걸레로 (다목적 세정제로는 번지기만 한다)
     { tools: ['mitt'], cleaner: 'carshampoo', on: ['paint', 'glass', 'plastic'], speed: 1.0 },
     { tools: ['eraser'], not: ['fabric'], speed: 1.1 },
     { tools: ['steam'], not: ['fabric'], speed: 1.0 },

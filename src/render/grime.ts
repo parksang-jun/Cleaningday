@@ -547,32 +547,6 @@ export function makeGrimeTexture(type: DirtType, w: number, h: number, seed: num
   return c;
 }
 
-/** 세정제 거품 텍스처 — 흰 거품 방울(하이라이트 포함) */
-export function makeFoamTexture(w: number, h: number, seed: number, px: number): HTMLCanvasElement {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  const g = c.getContext('2d')!;
-  const rnd = lcg(seed * 13 + 77);
-  const u = Math.max(1, px);
-  g.fillStyle = 'rgba(255,255,255,0.55)';
-  g.fillRect(0, 0, w, h);
-  const n = ((w * h) / (u * u)) * 1.1;
-  for (let k = 0; k < n; k++) {
-    const x = rnd() * w;
-    const y = rnd() * h;
-    const r = u * (0.08 + rnd() * rnd() * 0.5);
-    const rg = g.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
-    rg.addColorStop(0, 'rgba(255,255,255,0.95)');
-    rg.addColorStop(0.55, 'rgba(255,255,255,0.35)');
-    rg.addColorStop(0.9, 'rgba(255,255,255,0.75)');
-    rg.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = rg;
-    g.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-  return c;
-}
-
 /** 지워질 때 튀는 파편 스타일 */
 export interface DebrisStyle {
   shape: 'puff' | 'speck' | 'chip' | 'strand' | 'drop' | 'bubble' | 'tuft' | 'flash';

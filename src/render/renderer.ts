@@ -1,9 +1,10 @@
 // 렌더러 — 깨끗한 장면 위에 고해상도 오염 질감(종류별 텍스처 × 격자 마스크), 세정제 거품, 파편·반짝임·콤보, 닦는 자국(광), 전체 칙칙함 → 밝아짐, 도구 커서, 전후 리빌
 import { DIRT_TYPES, type ItemSpec } from '../game/catalog';
 import type { CleanSession } from '../game/engine';
-import { DEBRIS, makeFoamTexture, makeGrimeTexture } from './grime';
+import { DEBRIS, makeGrimeTexture } from './grime';
+import { makeResidueTexture, sprayLook, type SprayStyle } from './sprayfx';
 import { paintLevel } from './scene';
-import { loadScenePhotos } from './photos';
+import { levelPhotoKey, loadScenePhotos } from './photos';
 
 interface Sparkle {
   x: number;
@@ -25,7 +26,7 @@ interface Debris {
   rot: number;
   spin: number;
   color: string;
-  shape: 'puff' | 'speck' | 'chip' | 'strand' | 'drop' | 'bubble' | 'tuft' | 'flash';
+  shape: 'puff' | 'speck' | 'chip' | 'strand' | 'drop' | 'bubble' | 'tuft' | 'flash' | 'dot';
   suck: boolean;
 }
 
@@ -36,14 +37,6 @@ interface TrailPt {
   r: number;
   wet: boolean;
 }
-
-const FOAM: Record<string, [number, number, number]> = {
-  neutral: [200, 235, 255],
-  alkaline: [255, 240, 190],
-  acid: [210, 255, 210],
-  chlorine: [235, 225, 255],
-  solvent: [255, 220, 235],
-};
 
 /** 마스크 세부 해상도 — 격자 한 칸을 MS×MS 로 쪼개 가장자리를 울퉁불퉁하게 */
 const MS = 3;
@@ -69,7 +62,8 @@ export class Renderer {
   private snap = document.createElement('canvas');
   private masks = new Map<number, { canvas: HTMLCanvasElement; img: ImageData }>();
   private textures = new Map<number, HTMLCanvasElement>();
-  private foamTex: HTMLCanvasElement | null = null;
+  private foamTex = new Map<SprayStyle, HTMLCanvasElement>();
+  private lastSprayFx = 0;
   private foamImg: ImageData | null = null;
   private glossImg: ImageData | null = null;
   private glossCount = -1;
@@ -116,7 +110,7 @@ export class Renderer {
     this.glossCount = -1;
     this.masks.clear();
     this.textures.clear();
-    this.foamTex = null;
+    this.foamTex.clear();
     this.layerVersion = -1;
     this.sparkles = [];
     this.debris = [];
@@ -204,7 +198,7 @@ export class Renderer {
     paintLevel(this.base.getContext('2d')!, s.level, this.base.width, this.base.height);
     // 실사 사진이 뒤늦게 도착하면 바탕만 다시 그린다
     const lv = s.level;
-    void loadScenePhotos(lv.zones ? lv.zones.map((z) => z.scene) : [lv.scene]).then((fresh) => {
+    void loadScenePhotos([levelPhotoKey(lv.id), ...(lv.zones ? lv.zones.map((z) => z.scene) : [lv.scene])]).then((fresh) => {
       if (!fresh || this.session?.level !== lv || !this.base.width) return;
       paintLevel(this.base.getContext('2d')!, lv, this.base.width, this.base.height);
       this.hasSnap = false;
@@ -216,7 +210,7 @@ export class Renderer {
     this.tmp.width = this.layer.width;
     this.tmp.height = this.layer.height;
     this.textures.clear();
-    this.foamTex = null;
+    this.foamTex.clear();
     this.layerVersion = -1;
     this.hasSnap = false;
   }
@@ -299,6 +293,72 @@ export class Renderer {
           suck,
         });
       }
+    }
+    if (this.debris.length > 520) this.debris.splice(0, this.debris.length - 520);
+  }
+
+  /** 세정제를 뿌리는 순간의 입자 — 제품마다 나오는 모양이 다르다. (x, y) 는 격자 좌표, radius 는 분사 반경(칸) */
+  sprayFx(det: { base: string; family: string }, x: number, y: number, radius: number) {
+    const now = performance.now();
+    const look = sprayLook(det as never);
+    const gap = look.style === 'gel' ? 90 : look.style === 'foam' ? 45 : 35;
+    if (now - this.lastSprayFx < gap) return;
+    this.lastSprayFx = now;
+    const push = (o: Partial<Debris> & { shape: Debris['shape'] }) =>
+      this.debris.push({ x, y, vx: 0, vy: 0, g: 0, life: 0.4, max: 0.4, size: 0.2, rot: 0, spin: 0, color: look.particle, suck: false, ...o });
+    const R = radius;
+    switch (look.style) {
+      case 'mist':
+        // 분무: 고운 물방울이 부채꼴로 확 퍼졌다가 금방 사라진다
+        for (let q = 0; q < 14; q++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = R * (2.2 + Math.random() * 3.2);
+          const life = 0.22 + Math.random() * 0.2;
+          push({ shape: 'dot', x: x + Math.cos(a) * 0.3, y: y + Math.sin(a) * 0.3, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 3, life, max: life, size: 0.05 + Math.random() * 0.1 });
+        }
+        break;
+      case 'foam':
+        // 폼건: 굵은 거품 덩어리가 뭉게뭉게 쌓이고 한참 머문다
+        for (let q = 0; q < 7; q++) {
+          const a = Math.random() * Math.PI * 2;
+          const d = Math.random() * R * 0.9;
+          const life = 0.7 + Math.random() * 0.7;
+          push({ shape: Math.random() < 0.55 ? 'puff' : 'bubble', x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, vx: Math.cos(a) * 1.2, vy: Math.sin(a) * 1.2 - 0.6, g: 1.2, life, max: life, size: 0.35 + Math.random() * 0.55, color: look.particle });
+        }
+        break;
+      case 'bleach':
+        // 락스: 가는 줄기로 곧게 쏘이고, 닿은 자리에서 아래로 주르륵 흘러내린다
+        for (let q = 0; q < 6; q++) {
+          const a = -Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+          const sp = 9 + Math.random() * 6;
+          push({ shape: 'drop', x: x + (Math.random() - 0.5) * 0.8, y: y + R * 0.9 + Math.random() * 1.5, vx: Math.cos(a) * sp * 0.3, vy: Math.sin(a) * sp, g: 0, life: 0.16, max: 0.16, size: 0.16 });
+        }
+        for (let q = 0; q < 3; q++) {
+          const life = 0.6 + Math.random() * 0.5;
+          push({ shape: 'drop', x: x + (Math.random() - 0.5) * R * 1.4, y: y + (Math.random() - 0.5) * R, vx: 0, vy: 1 + Math.random() * 1.5, g: 9, life, max: life, size: 0.13 + Math.random() * 0.1 });
+        }
+        break;
+      case 'gel':
+        // 점성 세제: 굵은 방울이 묵직하게 뚝, 뚝 — 튀지 않고 그 자리에 늘어진다
+        for (let q = 0; q < 2; q++) {
+          const life = 0.55 + Math.random() * 0.35;
+          push({ shape: 'dot', x: x + (Math.random() - 0.5) * R * 0.7, y: y - 1.6 - Math.random(), vx: (Math.random() - 0.5) * 0.6, vy: 2.5, g: 16, life, max: life, size: 0.34 + Math.random() * 0.22 });
+        }
+        break;
+      case 'powder':
+        // 가루: 알갱이가 위에서 솔솔 흩뿌려진다
+        for (let q = 0; q < 16; q++) {
+          const life = 0.35 + Math.random() * 0.3;
+          push({ shape: 'speck', x: x + (Math.random() - 0.5) * R * 1.8, y: y - 2.2 - Math.random() * 1.5, vx: (Math.random() - 0.5) * 2.5, vy: 3 + Math.random() * 3, g: 14, life, max: life, size: 0.07 + Math.random() * 0.07, rot: Math.random() * 6, spin: (Math.random() - 0.5) * 10 });
+        }
+        break;
+      case 'oil':
+        // 기름: 굵은 방울 몇 개가 떨어져 번진다
+        for (let q = 0; q < 3; q++) {
+          const life = 0.5 + Math.random() * 0.3;
+          push({ shape: 'dot', x: x + (Math.random() - 0.5) * R, y: y - 1.2 - Math.random(), vx: (Math.random() - 0.5) * 1.2, vy: 3, g: 12, life, max: life, size: 0.2 + Math.random() * 0.18 });
+        }
+        break;
     }
     if (this.debris.length > 520) this.debris.splice(0, this.debris.length - 520);
   }
@@ -471,45 +531,59 @@ export class Renderer {
     }
   }
 
-  /** 세정제 거품층 — 화학 계열 색 × 거품 텍스처 */
+  /** 세정제 잔여층 — 제품마다 남는 모양이 다르다(거품·물방울·흘러내림·점성 띠·가루·기름막). 모양별로 한 겹씩 그린다 */
   private drawFoam(W: number, H: number) {
     const s = this.session!;
     const f = this.foamImg!.data;
-    let any = false;
+    // 지금 화면에 있는 모양 종류
+    const styles = new Set<SprayStyle>();
+    const looks: (ReturnType<typeof sprayLook> | null)[] = new Array(s.amount.length);
     for (let i = 0; i < s.amount.length; i++) {
-      const o = i * 4;
-      const sl = s.soakLevel(i);
-      if (sl > 0) {
-        const det = s.soak[i]!.det;
-        // 혼합물은 색으로 구분: 페이스트는 크림색, 식초+세제는 연두, 중화 거품은 흰색
-        const c = det.family === 'soapsoda' ? [255, 236, 200] : det.family === 'soapvinegar' ? [214, 255, 214] : det.family === 'fizz' ? [255, 255, 255] : (FOAM[det.chemistry] ?? FOAM.neutral);
-        f[o] = c[0];
-        f[o + 1] = c[1];
-        f[o + 2] = c[2];
-        // 반투명: 거품 아래 오염이 비쳐 보여야 어디를 문지를지 안다 (중화 거품만 더 하얗게)
-        f[o + 3] = Math.min(255, (det.family === 'fizz' ? 225 : 120) * sl * (0.65 + 0.35 * s.grain[i]));
-        any = true;
-      } else f[o + 3] = 0;
+      if (s.soakLevel(i) > 0) {
+        const l = sprayLook(s.soak[i]!.det);
+        looks[i] = l;
+        styles.add(l.style);
+      } else looks[i] = null;
     }
-    if (!any) return;
-    this.foamMask.getContext('2d')!.putImageData(this.foamImg!, 0, 0);
-    if (!this.foamTex) this.foamTex = makeFoamTexture(this.layer.width, this.layer.height, s.level.seed, this.layer.width / s.w);
+    if (!styles.size) return;
     const t = this.tmp.getContext('2d')!;
-    t.globalCompositeOperation = 'source-over';
-    t.clearRect(0, 0, this.tmp.width, this.tmp.height);
-    t.imageSmoothingEnabled = true;
-    t.drawImage(this.foamMask, 0, 0, this.tmp.width, this.tmp.height);
-    // 거품 질감은 뿌린 자리 안에서만 (바깥까지 번지면 화면 전체가 뿌옇게 보인다)
-    t.globalCompositeOperation = 'destination-in';
-    t.drawImage(this.foamTex, 0, 0);
-    t.globalCompositeOperation = 'source-atop';
-    t.globalAlpha = 0.45;
-    t.drawImage(this.foamTex, 0, 0);
-    t.globalAlpha = 1;
-    t.globalCompositeOperation = 'source-over';
-    this.ctx.globalAlpha = 0.88;
-    this.ctx.drawImage(this.tmp, 0, 0, W, H);
-    this.ctx.globalAlpha = 1;
+    for (const style of styles) {
+      for (let i = 0; i < s.amount.length; i++) {
+        const o = i * 4;
+        const l = looks[i];
+        if (l && l.style === style) {
+          f[o] = l.color[0];
+          f[o + 1] = l.color[1];
+          f[o + 2] = l.color[2];
+          // 반투명: 잔여층 아래 오염이 비쳐 보여야 어디를 문지를지 안다
+          f[o + 3] = Math.min(255, l.alpha * s.soakLevel(i) * (0.65 + 0.35 * s.grain[i]));
+        } else f[o + 3] = 0;
+      }
+      this.foamMask.getContext('2d')!.putImageData(this.foamImg!, 0, 0);
+      let tex = this.foamTex.get(style);
+      if (!tex) {
+        tex = makeResidueTexture(style, this.layer.width, this.layer.height, s.level.seed, this.layer.width / s.w);
+        this.foamTex.set(style, tex);
+      }
+      t.globalCompositeOperation = 'source-over';
+      t.clearRect(0, 0, this.tmp.width, this.tmp.height);
+      t.imageSmoothingEnabled = true;
+      t.drawImage(this.foamMask, 0, 0, this.tmp.width, this.tmp.height);
+      // 질감은 뿌린 자리 안에서만 (바깥까지 번지면 화면 전체가 뿌옇게 보인다)
+      t.globalCompositeOperation = 'destination-in';
+      t.drawImage(tex, 0, 0);
+      if (style !== 'powder') {
+        // 젖은 것은 윤기를 한 겹 더 (가루는 무광)
+        t.globalCompositeOperation = 'source-atop';
+        t.globalAlpha = style === 'gel' || style === 'oil' ? 0.3 : 0.45;
+        t.drawImage(tex, 0, 0);
+        t.globalAlpha = 1;
+      }
+      t.globalCompositeOperation = 'source-over';
+      this.ctx.globalAlpha = style === 'foam' ? 0.95 : 0.88;
+      this.ctx.drawImage(this.tmp, 0, 0, W, H);
+      this.ctx.globalAlpha = 1;
+    }
   }
 
   draw(dt: number) {
@@ -922,6 +996,11 @@ export class Renderer {
           ctx.fill();
           break;
         }
+        case 'dot':
+          ctx.beginPath();
+          ctx.arc(x, y, sz, 0, Math.PI * 2);
+          ctx.fill();
+          break;
         case 'bubble':
           ctx.lineWidth = Math.max(1, cw * 0.08);
           ctx.beginPath();

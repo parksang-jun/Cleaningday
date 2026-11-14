@@ -8,13 +8,19 @@ import type { LevelDef, SceneId } from '../game/levels';
 import { mulberry32 } from '../game/rng';
 import * as M from './materials';
 import * as P from './props';
-import { drawCover, scenePhoto } from './photos';
+import { drawCover, levelPhotoKey, scenePhoto } from './photos';
 
 type Ctx = CanvasRenderingContext2D;
 type Rnd = () => number;
 
 /** 스테이지 전체 그리기 — 구역이 있으면 구역마다 해당 장면을 그리고, 경계는 그늘(단차)로 표현 */
 export function paintLevel(ctx: Ctx, level: LevelDef, w: number, h: number): void {
+  // 판 전용 실사 사진이 있으면 화면 전체를 그 한 장으로 (구역이 있는 판도 이어 붙이지 않는다)
+  const own = scenePhoto(levelPhotoKey(level.id));
+  if (own) {
+    drawCover(ctx, own, w, h);
+    return;
+  }
   if (!level.zones) {
     paintScene(ctx, level.scene, w, h);
     return;
