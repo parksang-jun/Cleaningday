@@ -390,6 +390,9 @@ const PAGES = {
       <div class="card kpi"><div class="lab">미수금</div><div class="val">${esc(fmtMoney(m.unpaid))}</div></div>
       <div class="card kpi"><div class="lab">비용</div><div class="val">${esc(fmtMoney(m.exp))}</div></div>
     </div>
+    <div class="card" style="margin-bottom:14px"><h2>광고 설정</h2>
+      <ul class="list">${(D?.ads || []).map((a) => `<li>${a.real ? '<span class="pill ok">실제 광고</span>' : '<span class="pill warn">테스트 광고 · 수익 0원</span>'}<div class="t">${esc(a.name)}<div class="m">${a.real ? `앱 ID ${esc(a.app)} · 광고 단위 ${a.units.length}개` : esc(a.missing || '설정 필요')}</div></div></li>`).join('')}</ul>
+      ${(D?.ads || []).every((a) => a.real) ? '' : '<div class="muted" style="font-size:12px;margin-top:8px">테스트 광고로 출시하면 노출이 아무리 많아도 수익이 들어오지 않습니다. AdMob 콘솔에서 실제 ID 를 받아 명령으로 알려 주세요.</div>'}</div>
     <div class="card">${rows.length ? `<div class="tbl-wrap"><table><thead><tr>${cols.map((c) => `<th>${esc(label[c] || c)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((c) => `<td class="${c === 'amount' ? 'num' : ''}">${c === 'received' ? (m.isRecv(r) ? '<span class="pill ok">입금</span>' : '<span class="pill warn">대기</span>') : esc(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<div class="empty">정산 기록이 아직 없습니다. 출시 후 수익이 생기면 매월 3일에 자동으로 정리됩니다.</div>'}</div>
     ${srcNote()}`;
   },

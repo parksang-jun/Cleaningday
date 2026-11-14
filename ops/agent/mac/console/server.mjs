@@ -167,8 +167,35 @@ async function stateData() {
   const pending = all.filter((x) => x.name.startsWith('agent/'));
   return {
     source: { ref, name: latest ? latest.name : 'main', date: latest?.date, isMain: !latest || latest.name === 'main', mainDate: main?.date },
-    pipeline: parseCsv(pipeline), ledger: parseCsv(ledger), feedback: parseCsv(feedback), improvements, inbox: readInbox(), approvals, backlog, log, reports, pending,
+    pipeline: parseCsv(pipeline), ledger: parseCsv(ledger), feedback: parseCsv(feedback), improvements, inbox: readInbox(), approvals, backlog, log, reports, pending, ads: adsConfig(),
   };
+}
+
+// ---- 광고 설정: 실제 AdMob ID 가 들어갔는지. 테스트 ID 인 채로 출시하면 수익이 0원이라 눈에 보이게 둔다
+const TEST_PUB = '3940256099942544';
+function adsConfig() {
+  const read = (rel) => { try { return fs.readFileSync(path.join(REPO, rel), 'utf8'); } catch { return ''; } };
+  const src = read('src/ads/admob.ts');
+  // REAL_IDS 선언 안쪽만 잘라낸다 (TEST_IDS 에도 같은 키가 있다)
+  const real = (src.split('const REAL_IDS')[1] || '').split('\n};')[0];
+  const units = (platform) => {
+    const at = real.indexOf(`${platform}:`);
+    if (at < 0) return [];
+    const chunk = real.slice(at, at + 400);
+    if (/^\s*\w+:\s*null/.test(chunk)) return [];
+    return [...chunk.split(/\n\s*\},/)[0].matchAll(/(interstitial|rewarded|banner):\s*'([^']+)'/g)].map((m) => ({ kind: m[1], id: m[2] }));
+  };
+  const plist = read('ios/App/App/Info.plist');
+  const manifest = read('android/app/src/main/AndroidManifest.xml');
+  const appId = (txt, re) => { const m = txt.match(re); return m ? m[1] : ''; };
+  const one = (name, app, list) => {
+    const real = Boolean(app) && !app.includes(TEST_PUB) && list.length > 0 && !list.some((u) => u.id.includes(TEST_PUB));
+    return { name, app, units: list, real, missing: !app ? '앱 ID 없음' : app.includes(TEST_PUB) ? '앱 ID 가 구글 테스트용' : list.length === 0 ? '광고 단위 ID 미등록' : '' };
+  };
+  return [
+    one('iOS', appId(plist, /<key>GADApplicationIdentifier<\/key>\s*<string>([^<]+)<\/string>/), units('ios')),
+    one('Android', appId(manifest, /android:value="(ca-app-pub-[^"]+)"/), units('android')),
+  ];
 }
 
 // ---- 피드백 함: 사장님이 운영센터에 적은 피드백 (저장소 밖 ~/SparkleCleanOps/feedback/inbox.md). 제품 개선 루틴이 가져간다

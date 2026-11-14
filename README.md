@@ -219,7 +219,9 @@ npm run cap:android / cap:ios   # 네이티브 빌드 (Android Studio / Xcode �
 
 ## 4. 출시 전 할 일
 
-- AdMob 앱 ID 교체: `android/app/src/main/AndroidManifest.xml`, `ios/App/App/Info.plist` (현재 Google 샘플 ID), 광고 단위 ID `.env` (`VITE_ADMOB_*`).
+- AdMob — iOS 는 실제 ID 적용 완료(앱 ID `ios/App/App/Info.plist`, 광고 단위 ID `src/ads/admob.ts` 의 `REAL_IDS`).
+  Android 는 아직 Google 샘플 ID 라 테스트 광고만 나온다: 앱 ID `android/app/src/main/AndroidManifest.xml`,
+  광고 단위 ID `REAL_IDS.android` 를 채우면 자동으로 실제 광고로 바뀐다. `.env` 의 `VITE_ADMOB_*` 로도 덮어쓸 수 있다.
 - 개인정보 처리방침 `public/privacy.html` 운영자 정보 기입 후 공개 URL 호스팅.
 - appId·앱 이름 최종 확정(변경 시 `npx cap add` 로 네이티브 프로젝트 재생성).
 - 기준 제품 시험값(`REFERENCE_REMOVAL`, `REFERENCE_COVERAGE`) 갱신, 샘플 스폰서 삭제.
@@ -257,7 +259,7 @@ src/
 - 앱 ID `io.github.parksangjun.cleaningday` 확정(2026-11-10), 버전 0.9.0(베타), Android `versionCode 1` / iOS 빌드 1 — 올릴 때마다 +1.
 - 기기 표시 이름: 한국어 `싹싹 클린`(`android/.../values-ko/strings.xml`, `ios/App/App/ko.lproj/InfoPlist.strings`), 영어 `Sparkle Clean`(기본), 일본어 `スパークルクリーン`. iOS 의 `*.lproj/InfoPlist.strings` 는 Xcode 에서 한 번 "Add Files to App…" 으로 프로젝트에 넣어야 번들에 들어간다.
 - 앱(Android/iOS) 빌드는 운영자 모드가 기본 숨김(`adminEnabled()`: 네이티브면 `VITE_ADMIN=on` 일 때만), 웹은 기본 켬.
-- `.env.production`(커밋됨): `VITE_BETA=true`(홈 BETA 태그 + 피드백 버튼), `VITE_ADMOB_TESTING=true`, `VITE_PRIVACY_URL`(GitHub Pages). 비밀값·실제 광고 단위 ID는 `.env.production.local` 에.
+- `.env.production`(커밋됨): `VITE_BETA=true`(홈 BETA 태그 + 피드백 버튼), `VITE_PRIVACY_URL`(GitHub Pages). 비밀값·실제 광고 단위 ID는 `.env.production.local` 에.
 - 개인정보처리방침 공개 URL: 저장소 `docs/` 를 GitHub Pages(Settings → Pages → main `/docs`)로 켜면 `https://parksang-jun.github.io/Cleaningday/privacy.html`.
 
 ## 저장소·CI (GitHub `parksang-jun/Cleaningday`)

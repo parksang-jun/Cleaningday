@@ -1,5 +1,6 @@
 // Google AdMob (Capacitor 네이티브). UMP 동의 + iOS ATT → 전면/보상형 프리로드 → 표시 후 재프리로드.
-// 기본값은 Google 공식 테스트 광고 단위 ID. 출시 전 .env 에 실제 ID를 넣는다(README 참고).
+// 실제 광고 단위 ID 가 등록된 플랫폼은 그것을 쓰고 실제 광고를 받는다. 아직 없는 플랫폼은
+// Google 공식 테스트 ID 로 돌아 테스트 광고만 나온다(수익 없음). .env 로 덮어쓸 수 있다.
 import { Capacitor } from '@capacitor/core';
 import {
   AdMob,
@@ -26,15 +27,31 @@ const TEST_IDS = {
   },
 } as const;
 
+/**
+ * 실제 광고 단위 ID. 앱 안에 그대로 담겨 배포되는 공개 값이라 저장소에 두어도 안전하다.
+ * 아직 ID 를 받지 못한 플랫폼은 null 로 두면 테스트 광고로 돈다.
+ */
+const REAL_IDS: Record<'android' | 'ios', Record<'interstitial' | 'rewarded' | 'banner', string> | null> = {
+  android: null,
+  ios: {
+    interstitial: 'ca-app-pub-5724346706486152/7503098723',
+    rewarded: 'ca-app-pub-5724346706486152/1129262065',
+    banner: 'ca-app-pub-5724346706486152/9991475356',
+  },
+};
+
 function adIds() {
   const env = import.meta.env;
   const isIos = Capacitor.getPlatform() === 'ios';
-  const d = isIos ? TEST_IDS.ios : TEST_IDS.android;
+  const real = isIos ? REAL_IDS.ios : REAL_IDS.android;
+  const d = real ?? (isIos ? TEST_IDS.ios : TEST_IDS.android);
+  // 테스트 모드: .env 가 정하면 그대로, 없으면 실제 ID 가 있는 플랫폼만 실제 광고를 받는다.
+  const forced = env.VITE_ADMOB_TESTING;
   return {
     interstitial: (isIos ? env.VITE_ADMOB_IOS_INTERSTITIAL : env.VITE_ADMOB_ANDROID_INTERSTITIAL) || d.interstitial,
     rewarded: (isIos ? env.VITE_ADMOB_IOS_REWARDED : env.VITE_ADMOB_ANDROID_REWARDED) || d.rewarded,
     banner: (isIos ? env.VITE_ADMOB_IOS_BANNER : env.VITE_ADMOB_ANDROID_BANNER) || d.banner,
-    isTesting: env.VITE_ADMOB_TESTING !== 'false',
+    isTesting: forced === 'true' ? true : forced === 'false' ? false : !real,
   };
 }
 
