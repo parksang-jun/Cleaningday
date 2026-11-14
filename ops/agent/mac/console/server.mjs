@@ -165,7 +165,13 @@ async function stateData() {
     }
   }
   reports.sort((a, b) => (a.date < b.date ? 1 : -1));
-  const pending = all.filter((x) => x.name.startsWith('agent/'));
+  // 이미 main 에 합쳐진 브랜치는 '올리기 대기'에서 뺀다 — 남겨 두면 GitHub 에서 비교할 것이 없어 버튼이 눌리지 않는다
+  const merged = new Set();
+  for (const base of ['origin/main', 'main']) {
+    const m = await git(['branch', '-a', '--merged', base, '--format=%(refname:short)']);
+    if (m.code === 0) m.out.split('\n').forEach((l) => l.trim() && merged.add(l.trim().replace(/^origin\//, '')));
+  }
+  const pending = all.filter((x) => x.name.startsWith('agent/') && !merged.has(x.name));
   return {
     source: { ref, name: latest ? latest.name : 'main', date: latest?.date, isMain: !latest || latest.name === 'main', mainDate: main?.date },
     pipeline: parseCsv(pipeline), ledger: parseCsv(ledger), feedback: parseCsv(feedback), improvements, inbox: readInbox(), approvals, backlog, log, reports, pending, ads: adsConfig(),
