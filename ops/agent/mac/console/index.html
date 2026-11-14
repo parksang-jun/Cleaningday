@@ -85,6 +85,9 @@ textarea:focus, select:focus { outline: 2px solid var(--brand); outline-offset: 
 .ap .sec h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
 .ap .sec p { margin: 0; }
 .ap ol.steps { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+.ap .oneline { font-size: 15px; font-weight: 600; line-height: 1.5; background: var(--soft); border-left: 3px solid var(--brand); border-radius: 8px; padding: 10px 12px; }
+.ap details.more > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.ap details.more { display: grid; gap: 10px; } .ap details.more[open] > summary { margin-bottom: 8px; } .ap details.more .sec + .sec { margin-top: 10px; }
 .ap .facts { display: flex; gap: 8px; flex-wrap: wrap; }
 .ap .act { background: var(--soft); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; }
 .ap .act h4 { margin: 0; font-size: 13px; }
@@ -297,6 +300,7 @@ const PAGES = {
     const facts = (a) => `<div class="facts">${a.cost ? `<span class="pill">비용 ${esc(a.cost)}</span>` : ''}${a.time ? `<span class="pill">소요 ${esc(a.time)}</span>` : ''}</div>`;
     const reqCard = (a, open) => {
       const my = a.my;
+      const more = [a.oneline && ['지금 상황', a.summary], ['왜 필요한가', a.why], ['결재 후 에이전트가 할 일', a.after]].filter((x) => x && x[1]);
       const act = my
         ? `<div class="act"><h4>✓ 결재 완료 — ${esc(my.label || my.decision)} <span class="muted" style="font-weight:400">· ${esc(my.at)}</span></h4>${my.memo ? `<div class="fb-text">${esc(my.memo)}</div>` : ''}
             <div class="muted" style="font-size:12.5px">다음 에이전트 실행(제품 개선: 화·금) 때 반영됩니다. 지금 바로 반영하려면 '지금 반영'을 누르세요.</div>
@@ -305,18 +309,18 @@ const PAGES = {
           ? `<div class="act"><h4>결재: 위 순서를 마치셨으면</h4>${a.ask ? `<div><div class="muted" style="font-size:12.5px;margin-bottom:4px">${esc(a.ask)}</div><textarea data-memo="${esc(a.id)}" style="min-height:64px" placeholder="여기에 적어 주세요 (비밀번호·계좌·카드·신분증 번호는 적지 마세요)"></textarea></div>` : ''}
               <div class="btnrow"><button class="btn pri" data-decide="${esc(a.id)}" data-decision="done" data-label="완료했어요">완료했어요</button><button class="btn" data-decide="${esc(a.id)}" data-decision="hold" data-label="보류 — 나중에 하겠음">보류 (나중에)</button><button class="btn" data-decide="${esc(a.id)}" data-decision="reject" data-label="하지 않음">하지 않겠음</button></div></div>`
           : `<div class="act"><h4>결재: 하나를 골라 주세요</h4>
-              ${(a.options || []).map((o) => `<div class="opt ${o.recommended ? 'rec' : ''}"><div class="t"><b>${esc(o.label)} ${o.recommended ? '<span class="pill ok">권장</span>' : ''}</b><span>${esc(o.desc || '')}</span></div><button class="btn ${o.recommended ? 'pri' : ''}" data-decide="${esc(a.id)}" data-decision="${esc(o.id)}" data-label="${esc(o.label)}">이걸로 결정</button></div>`).join('')}
+              ${(a.options || []).map((o) => `<div class="opt ${o.recommended ? 'rec' : ''}"><div class="t"><b>${esc(o.label)} ${o.recommended ? '<span class="pill ok">권장</span>' : ''}</b><span>${esc(o.desc || '')}${o.why ? ` <b style="display:inline;font-weight:600">권장 이유:</b> ${esc(o.why)}` : ''}</span></div><button class="btn ${o.recommended ? 'pri' : ''}" data-decide="${esc(a.id)}" data-decision="${esc(o.id)}" data-label="${esc(o.label)}">이걸로 결정</button></div>`).join('')}
               <div><div class="muted" style="font-size:12.5px;margin-bottom:4px">덧붙일 말 (선택)</div><textarea data-memo="${esc(a.id)}" style="min-height:52px" placeholder="조건이나 바라는 점이 있으면 적어 주세요"></textarea></div>
               <div class="btnrow"><button class="btn" data-decide="${esc(a.id)}" data-decision="hold" data-label="보류 — 나중에 결정">보류 (나중에)</button></div></div>`;
       return `<details class="ap ${my ? 'decided' : ''}" ${open ? 'open' : ''} data-ap="${esc(a.id)}"><summary>${my ? '<span class="pill ok">결재 완료</span>' : kindPill(a.kind)}<span class="ttl">${esc(a.title)}</span><span class="meta">${esc([a.cost, a.time].filter(Boolean).join(' · '))}</span></summary>
         <div class="body">
-          <div class="sec"><h4>지금 상황</h4><p>${esc(a.summary || '')}</p></div>
-          <div class="sec"><h4>왜 필요한가</h4><p>${esc(a.why || '')}</p></div>
+          ${a.oneline ? `<div class="oneline">${esc(a.oneline)}</div>` : `<div class="sec"><h4>지금 상황</h4><p>${esc(a.summary || '')}</p></div>`}
+          ${a.progress ? `<div class="sec"><h4>진행 상황</h4><p>${esc(a.progress)}</p></div>` : ''}
           ${facts(a)}
           ${a.steps?.length ? `<div class="sec"><h4>사장님이 하실 일 (순서대로)</h4><ol class="steps">${a.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></div>` : ''}
           ${a.links?.length ? `<div class="btnrow">${a.links.map((l) => `<button class="btn" data-ext="${esc(l.url)}">${esc(l.label)} ↗</button>`).join('')}</div>` : ''}
           ${act}
-          ${a.after ? `<div class="sec"><h4>결재 후 에이전트가 할 일</h4><p>${esc(a.after)}</p></div>` : ''}
+          ${more.length ? `<details class="more"><summary>자세히 (상황·이유·결재 후 할 일)</summary>${more.map(([h, v]) => `<div class="sec"><h4>${h}</h4><p>${esc(v)}</p></div>`).join('')}</details>` : ''}
         </div></details>`;
     };
     const prCard = (p, open) => `<details class="ap" ${open ? 'open' : ''}><summary><span class="pill info">변경안 검토</span><span class="ttl">${esc(p.title)}</span><span class="meta">PR #${p.number} · ${ago(p.at)}</span></summary>
