@@ -1,6 +1,6 @@
 #!/bin/bash
 # 싹싹 클린 운영 에이전트 — 맥에서 제거 (예약만 지운다. 저장소·리포트·로그는 남긴다)
-for n in weekly sponsors settlement improve; do
+for n in weekly sponsors settlement improve ads; do
   label="com.sparkleclean.ops.$n"
   launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
   rm -f "$HOME/Library/LaunchAgents/$label.plist"

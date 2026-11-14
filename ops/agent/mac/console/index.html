@@ -155,6 +155,7 @@ pre.log { background: #0c1219; color: #cfe0f2; padding: 14px; border-radius: 10p
     <button class="nav" data-page="command"><span class="ic">➤</span>명령<span class="badge" id="b-command" hidden></span></button>
     <button class="nav" data-page="approve"><span class="ic">✓</span>결재함<span class="badge" id="b-approve" hidden></span></button>
     <button class="nav" data-page="improve"><span class="ic">↗</span>제품 개선<span class="badge" id="b-improve" hidden></span></button>
+    <button class="nav" data-page="adstudio"><span class="ic">▶</span>광고 제작·배포<span class="badge" id="b-adstudio" hidden></span></button>
     <button class="nav" data-page="sponsors"><span class="ic">◎</span>광고주 영업</button>
     <button class="nav" data-page="money"><span class="ic">₩</span>정산</button>
     <button class="nav" data-page="reports"><span class="ic">▤</span>보고서</button>
@@ -273,7 +274,7 @@ const PAGES = {
     const where = (w) => w === 'cloud' ? '<span class="pill info">클라우드</span>' : '<span class="pill">이 맥</span>';
     const st = (s) => ({ open: '<span class="pill warn">대기 · 처리 중</span>', closed: '<span class="pill ok">완료</span>', running: '<span class="pill info"><span class="dot run"></span>실행 중</span>', ok: '<span class="pill ok">완료</span>', fail: '<span class="pill bad">실패</span>', unknown: '<span class="pill">확인 필요</span>' }[s] || '');
     const all = [...C.cloud.map((c) => ({ ...c, where: 'cloud' })), ...C.local.map((c) => ({ ...c, where: 'local' }))].sort((a, b) => (a.at < b.at ? 1 : -1));
-    const quick = ['제품 개선 루틴을 지금 실행해줘', '광고주 발굴 루틴을 지금 실행해줘', '이번 주에 한 일과 다음 주 계획을 5줄로 보고해줘', '지금 열려 있는 변경안(PR)을 쉬운 말로 설명해줘', '결재함에 올라온 일 중 가장 급한 것 하나와 이유를 알려줘'];
+    const quick = ['제품 개선 루틴을 지금 실행해줘', '광고주 발굴 루틴을 지금 실행해줘', '광고팀 루틴을 지금 실행해서 이번 주 숏폼 소재를 만들어줘','이번 주에 한 일과 다음 주 계획을 5줄로 보고해줘', '지금 열려 있는 변경안(PR)을 쉬운 말로 설명해줘', '결재함에 올라온 일 중 가장 급한 것 하나와 이유를 알려줘'];
     return `<div class="top"><h1>명령</h1><span class="sub">에이전트에게 직접 지시합니다 — 평소 말하듯 적으면 됩니다</span></div>
     <div class="card"><div class="form">
       <textarea id="cmd-text" data-memo="cmd" style="min-height:110px" placeholder="예) 욕실 단계가 너무 어렵다는 의견이 많아. 3~5판 난이도를 조금 낮추고 변경안으로 올려줘"></textarea>
@@ -370,6 +371,27 @@ const PAGES = {
     <div class="card" style="margin-top:14px"><h2>피드백 처리 현황 <small>${fb.rows.length}건</small></h2>
       ${fb.rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>날짜</th><th>출처</th><th>내용</th><th>분류</th><th>심각도</th><th>상태</th><th>조치</th></tr></thead><tbody>${fb.rows.slice().reverse().map((x) => `<tr><td>${esc(x.date)}</td><td>${esc(x.source)}</td><td>${esc(x.summary)}${x.notes ? `<div class="muted" style="font-size:12px">${esc(x.notes)}</div>` : ''}</td><td>${esc(x.category)}</td><td>${sev(x.severity)}</td><td>${stPill(x.status)}</td><td>${esc(x.action)}${x.ref ? ` <span class="muted">${esc(x.ref)}</span>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">아직 분류된 피드백이 없습니다. 피드백을 접수하고 "지금 개선 실행"을 누르면 에이전트가 정리합니다.</div>'}</div>
     <div class="card" style="margin-top:14px"><h2>개선 이력 <small>고친 것과 그 효과</small></h2><div class="doc" style="max-width:none">${md((D?.improvements || '').replace(/^# .*\n/, '')) || '<div class="empty">없음</div>'}</div></div>
+    ${srcNote()}`;
+  },
+  adstudio() {
+    const cr = D?.creatives?.rows || [], cp = D?.campaigns?.rows || [], r = S?.routines?.E;
+    const count = (rows, re) => rows.filter((x) => re.test(x.status || '')).length;
+    const waiting = count(cr, /검수대기/) + count(cp, /승인대기/);
+    const pill = (s) => `<span class="pill ${/게시됨|집행중|승격/.test(s) ? 'ok' : /검수대기|승인대기/.test(s) ? 'warn' : /중단|교체|보류|종료/.test(s) ? '' : 'info'}">${esc(s || '-')}</span>`;
+    const table = (rows, cols, label, empty) => rows.length
+      ? `<div class="tbl-wrap"><table><thead><tr>${cols.map((c) => `<th>${esc(label[c] || c)}</th>`).join('')}</tr></thead><tbody>${rows.slice().reverse().map((x) => `<tr>${cols.map((c) => `<td>${c === 'status' ? pill(x[c]) : esc(x[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+      : `<div class="empty">${empty}</div>`;
+    const crLabel = { id: '소재', date: '만든 날', title: '제목', format: '포맷', channel: '채널', length_sec: '길이(초)', hook: '첫 1초 훅', files: '파일', status: '상태', notes: '메모' };
+    const cpLabel = { id: '캠페인', channel: '채널', type: '종류', goal: '목표', creatives: '소재', start: '시작', end: '끝', budget: '예산', status: '상태', views: '조회', clicks: '클릭', installs: '설치', spend: '지출', result: '판정', next_action: '다음 할 일', notes: '메모' };
+    return `<div class="top"><h1>광고 제작·배포</h1><span class="sub">광고팀이 매주 목요일 우리 게임 광고 소재를 만들고, 게시·캠페인을 준비하고, 성과를 관리합니다 (공개 게시·유료 집행·예산은 사장님)</span><span class="sp"></span>
+      ${r?.running ? '<span class="pill info"><span class="dot run"></span>광고 작업 중</span>' : '<button class="btn pri" data-run="E">지금 광고 작업 실행</button>'}</div>
+    <div class="grid kpis" style="margin-bottom:14px">
+      <div class="card kpi"><div class="lab">만든 소재</div><div class="val">${cr.length}개</div><div class="hint">초안 ${count(cr, /초안/)} · 게시됨 ${count(cr, /게시됨|승격/)}</div></div>
+      <div class="card kpi"><div class="lab">사장님 확인 대기</div><div class="val">${waiting}건</div><div class="hint">${waiting ? '결재함에서 올릴 방법을 확인하세요' : '대기 없음'}</div></div>
+      <div class="card kpi"><div class="lab">진행 중 게시·캠페인</div><div class="val">${count(cp, /집행중|게시됨/)}건</div><div class="hint">계획 ${count(cp, /계획/)}</div></div>
+    </div>
+    <div class="card"><h2>광고 소재 <small>제작 · ops/agent/ads/</small></h2>${table(cr, D?.creatives?.columns || [], crLabel, '아직 만든 소재가 없습니다. "지금 광고 작업 실행"을 누르면 광고팀이 실제 게임 화면으로 숏폼 소재를 만들어 옵니다.')}</div>
+    <div class="card" style="margin-top:14px"><h2>게시·캠페인 <small>배포 · 관리</small></h2>${table(cp, D?.campaigns?.columns || [], cpLabel, '아직 계획된 게시·캠페인이 없습니다. 성과 자료(틱톡·인스타·광고 관리자 내보내기 CSV)는 ops/agent/state/metrics/ 에 넣어 주면 광고팀이 읽습니다.')}</div>
     ${srcNote()}`;
   },
   sponsors() {
@@ -530,6 +552,7 @@ function render() {
   const b = $('#b-approve'); b.hidden = !n; b.textContent = n;
   const ci = C.cloud.filter((c) => c.state === 'open').length + C.local.filter((c) => c.state === 'running').length; const bc = $('#b-command'); bc.hidden = !ci; bc.textContent = ci;
   const fi = D?.inbox?.items?.length || 0; const bi = $('#b-improve'); bi.hidden = !fi; bi.textContent = fi;
+  const ai = [...(D?.creatives?.rows || []), ...(D?.campaigns?.rows || [])].filter((x) => /검수대기|승인대기/.test(x.status || '')).length; const ba = $('#b-adstudio'); ba.hidden = !ai; ba.textContent = ai;
   const o = overall(); $('#side-foot').innerHTML = `<span class="dot ${o.run ? 'run' : o.cls}"></span>${esc(o.cls === 'ok' ? (o.run ? '작업 중' : '정상') : o.cls === 'warn' ? '확인 필요' : o.cls === 'bad' ? (o.fix ? '설치 필요' : '조치 필요') : '연결 중')}<br><span style="opacity:.7">GitHub ${S?.sync?.at ? ago(S.sync.at) + ' 동기화' : '동기화 중'}${S?.repo?.hash ? `<br>버전 ${esc(S.repo.hash)} · 자동 업데이트` : ''}</span>`;
 }
 

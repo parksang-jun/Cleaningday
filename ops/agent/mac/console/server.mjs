@@ -39,6 +39,7 @@ const ROUTINES = {
   A: { name: '주간 운영 점검', desc: '앱 상태·리뷰·지표 확인, 백로그 1건 개선(PR)', label: 'weekly', when: '매주 월 09:43', cal: { weekday: 1, hour: 9, minute: 43 } },
   B: { name: '광고주 발굴', desc: '스폰서 후보 조사, 제안 메일 초안 작성(발송 안 함)', label: 'sponsors', when: '매주 수 10:17', cal: { weekday: 3, hour: 10, minute: 17 } },
   D: { name: '제품 개선', desc: '피드백 수집·분류 → 우선순위 → 수정(PR) → 효과 확인', label: 'improve', when: '매주 화·금 10:31', cal: { weekdays: [2, 5], hour: 10, minute: 31 } },
+  E: { name: '광고 제작·배포', desc: '우리 게임 광고 소재 제작, 게시·캠페인 준비, 성과 관리(게시·집행은 사장님)', label: 'ads', when: '매주 목 10:23', cal: { weekday: 4, hour: 10, minute: 23 } },
   C: { name: '월간 정산', desc: '광고·제휴 수익 대사, 미수금 정리(지급 안 함)', label: 'settlement', when: '매월 3일 10:12', cal: { day: 3, hour: 10, minute: 12 } },
 };
 const extAllowed = new Set(); // 결재 요청서에 실린 외부 링크
@@ -147,7 +148,7 @@ async function stateData() {
   const main = all.find((x) => x.name === 'main');
   const latest = all[0] || null; // 가장 최근 커밋이 있는 브랜치
   const ref = latest ? latest.ref : 'main';
-  const [pipeline, ledger, backlog, log, feedback, improvements, approvalsRaw] = await Promise.all(['state/pipeline.csv', 'state/ledger.csv', 'state/backlog.md', 'state/log.md', 'state/feedback.csv', 'state/improvements.md', 'state/approvals.json'].map((f) => readAt(ref, f)));
+  const [pipeline, ledger, backlog, log, feedback, improvements, approvalsRaw, creatives, campaigns] = await Promise.all(['state/pipeline.csv', 'state/ledger.csv', 'state/backlog.md', 'state/log.md', 'state/feedback.csv', 'state/improvements.md', 'state/approvals.json', 'state/creatives.csv', 'state/campaigns.csv'].map((f) => readAt(ref, f)));
   let approvals = []; try { approvals = JSON.parse(approvalsRaw).items || []; } catch {}
   const decided = readDecided();
   approvals = approvals.map((a) => ({ ...a, my: decided[a.id] || null }));
@@ -168,6 +169,7 @@ async function stateData() {
   return {
     source: { ref, name: latest ? latest.name : 'main', date: latest?.date, isMain: !latest || latest.name === 'main', mainDate: main?.date },
     pipeline: parseCsv(pipeline), ledger: parseCsv(ledger), feedback: parseCsv(feedback), improvements, inbox: readInbox(), approvals, backlog, log, reports, pending, ads: adsConfig(),
+    creatives: parseCsv(creatives), campaigns: parseCsv(campaigns),
   };
 }
 

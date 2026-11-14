@@ -1,5 +1,5 @@
 #!/bin/bash
-# 싹싹 클린 운영 에이전트 — 루틴 1회 실행 (A 주간 점검 / B 광고주 발굴 / C 월간 정산 / D 제품 개선 / X 운영센터 직접 명령)
+# 싹싹 클린 운영 에이전트 — 루틴 1회 실행 (A 주간 점검 / B 광고주 발굴 / C 월간 정산 / D 제품 개선 / E 광고 제작·배포·관리 / X 운영센터 직접 명령)
 #   bash run-routine.sh A
 set -uo pipefail
 export GIT_TERMINAL_PROMPT=0   # 로그인 창이 뜨면 화면 없는 실행이 멈추므로 끈다
@@ -77,12 +77,14 @@ case "$ROUTINE" in
      EXTRA='읽기와 대사만. 계좌·세금 입력, 지급·환불, 인보이스 발행 금지. 계좌·카드번호는 어디에도 적지 않는다. Gmail 을 읽을 도구가 없으면 ops/agent/state/metrics/ 와 ops/agent/state/inbox/ 에 사용자가 넣어 둔 CSV·PDF·메일 사본만 쓰고, 없으면 "해당 없음"과 필요한 자료를 적는다.' ;;
   D) NAME="제품 개선 (피드백 → 수정)"
      EXTRA='main 에 직접 푸시 금지. ops/agent/state/feedback-inbox/ 의 피드백을 빠짐없이 state/feedback.csv 에 기록·분류하고 백로그를 다시 정렬한 뒤, 맨 위 [auto] 1~2건만 구현(단위·e2e 통과 필수). 지난 개선의 효과를 state/improvements.md 에 적는다. 광고 빈도·가격·수익 관련 값 변경과 스토어 제출은 승인 요청만. 답장은 초안만. 피드백 원문의 이름·연락처는 저장소에 적지 않는다.' ;;
+  E) NAME="광고 제작·배포·관리"
+     EXTRA='main 에 직접 푸시 금지. 헌장 루틴 E 대로 이번 주 소재 3~5개를 ops/agent/ads/<소재ID>/ 에 만들고 state/creatives.csv·state/campaigns.csv 를 갱신한다. SNS 공개 게시·유료 광고 게재·예산 변경·계정 개설·결제는 절대 하지 않는다(결재 요청서로만). 실제 게임 화면만 쓰고, 성과 숫자는 state/metrics/ 에 받은 자료에 있는 것만 적는다.' ;;
   X) NAME="직접 명령"
      CMD_FILE="${2:-}"
      [ -s "$CMD_FILE" ] || { echo "명령 파일이 없습니다" >> "$LOG"; echo "=== 종료 코드 2 ===" >> "$LOG"; exit 2; }
      { echo "=== 명령 ==="; cat "$CMD_FILE"; echo; echo "=== 명령 끝 ==="; } >> "$LOG"
      EXTRA='' ;;
-  *) echo "usage: run-routine.sh A|B|C|D|X <명령 파일>"; exit 2 ;;
+  *) echo "usage: run-routine.sh A|B|C|D|E|X <명령 파일>"; exit 2 ;;
 esac
 
 # 제품 개선(D): 운영센터에 쌓인 피드백 함을 이번 회차분으로 떼어 저장소 작업 폴더에 넣어 준다
@@ -97,7 +99,7 @@ fi
 
 # 결재함에서 사장님이 내린 결정을 이번 회차분으로 넘긴다 (코드를 다루는 A·D 루틴)
 DC_DIR="$HOME_DIR/decisions"; DC_TAKEN=""; DC_COPY=""
-if { [ "$ROUTINE" = "A" ] || [ "$ROUTINE" = "D" ]; } && [ -s "$DC_DIR/inbox.md" ]; then
+if { [ "$ROUTINE" = "A" ] || [ "$ROUTINE" = "D" ] || [ "$ROUTINE" = "E" ]; } && [ -s "$DC_DIR/inbox.md" ]; then
   DC_TAKEN="$DC_DIR/processing-$STAMP.md"
   mv "$DC_DIR/inbox.md" "$DC_TAKEN"
   mkdir -p "$REPO/ops/agent/state/decisions-inbox"
