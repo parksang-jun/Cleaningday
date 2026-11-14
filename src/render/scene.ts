@@ -190,6 +190,7 @@ export function paintScene(ctx: Ctx, scene: SceneId, w: number, h: number): void
 /** 마무리 조명: 키 라이트 + 비네트 */
 function finish(ctx: Ctx, w: number, h: number, light = 0.12, vig = 0.16): void {
   M.keyLight(ctx, w, h, light);
+  M.photoGrade(ctx, w, h);
   M.vignette(ctx, w, h, vig);
 }
 

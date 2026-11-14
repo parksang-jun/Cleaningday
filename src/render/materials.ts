@@ -155,6 +155,111 @@ export function noiseTile(kind: NoiseKind, size = 128, amp = 40): HTMLCanvasElem
   return c;
 }
 
+// ───────────────────────── 사진형 나뭇결 타일 ─────────────────────────
+// 선으로 그린 결은 만화처럼 보인다. 실제 원목처럼 보이려면 결이 "면"이어야 한다:
+// 주기 노이즈(가로로 늘인 fBm)로 나이테 띠를 비틀고, 그 위에 결 방향으로 긴 미세 기공을 얹는다.
+// 가로·세로 모두 이음매 없이 반복되는 회색(128 중립) 타일 → overlay 로 얹으면 장면마다의 나무색을 유지한다.
+
+function periodicNoise(px: number, py: number, w: number, h: number, seed: number): (x: number, y: number) => number {
+  const r = lcg(seed);
+  const lat = new Float32Array(px * py);
+  for (let i = 0; i < lat.length; i++) lat[i] = r();
+  return (x: number, y: number) => {
+    const fx = (x / w) * px;
+    const fy = (y / h) * py;
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const tx = fx - x0;
+    const ty = fy - y0;
+    const sx = tx * tx * (3 - 2 * tx);
+    const sy = ty * ty * (3 - 2 * ty);
+    const xa = ((x0 % px) + px) % px;
+    const xb = (xa + 1) % px;
+    const ya = ((y0 % py) + py) % py;
+    const yb = (ya + 1) % py;
+    const a = lat[ya * px + xa];
+    const b = lat[ya * px + xb];
+    const c = lat[yb * px + xa];
+    const d = lat[yb * px + xb];
+    return (a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy;
+  };
+}
+
+/** 결이 가로(x)로 흐르는 나뭇결 타일 */
+export function woodGrainTile(variant = 0): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const key = `woodgrain:${variant}`;
+  const hit = tileCache.get(key);
+  if (hit) return hit;
+  const W = 512;
+  const H = 256;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(W, H);
+  const d = img.data;
+  const seed = hashSeed(key);
+  // 결 방향으로 길게 늘인 옥타브(가로 격자 수 ≪ 세로 격자 수)
+  const o1 = periodicNoise(3, 6, W, H, seed);
+  const o2 = periodicNoise(6, 14, W, H, seed + 1);
+  const o3 = periodicNoise(12, 36, W, H, seed + 2);
+  const pore = periodicNoise(64, 128, W, H, seed + 3);
+  const streak = periodicNoise(16, 200, W, H, seed + 5);
+  const fine = lcg(seed + 4);
+  const rings = 9 + variant * 2;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const warp = o1(x, y) * 1.0 + o2(x, y) * 0.45 + o3(x, y) * 0.18;
+      // 나이테 띠: 늦재(어두운 얇은 띠)와 이른재(넓고 밝은 띠)의 비대칭
+      const t = (y / H) * rings + warp * 2.2;
+      const f = t - Math.floor(t);
+      const late = Math.pow(Math.max(0, Math.sin(f * Math.PI)), 6);
+      const band = 0.55 - late * 0.95 + (o2(x, y) - 0.5) * 0.35;
+      // 기공: 결 방향으로 긴 어두운 잔선
+      const p = pore(x, y);
+      const poreDark = p < 0.22 ? (0.22 - p) * 2.2 : 0;
+      // 결 방향 가는 줄(물관): 머리카락처럼 길고 가는 명암
+      const st = (streak(x, y) - 0.5) * 22;
+      const v = 128 + band * 42 - poreDark * 60 + st + (fine() - 0.5) * 12;
+      const i = (y * W + x) * 4;
+      const q = Math.max(0, Math.min(255, Math.round(v)));
+      d[i] = q;
+      d[i + 1] = q;
+      d[i + 2] = q;
+      d[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  tileCache.set(key, c);
+  return c;
+}
+
+/** 사진 같은 마무리 보정: 따뜻한 키 라이트 반사, 아주 옅은 필름 그레인, 대비 살짝 */
+export function photoGrade(ctx: Ctx, w: number, h: number, strength = 1): void {
+  if (strength <= 0) return;
+  ctx.save();
+  // 창문 쪽(왼쪽 위)에서 들어오는 따뜻한 빛 — 넓은 원형으로 떨어져 면이 평평해 보이지 않게
+  const R = Math.hypot(w, h);
+  const warm = ctx.createRadialGradient(w * 0.12, h * 0.05, 0, w * 0.12, h * 0.05, R * 0.95);
+  warm.addColorStop(0, `rgba(255,238,212,${0.22 * strength})`);
+  warm.addColorStop(0.5, `rgba(255,238,212,${0.06 * strength})`);
+  warm.addColorStop(1, 'rgba(255,238,212,0)');
+  ctx.globalCompositeOperation = 'soft-light';
+  ctx.fillStyle = warm;
+  ctx.fillRect(0, 0, w, h);
+  // 반대편 구석은 살짝 차가운 그늘(사진의 환경광 색 차이)
+  const cool = ctx.createRadialGradient(w * 0.95, h * 1.0, 0, w * 0.95, h * 1.0, R * 0.7);
+  cool.addColorStop(0, `rgba(40,60,90,${0.16 * strength})`);
+  cool.addColorStop(1, 'rgba(40,60,90,0)');
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = cool;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+  // 필름 그레인 — 깨끗한 단색 면의 "그림" 느낌을 없앤다
+  texture(ctx, 0, 0, w, h, 'plaster', 0.1 * strength, 1, 'overlay', 26);
+}
+
 /**
  * 노이즈를 영역 위에 얹는다. mode 'overlay'(기본) 는 중간 회색 중립 — 밝기만 흔든다.
  * scale 로 패턴 배율(2 = 굵은 결).
@@ -358,6 +463,37 @@ export function wood(ctx: Ctx, w: number, h: number, rnd: Rnd, o: WoodOpts): voi
         ctx.fillStyle = `rgba(160,160,150,${grey * 0.5})`;
         ctx.fillRect(x0, y, pw, ph);
       }
+      // 사진형 나뭇결(면): 널판마다 다른 위치·배율로 잘라 붙여 같은 무늬 반복이 보이지 않게
+      const grainTile = woodGrainTile(Math.floor(rnd() * 3));
+      const pat = grainTile ? ctx.createPattern(grainTile, 'repeat') : null;
+      if (pat) {
+        const sc = (ph * (1.6 + rnd() * 1.4)) / 256;
+        const m = new DOMMatrix();
+        m.a = sc * (1.2 + rnd() * 0.8);
+        m.d = sc;
+        m.e = x0 - rnd() * 512 * m.a;
+        m.f = y - rnd() * 256 * sc;
+        pat.setTransform(m);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x0, y, pw, ph);
+        ctx.clip();
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.globalAlpha = 0.85 - weather * 0.3;
+        ctx.fillStyle = pat;
+        ctx.fillRect(x0, y, pw, ph);
+        ctx.globalAlpha = 0.18;
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillRect(x0, y, pw, ph);
+        ctx.restore();
+        // 널판 한 장 안에서도 빛이 고르지 않다: 길이 방향으로 아주 옅은 명암
+        const lg = ctx.createLinearGradient(x0, 0, x1, 0);
+        lg.addColorStop(0, 'rgba(255,248,235,0.06)');
+        lg.addColorStop(0.5, 'rgba(0,0,0,0)');
+        lg.addColorStop(1, 'rgba(40,25,10,0.07)');
+        ctx.fillStyle = lg;
+        ctx.fillRect(x0, y, pw, ph);
+      }
       // 결: 널판을 따라 흐르는 곡선(캐세드럴 무늬 포함)
       const G = o.grain ?? 7;
       const lw = Math.max(0.7, Math.min(W, H) * 0.0016);
@@ -368,7 +504,8 @@ export function wood(ctx: Ctx, w: number, h: number, rnd: Rnd, o: WoodOpts): voi
         const gy = y + ph * ((g + 0.5 + (rnd() - 0.5) * 0.6) / G);
         const amp = ph * (0.04 + rnd() * 0.08);
         const freq = 60 + rnd() * 120;
-        const a = 0.08 + rnd() * 0.16;
+        // 결의 면은 타일이 맡고, 선은 굵은 흐름만 아주 옅게 (선이 진하면 만화처럼 보인다)
+        const a = (0.08 + rnd() * 0.16) * 0.35;
         ctx.strokeStyle = withAlpha(dark, a);
         ctx.beginPath();
         const steps = Math.max(6, Math.floor(pw / 18));
@@ -399,12 +536,12 @@ export function wood(ctx: Ctx, w: number, h: number, rnd: Rnd, o: WoodOpts): voi
         ellipsePath(ctx, kx, ky, kr * 1.7, kr * 1.1, rnd() * 0.6);
         ctx.fill();
         // 결이 옹이를 감싸는 동심 타원 — 옹이임을 알려 주는 건 색이 아니라 이 결이다
-        ctx.strokeStyle = withAlpha(dark, 0.3);
+        ctx.strokeStyle = withAlpha(dark, 0.12);
         for (let k = 0; k <= 3; k++) {
           ellipsePath(ctx, kx, ky, kr * 1.7 * (1 + k * 0.35), kr * 1.1 * (1 + k * 0.4));
           ctx.stroke();
         }
-        ctx.strokeStyle = 'rgba(255,240,220,0.18)';
+        ctx.strokeStyle = 'rgba(255,240,220,0.08)';
         ellipsePath(ctx, kx, ky, kr * 1.7 * 1.18, kr * 1.1 * 1.2);
         ctx.stroke();
       }
