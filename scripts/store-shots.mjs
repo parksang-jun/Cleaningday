@@ -12,7 +12,7 @@ const HIDE = '#ad-banner,.beta-tag,.toast,[data-testid="rec"],[data-testid="feed
 const { chromium } = createRequire(import.meta.url)('playwright');
 const root = resolve(import.meta.dirname, '..');
 const LANG = process.env.SHOT_LANG || 'ko';
-const out = resolve(root, 'screenshots', 'store', LANG);
+const out = resolve(root, 'store-assets', LANG);
 mkdirSync(out, { recursive: true });
 const PORT = 4176;
 
@@ -115,4 +115,4 @@ if (await p.locator('[data-testid="shop"]').count()) {
 
 await browser.close();
 try { process.kill(-preview.pid); } catch { /* 이미 종료 */ }
-console.log(`\n완료 → screenshots/store/${LANG}/`);
+console.log(`\n완료 → store-assets/${LANG}/`);
