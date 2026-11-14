@@ -87,6 +87,7 @@ plist weekly     A "<dict><key>Weekday</key><integer>1</integer><key>Hour</key><
 plist sponsors   B "<dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>17</integer></dict>"
 plist settlement C "<dict><key>Day</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>12</integer></dict>"
 plist improve    D "<dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>31</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>31</integer></dict>"
+plist ads        E "<dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>23</integer></dict>"
 
 say "운영센터 앱 (바탕화면)"
 if [ -z "${SC_FROM_CONSOLE:-}" ]; then bash "$SRC/console/install-app.sh" || echo "· 운영센터 앱 만들기를 건너뜀"; else echo "✓ (운영센터에서 실행 중)"; fi
