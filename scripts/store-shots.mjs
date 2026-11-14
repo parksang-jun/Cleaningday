@@ -107,7 +107,12 @@ const fever = async (box) => {
 // ---------- 1~5 장면: 시작 · 카페트 · 주방 · 자동차 · 리워드 ----------
 let box;
 await home(); await shot('1-home.png');
-box = await enter('living', 5); await cleanLeft(0.5); await rub(box, 0.5); await p.waitForTimeout(400); await shot('2-rug.png'); await p.mouse.up();
+// 카페트는 시간이 지나며 진흙이 더 떨어지는 판 — 잠깐 굴려 오염을 쌓은 뒤 찍는다
+box = await enter('living', 5);
+await p.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+await p.mouse.down(); await p.mouse.move(box.x + box.width * 0.52, box.y + box.height * 0.52); await p.mouse.up();
+await p.waitForTimeout(9000);
+await noModal(); await cleanLeft(0.5); await rub(box, 0.5); await p.waitForTimeout(400); await shot('2-rug.png'); await p.mouse.up();
 box = await enter('kitchen', 25); await cleanLeft(0.5); await rub(box, 0.5); await p.waitForTimeout(400); await shot('3-kitchen.png'); await p.mouse.up();
 box = await enter('exterior', 73); await cleanLeft(0.5); await rub(box, 0.5); await p.waitForTimeout(400); await shot('4-car.png'); await p.mouse.up();
 box = await enter('garden', 60);
