@@ -32,7 +32,11 @@ const TEST_IDS = {
  * 아직 ID 를 받지 못한 플랫폼은 null 로 두면 테스트 광고로 돈다.
  */
 const REAL_IDS: Record<'android' | 'ios', Record<'interstitial' | 'rewarded' | 'banner', string> | null> = {
-  android: null,
+  android: {
+    interstitial: 'ca-app-pub-5724346706486152/2724123763',
+    rewarded: 'ca-app-pub-5724346706486152/1191550242',
+    banner: 'ca-app-pub-5724346706486152/1602613788',
+  },
   ios: {
     interstitial: 'ca-app-pub-5724346706486152/7503098723',
     rewarded: 'ca-app-pub-5724346706486152/1129262065',

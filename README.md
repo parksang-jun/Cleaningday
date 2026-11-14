@@ -219,9 +219,10 @@ npm run cap:android / cap:ios   # 네이티브 빌드 (Android Studio / Xcode �
 
 ## 4. 출시 전 할 일
 
-- AdMob — iOS 는 실제 ID 적용 완료(앱 ID `ios/App/App/Info.plist`, 광고 단위 ID `src/ads/admob.ts` 의 `REAL_IDS`).
-  Android 는 아직 Google 샘플 ID 라 테스트 광고만 나온다: 앱 ID `android/app/src/main/AndroidManifest.xml`,
-  광고 단위 ID `REAL_IDS.android` 를 채우면 자동으로 실제 광고로 바뀐다. `.env` 의 `VITE_ADMOB_*` 로도 덮어쓸 수 있다.
+- AdMob — iOS·Android 모두 실제 ID 적용 완료. 앱 ID 는 `ios/App/App/Info.plist` 와
+  `android/app/src/main/AndroidManifest.xml`, 광고 단위 ID 는 `src/ads/admob.ts` 의 `REAL_IDS`.
+  `.env` 의 `VITE_ADMOB_*` 로 덮어쓸 수 있고, `VITE_ADMOB_TESTING=true` 면 테스트 광고로 돈다.
+  실기기 점검 전에 AdMob 콘솔 > 설정 > 테스트 기기 에 기기를 등록할 것 (본인 클릭은 무효 트래픽).
 - 개인정보 처리방침 `public/privacy.html` 운영자 정보 기입 후 공개 URL 호스팅.
 - appId·앱 이름 최종 확정(변경 시 `npx cap add` 로 네이티브 프로젝트 재생성).
 - 기준 제품 시험값(`REFERENCE_REMOVAL`, `REFERENCE_COVERAGE`) 갱신, 샘플 스폰서 삭제.
