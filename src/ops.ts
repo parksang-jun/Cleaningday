@@ -8,6 +8,20 @@ import { SAMPLE_SPONSORS, validateSponsor, type SponsorProduct } from './game/sp
 import { DEFAULT_HOST, getStore, persist, type HostConfig } from './storage';
 
 /** 내장 제품 = 실제 판매 제품(제휴 추천) + 가상 샘플 광고주 */
+/**
+ * 쇼호스트(뽀득이) 기능 자체를 켤지 — **기본 꺼짐**.
+ * 꺼져 있으면 기기에 어떤 광고주가 저장돼 있든 쇼호스트 카드가 뜨지 않고 음성도 나오지 않는다.
+ * 진짜 광고주가 붙는 날 VITE_HOST_ENABLED=true 로 켠다 (시험용은 localStorage sc_host=1).
+ */
+export function hostEnabled(env: Record<string, string | undefined> = import.meta.env as unknown as Record<string, string | undefined>): boolean {
+  if (env.VITE_HOST_ENABLED === 'true') return true;
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem('sc_host') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function builtInSponsors(): SponsorProduct[] {
   const env = import.meta.env as unknown as Record<string, string | undefined>;
   // 출시판 기본값: 실제 브랜드 제품도, 가상 샘플 광고주도 없음 → 쇼호스트가 나오지 않는다. 운영자가 등록한 진짜 광고주만 나온다

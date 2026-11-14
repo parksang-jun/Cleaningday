@@ -20,7 +20,7 @@ import { type HostMedia } from './avatar';
 import { resolveMediaUrl } from './media';
 import { detectLang, getLang, setLang, t, type Lang } from './i18n';
 import { CATEGORY_QUERY, defaultMarket, DIRT_TO_ITEM, isSafeUrl, mallEnabled, MARKET_LABEL, marketsFor, searchUrl, sponsorBuyUrl, type Market } from './mall';
-import { adminEnabled, adminPin, hostConfig, installOpsCounters, saveHostConfig, sponsorList } from './ops';
+import { adminEnabled, adminPin, hostConfig, hostEnabled, installOpsCounters, saveHostConfig, sponsorList } from './ops';
 import { renderAdmin } from './admin';
 import { Renderer } from './render/renderer';
 import type { View3D } from './render/view3d';
@@ -509,6 +509,8 @@ function hostName(): string {
 /** 쇼호스트 등장 조건: 켜져 있고, 같은 판에서 같은 제품을 다시 보여주지 않고, 소개(intro)는 제품별 재노출 간격을 지킨다.
  *  결과(result)는 매 판 끝마다 — 이번 판에 쓴 제품을 소개하므로 간격·중복 제한이 없다 (설정으로 끌 수 있음) */
 function canHost(p: SponsorProduct, placement: Placement): boolean {
+  // 기능 스위치가 꺼져 있으면(출시 기본값) 기기에 남아 있는 광고주와 무관하게 쇼호스트는 나오지 않는다
+  if (!hostEnabled()) return false;
   const cfg = hostConfig();
   if (!cfg.enabled || hostOpen()) return false;
   // 광고 제거 이용권 기간에는 저절로 뜨는 쇼호스트 광고 없음

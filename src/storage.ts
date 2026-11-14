@@ -104,7 +104,7 @@ const KEY = 'sparkle-clean-v1';
 export const DEFAULT_HOST: HostConfig = { enabled: true, name: '뽀득이', introCooldownMin: 8, introFromStage: 2, struggleAfterTries: 2, result: true, affiliate: true };
 
 const DEFAULTS: Store = {
-  settings: { sound: true, music: true, haptics: true, hostVoice: true, lang: 'auto', view3d: true },
+  settings: { sound: true, music: true, haptics: true, hostVoice: false, lang: 'auto', view3d: true },
   stats: { gamesPlayed: 0, totalCleanedCells: 0 },
   ads: { lastInterstitialAt: 0, gamesSinceInterstitial: 0, adFreeUntil: 0 },
   progress: { unlocked: 1, stars: {}, bestTime: {} },

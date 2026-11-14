@@ -188,7 +188,7 @@ const ctx = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: fals
   assert((await p0.locator('[data-testid="bonus-challenge"]').count()) === 1 && (await p0.evaluate(() => window.__sparkle.coins())) - coins2 === 100, 'boss stage pays double coins (50 x 2)');
   await ctx0.close();
 }
-await ctx.addInitScript(() => { try { localStorage.setItem('sc_real_products', '1'); localStorage.setItem('sc_sample_sponsors', '1'); } catch {} });
+await ctx.addInitScript(() => { try { localStorage.setItem('sc_real_products', '1'); localStorage.setItem('sc_sample_sponsors', '1'); localStorage.setItem('sc_host', '1'); } catch {} });
 const page = await ctx.newPage();
 // 느린 CI 러너 재현용: E2E_CPU_THROTTLE=4 처럼 주면 CPU 를 그만큼 느리게 한다
 if (process.env.E2E_CPU_THROTTLE) {
