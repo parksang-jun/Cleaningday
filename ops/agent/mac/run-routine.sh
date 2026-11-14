@@ -97,15 +97,18 @@ if [ "$ROUTINE" = "D" ] && [ -s "$FB_DIR/inbox.md" ]; then
   cp "$FB_TAKEN" "$FB_COPY"
 fi
 
-# 결재함에서 사장님이 내린 결정을 이번 회차분으로 넘긴다 (코드를 다루는 A·D 루틴)
-DC_DIR="$HOME_DIR/decisions"; DC_TAKEN=""; DC_COPY=""
-if { [ "$ROUTINE" = "A" ] || [ "$ROUTINE" = "D" ] || [ "$ROUTINE" = "E" ]; } && [ -s "$DC_DIR/inbox.md" ]; then
+# 결재함에서 사장님이 내린 결정을 이번 회차분으로 넘긴다 — 어느 실행이든(명령 X 포함) 가장 먼저 반영한다.
+# 예전에는 A·D·E 만 가져가서, 결재 후 다음 화·금까지 '처리 안 됨'으로 남았다(2026-11-14 명령).
+DC_DIR="$HOME_DIR/decisions"; DC_TAKEN=""; DC_COPY=""; DC_NOTE=""
+if [ -s "$DC_DIR/inbox.md" ]; then
   DC_TAKEN="$DC_DIR/processing-$STAMP.md"
   mv "$DC_DIR/inbox.md" "$DC_TAKEN"
   mkdir -p "$REPO/ops/agent/state/decisions-inbox"
   DC_COPY="$REPO/ops/agent/state/decisions-inbox/$STAMP.md"
   cp "$DC_TAKEN" "$DC_COPY"
   EXTRA="가장 먼저 ops/agent/state/decisions-inbox/ 의 결재 결과를 헌장 1-1 대로 반영한다(approvals.json 상태 갱신 → 후속 작업). $EXTRA"
+  DC_NOTE="
+[먼저 할 일] 사장님이 결재함에서 내린 결정이 ops/agent/state/decisions-inbox/$STAMP.md 에 있습니다. 명령보다 먼저 헌장 1-1 대로 approvals.json 에 반영하고(status done·decision·decided·result), 그 파일도 같은 브랜치에 커밋하세요."
 fi
 
 PROMPT="당신은 게임 \"싹싹 클린(Sparkle Clean)\"의 운영 에이전트입니다. 사용자는 자리에 없으니 질문하지 말고 진행하세요. 리포트는 한국어로, 간결하게.
@@ -120,6 +123,7 @@ if [ "$ROUTINE" = "X" ]; then
 지금 위치가 저장소(parksang-jun/Cleaningday, main 최신)입니다. ops/agent/AGENT.md(헌장)의 '명령 처리' 절과 권한표를 지키세요.
 코드·문서를 바꿨으면 agent/$(date +%Y-%m-%d)-cmd-<주제> 브랜치에 커밋·푸시하고(gh 가 있으면 PR), main 에 직접 푸시하지 않습니다.
 마지막 출력은 사장님께 드리는 답: 한 일 → 결과(파일·PR) → 사장님이 하실 일(있으면).
+$DC_NOTE
 
 [명령]
 $(cat "$CMD_FILE")"
