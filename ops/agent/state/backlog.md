@@ -15,6 +15,7 @@
 - [auto] app-ads.txt 파일(`store/app-ads.txt`) + 앱 ID 와 게시자 ID 일치 검사 → `agent/2026-11-14-app-ads-txt`. 올릴 주소는 결재 `app-ads-host` (근거: AdMob 도움말 9363762 — 개발자 웹사이트 최상위에서만 찾음, `parksang-jun.github.io` 저장소 없음 11-14 확인)
 
 ## 다음에 처리 (위에서부터)
+- [auto] 로컬(맥) e2e 에서 `scrubbing the 3D surface cleans it (0% → 0%)` 만 실패. 11-14 2회 재현, CI(ubuntu) 는 통과. 맥 headless 크롬의 WebGL 문제로 추정 → 원인을 확인하고, WebGL 을 쓸 수 없는 환경이면 이 항목은 건너뛰고 그 사실을 로그에 남기게 수정 (근거: 11-14 루틴 A)
 - [auto] e2e 실행 준비 자동화: playwright 가 의존성에 없어 로컬에서 매번 `npm install --no-save playwright@1.63.0` + `npx playwright install chromium` 필요(11-14 루틴 A 에서도 재발)
 - [auto] 난이도 요철 다듬기: 2배 넘게 급등하는 판(66·75·77·96 등)과 너무 쉬운 15판의 오염량을 앞뒤와 고르게. 구역 첫 판의 쉬운 시작은 유지 (근거: 2026-11-13 봇 플레이테스트, 17군데)
 - [auto] 제휴 링크를 코드에 담을 자리 만들기(제품별 링크 칸) — 결재 `affiliate-accounts` 가 끝나 링크를 받으면 바로 넣을 수 있게 (근거: 운영자 모드 링크는 기기에만 저장됨)
