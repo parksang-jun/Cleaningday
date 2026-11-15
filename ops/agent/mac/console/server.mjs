@@ -149,10 +149,8 @@ async function stateData() {
   const latest = all[0] || null; // 가장 최근 커밋이 있는 브랜치
   const ref = latest ? latest.ref : 'main';
   const [pipeline, ledger, backlog, log, feedback, improvements, approvalsRaw, creatives, campaigns] = await Promise.all(['state/pipeline.csv', 'state/ledger.csv', 'state/backlog.md', 'state/log.md', 'state/feedback.csv', 'state/improvements.md', 'state/approvals.json', 'state/creatives.csv', 'state/campaigns.csv'].map((f) => readAt(ref, f)));
-  let approvals = []; try { approvals = JSON.parse(approvalsRaw).items || []; } catch {}
-  const decided = readDecided();
-  approvals = approvals.map((a) => ({ ...a, my: decided[a.id] || null }));
-  extAllowed.clear(); for (const a of approvals) for (const l of a.links || []) if (typeof l.url === 'string') extAllowed.add(l.url);
+  const parseItems = (raw) => { try { return JSON.parse(raw).items || []; } catch { return []; } };
+  let approvals = parseItems(approvalsRaw);
   // 보고서: 모든 에이전트 브랜치 + main
   const reports = []; const seen = new Set();
   for (const b of all.length ? all : [{ ref: 'main', name: 'main', date: '' }]) {
@@ -172,6 +170,30 @@ async function stateData() {
     if (m.code === 0) m.out.split('\n').forEach((l) => l.trim() && merged.add(l.trim().replace(/^origin\//, '')));
   }
   const pending = all.filter((x) => x.name.startsWith('agent/') && !merged.has(x.name));
+  // 결재함: main 과 아직 병합 안 된 agent 브랜치의 approvals.json 을 합친다.
+  // 한 브랜치에서 반영(done)한 결재를, 뒤에 main 에서 갈라진 다른 브랜치가 덮어써 '처리 안 됨'으로 되돌아 보이던 문제(2026-11-14 명령).
+  // 규칙: 어느 브랜치에서든 done 이면 done(가장 최근 것), 아니면 가장 최근 브랜치의 내용. 한쪽에만 있는 새 요청서도 넣는다.
+  const sources = [{ ref, date: latest?.date || '' }, ...(main && main.ref !== ref ? [main] : []), ...pending.filter((b) => b.ref !== ref)];
+  const byId = new Map();
+  for (const s of sources) {
+    const items = s.ref === ref ? approvals : parseItems(await readAt(s.ref, 'state/approvals.json'));
+    for (const it of items) {
+      if (!it || typeof it.id !== 'string') continue;
+      const cur = byId.get(it.id);
+      const d = s.date || '';
+      if (!cur) { byId.set(it.id, { it, d }); continue; }
+      const curDone = cur.it.status === 'done', newDone = it.status === 'done';
+      if ((newDone && !curDone) || (newDone === curDone && d > cur.d)) byId.set(it.id, { it, d });
+    }
+  }
+  const order = approvals.map((a) => a.id);
+  approvals = [...byId.values()].map((x) => x.it).sort((a, b) => {
+    const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+    return (a.status === 'done') - (b.status === 'done') || (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
+  });
+  const decided = readDecided();
+  approvals = approvals.map((a) => ({ ...a, my: decided[a.id] || null }));
+  extAllowed.clear(); for (const a of approvals) for (const l of a.links || []) if (typeof l.url === 'string') extAllowed.add(l.url);
   return {
     source: { ref, name: latest ? latest.name : 'main', date: latest?.date, isMain: !latest || latest.name === 'main', mainDate: main?.date },
     pipeline: parseCsv(pipeline), ledger: parseCsv(ledger), feedback: parseCsv(feedback), improvements, inbox: readInbox(), approvals, backlog, log, reports, pending, ads: adsConfig(),

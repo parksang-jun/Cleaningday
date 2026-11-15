@@ -314,8 +314,8 @@ const PAGES = {
       const more = [a.oneline && ['지금 상황', a.summary], ['왜 필요한가', a.why], ['결재 후 에이전트가 할 일', a.after]].filter((x) => x && x[1]);
       const act = my
         ? `<div class="act"><h4>✓ 결재 완료 — ${esc(my.label || my.decision)} <span class="muted" style="font-weight:400">· ${esc(my.at)}</span></h4>${my.memo ? `<div class="fb-text">${esc(my.memo)}</div>` : ''}
-            <div class="muted" style="font-size:12.5px">다음 에이전트 실행(제품 개선: 화·금) 때 반영됩니다. 지금 바로 반영하려면 '지금 반영'을 누르세요.</div>
-            <div class="btnrow"><button class="btn pri" data-run="D">지금 반영</button><button class="btn" data-undecide="${esc(a.id)}">결재 취소</button></div></div>`
+            <div class="muted" style="font-size:12.5px">다음 에이전트 실행(어떤 루틴이나 명령이든) 때 가장 먼저 반영됩니다. 지금 바로 반영하려면 '지금 반영'을 누르세요(몇 분).</div>
+            <div class="btnrow"><button class="btn pri" data-apply-decisions="1">지금 반영</button><button class="btn" data-undecide="${esc(a.id)}">결재 취소</button></div></div>`
         : a.kind === 'do'
           ? `<div class="act"><h4>결재: 위 순서를 마치셨으면</h4>${a.ask ? `<div><div class="muted" style="font-size:12.5px;margin-bottom:4px">${esc(a.ask)}</div><textarea data-memo="${esc(a.id)}" style="min-height:64px" placeholder="여기에 적어 주세요 (비밀번호·계좌·카드·신분증 번호는 적지 마세요)"></textarea></div>` : ''}
               <div class="btnrow"><button class="btn pri" data-decide="${esc(a.id)}" data-decision="done" data-label="완료했어요">완료했어요</button><button class="btn" data-decide="${esc(a.id)}" data-decision="hold" data-label="보류 — 나중에 하겠음">보류 (나중에)</button><button class="btn" data-decide="${esc(a.id)}" data-decision="reject" data-label="하지 않음">하지 않겠음</button></div></div>`
@@ -609,6 +609,8 @@ document.addEventListener('click', (e) => {
   if (d.game === 'reload') { const f = $('#gameframe'); f.src = `/game/?v=${Date.now()}#admin`; return; }
   if (d.urlGame) { window.open('/game/#admin', '_blank'); return; }
   if (d.run) return act('/api/run', { routine: d.run }, t);
+  // 결재 '지금 반영': 무거운 제품 개선 루틴 대신 짧은 직접 명령으로 결정만 반영한다(실행기가 결정 함을 함께 넘김)
+  if (d.applyDecisions) return act('/api/command', { text: '결재함에서 내린 결정을 지금 반영해 주세요. approvals.json 을 갱신하고, 바로 할 수 있는 후속 작업은 백로그 맨 위에 올려 주세요.', where: 'local' }, t);
   if (d.stop) return act('/api/stop', { routine: d.stop }, t);
   if (d.sched) return act('/api/schedule', { on: d.sched === '1' }, t);
   if (d.open) return act('/api/open', { target: d.open }, t);
