@@ -15,8 +15,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
-      # e2e 는 playwright 를 require 한다 — 의존성에 없으므로 여기서 설치 (브라우저와 같은 버전)
-      - run: npm install --no-save playwright@1.63.0
+      # playwright 는 devDependencies 에 버전 고정(npm ci 로 설치됨) — 여기서는 그 버전에 맞는 브라우저만 받는다
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
         env:
