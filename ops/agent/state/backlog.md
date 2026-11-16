@@ -4,16 +4,18 @@
 
 > 결재가 필요한 일은 여기 한 줄로만 적지 말고 **`state/approvals.json` 에 결재 요청서**(무엇을·왜·정확한 절차·비용·선택지)로 올린다. 아래 `[승인]` 줄은 요청서가 아직 없는 임시 메모다.
 
-정렬 기준: (영향 받는 사람 수 × 심각도) ÷ 작업량. 결재 후속 작업은 맨 위(헌장 1-1). 최근 정렬 2026-11-14(명령 처리: 결재 8건 반영).
+정렬 기준: (영향 받는 사람 수 × 심각도) ÷ 작업량. 결재 후속 작업은 맨 위(헌장 1-1). 최근 정렬 2026-11-16(루틴 A: 결재 2건 반영).
 
 ## 진행 중 (PR 올림, 병합은 승인)
+- [auto] Play 스토어 등록 자료 초안(ko/en/ja)·데이터 보안 설문 초안·비공개 테스트 안내문 → `store/play/`, 브랜치 agent/2026-11-16-play-listing (결재 play-developer-name=done)
 - [auto] 판매몰 맨 아래 제휴(수수료) 고지 복원 → PR #7 (결재 affiliate-disclosure=restore)
 - [auto] '새 아이템' 알림: 그 판에 쓰는 것만, 조작 안내가 끝난 뒤에 → PR #9
 - [auto] AdMob 인증 파일 app-ads.txt → PR #12 (올릴 주소는 결재 app-ads-host)
 
 ## 다음에 처리 (위에서부터)
-- [auto] 사진 재질(CC0) 적용: Poly Haven·ambientCG 무료 상업용 사진을 마루 → 타일 → 스테인리스 순으로, 전후 스크린샷을 PR 에 첨부. 앱 용량 증가 폭 기록 (결재 graphics-assets=photo-cc0)
-- [auto] Play 스토어 등록 자료 초안(설명문 ko/en/ja·스크린샷 목록·개인정보처리방침 점검)과 비공개 테스트(12명·14일) 안내문 — 개발자 이름은 결재 play-developer-name 대기, 이름 칸만 비워 두고 먼저 작성 가능 (결재 play-console=done)
+- [auto] 사진 재질(CC0) 적용: Poly Haven·ambientCG 무료 상업용 사진을 마루 → 타일 → 스테인리스 순으로, 전후 스크린샷을 PR 에 첨부. 앱 용량 증가 폭 기록 (결재 graphics-assets=photo-cc0) — **2026-11-16 막힘: 예약 실행 세션에서 두 사이트 다운로드(네트워크)가 승인 필요로 차단됨.** 실행기 허용 목록에 api.polyhaven.com·dl.polyhaven.org·ambientcg.com 을 넣어야 진행 가능
+- [auto] Play 휴대전화 스크린샷 9:16 판(예: 1080×1920) 만들기 — store-assets 의 1179×2556·1320×2868 은 긴 변이 짧은 변의 2배를 넘어 Play 규격 초과 가능성 (`scripts/store-shots.mjs` 에 크기 추가) (근거: store/play/README.md 점검)
+- [auto] Play 그래픽 이미지 1024×500 만들기(실제 게임 화면 기반) — 없으면 등록정보 제출 불가 (근거: 같은 점검)
 - [auto] iOS 빌드 점검(번들 ID·서명 설정·Info.plist 권한 문구)과 App Store 등록 자료 초안 (결재 apple-developer=done)
 - [auto] 광고팀: 유료 캠페인 설계는 하지 않고 무료 게시(숏폼 오가닉)·ASO 만 계획. 리텐션 게이트 통과 시 유료 결재 재상신 (결재 ad-paid-budget=organic-first)
 - [auto] 그래픽 2차: 타일(유약 반사·줄눈 깊이)·스테인리스·버너 받침 질감, 도구 아이콘 입체화 — 위 사진 재질 작업과 겹치는 부분은 사진 재질로 대체 (근거: 2026-11-14 사장님 명령 "그래픽이 조잡하다")
@@ -25,7 +27,7 @@
 - [auto] 3D 보기(실험, 꺼져 있음) 코드 유지 여부 검토 — 번들에서 분리돼 있어 비용은 없음
 
 ## 결재 대기 (요청서는 approvals.json)
-- [승인] Play 개발자 이름 → `play-developer-name`
+- [승인] 개인정보처리방침 운영자 이름을 스토어 개발자 이름과 맞추기 → `privacy-operator-name`
 - [승인] 중국어·힌디어 앱 이름 선택 → `app-names-zh-hi-pick`
 - [승인] app-ads.txt 올릴 주소 → `app-ads-host`
 - [승인] 광고주 제안 메일 발송 시점 → `sponsor-outreach-send`
@@ -38,6 +40,7 @@
 - 유료 광고 — 결재 ad-paid-budget=organic-first. 리텐션 게이트(D1 30%·D7 10%) 통과 후 재결재.
 
 ## 끝난 것
+- 2026-11-16 결재 2건 반영: play-developer-name=done(Martin park → Play 등록 자료), admob-app-id=done(이미 AndroidManifest 에 같은 값, 작업 없음)
 - 2026-11-14 결재 8건 반영(approvals.json, 명령 처리): 고지 복원·음성 없음·Play 완료·AdMob 완료·이름 후보 제안·Apple 완료·유료 광고 보류·사진 재질 A안
 - 2026-11-14 [auto] 목표 시간 하한 보정(16판) → PR #6 (병합)
 - 2026-11-14 AdMob 아이폰·안드로이드 실제 앱 ID·광고 ID 반영(main 9a5ed8e·040c340)
