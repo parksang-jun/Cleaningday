@@ -2150,6 +2150,10 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
           persist();
           coinsShown *= 2;
           root.querySelector('[data-el="coins"]')!.textContent = t('reward', { c: coinsShown });
+        } else {
+          // 광고가 아직 안 왔거나 끝까지 보지 않았다 — 아무 반응 없이 버튼만 꺼지면 고장난 것처럼 보인다
+          toast(t('adNotReady'), 'warn');
+          b.disabled = false;
         }
       });
       const after = async (fn: () => void) => {
