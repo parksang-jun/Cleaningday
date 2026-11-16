@@ -231,7 +231,19 @@ try {
   await page.waitForSelector('[data-testid="canvas"]');
   await page.waitForTimeout(300);
   assert((await page.locator('.toolbar [data-item]').count()) === 2, 'toolbar lists only the needed items');
-  assert((await page.locator('body.has-banner').count()) === 0 && !(await page.locator('#ad-banner').isVisible()), 'no banner while cleaning');
+  // 청소 중에도 배너는 남는다(노출 시간의 대부분). 다만 도구 바와 겹치거나 붙으면 안 된다
+  await page.waitForSelector('body.has-banner [data-testid="ad-banner-placeholder"]');
+  {
+    const g = await page.evaluate(() => {
+      const b = document.getElementById('ad-banner').getBoundingClientRect();
+      const tb = document.querySelector('.toolbar').getBoundingClientRect();
+      const cv = document.querySelector('[data-testid="canvas"]').getBoundingClientRect();
+      return { bannerTop: b.top, h: b.height, toolbarBottom: tb.bottom, canvasBottom: cv.bottom };
+    });
+    assert(g.h >= 50, `banner stays up while cleaning (${g.h}px)`);
+    assert(g.toolbarBottom <= g.bannerTop - 8, `toolbar keeps a safety gap above the banner (${Math.round(g.bannerTop - g.toolbarBottom)}px)`);
+    assert(g.canvasBottom <= g.bannerTop, 'the scrubbing canvas never reaches the banner');
+  }
   assert((await page.locator('[data-testid="limit"]').count()) === 0, 'tier 1 has no time limit');
   console.log(`info - in-game frame rate: ${await fpsOf(page)} fps (deviceScaleFactor ${DSF ?? 3}${process.env.E2E_CPU_THROTTLE ? ', CPU x' + process.env.E2E_CPU_THROTTLE + ' slower' : ''})`);
   assert((await page.locator('[data-el="unknown"]').innerText()) === '1', 'notebook badge shows 1 unknown mess');
@@ -988,10 +1000,11 @@ try {
     assert((await p3.locator('[data-testid="view3d"]').count()) === 0, '3D (experimental) renders the stage, with no switch in the HUD');
     const before3d = await p3.evaluate(() => window.__sparkle.session().cleanliness);
     const b3 = await p3.locator('[data-testid="canvas3d"]').boundingBox();
-    await p3.mouse.move(b3.x + b3.width * 0.2, b3.y + b3.height * 0.35);
+    // 면 안쪽에서 시작한다 — 배너가 있으면 캔버스가 낮아져 면이 가운데로 모인다
+    await p3.mouse.move(b3.x + b3.width * 0.34, b3.y + b3.height * 0.3);
     await p3.mouse.down();
     for (let k = 0; k < 40; k++) {
-      await p3.mouse.move(b3.x + b3.width * (0.2 + (k % 10) * 0.06), b3.y + b3.height * (0.3 + Math.floor(k / 10) * 0.1));
+      await p3.mouse.move(b3.x + b3.width * (0.34 + (k % 10) * 0.035), b3.y + b3.height * (0.2 + Math.floor(k / 10) * 0.1));
       await p3.waitForTimeout(25);
     }
     await p3.mouse.up();

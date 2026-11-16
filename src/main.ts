@@ -740,6 +740,8 @@ function stopGame() {
     stopScrub();
     ads.gameplayStop();
     window.removeEventListener('resize', onResize);
+    stageObserver?.disconnect();
+    stageObserver = null;
   }
   game = null;
 }
@@ -748,6 +750,8 @@ function onResize() {
   game?.renderer.resize();
   game?.view3d?.resize();
 }
+/** 청소 영역 크기가 창 크기와 상관없이 바뀔 때(배너가 뒤늦게 뜨거나 내려갈 때)도 캔버스를 다시 맞춘다 */
+let stageObserver: ResizeObserver | null = null;
 
 function fmtTime(sec: number): string {
   const s = Math.max(0, Math.floor(sec));
@@ -773,7 +777,10 @@ function startLevel(id: number) {
   const level = getLevel(id);
   if (!level) return;
   stopGame();
-  ads.setBanner(false); // 청소 중에는 배너 없음 (화면을 넓게 쓰고, 문지르다 잘못 누르지 않게)
+  // 청소 중에도 배너를 유지한다 — 노출 시간의 대부분이 여기다.
+  // 화면 맨 아래는 도구 바라서 문지르는 캔버스가 배너에 닿지 않고,
+  // has-banner 가 도구 바와 배너 사이에 안전 간격(--banner-gap)을 둬 잘못 누르는 것을 막는다.
+  ads.setBanner(true);
   const st = getStore();
   // 지급 아이템
   const newOnes = grantsUpTo(id).filter((g) => !st.owned.includes(g));
@@ -870,6 +877,10 @@ function startLevel(id: number) {
   updateUnknownBadge();
   updateModeHud();
   window.addEventListener('resize', onResize);
+  if (typeof ResizeObserver !== 'undefined') {
+    stageObserver = new ResizeObserver(() => onResize());
+    stageObserver.observe(app.querySelector('.stage-area')!);
+  }
   bindInput(canvas);
   app.querySelector('[data-act="back"]')!.addEventListener('click', () => {
     track('level_quit', { level: id, clean: Math.round(session.cleanliness * 100) });
