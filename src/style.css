@@ -2518,3 +2518,17 @@ body.has-banner .ad-banner {
 .admin__adsbox { display: grid; gap: 2px; margin: 8px 0; }
 .admin__adsrow { display: flex; justify-content: space-between; gap: 12px; padding: 4px 8px; background: rgba(0, 0, 0, 0.05); border-radius: 6px; }
 .admin__adsrow b { word-break: break-all; text-align: right; }
+
+/* ---------- 도구 강화 · 별 관문 ---------- */
+.upg { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin-top: 4px; }
+.upg__pips { display: inline-flex; gap: 3px; }
+.upg__pips i { width: 14px; height: 6px; border-radius: 3px; background: var(--line); }
+.upg__pips i.on { background: var(--primary); }
+.upg__gain { color: var(--primary); font-weight: 700; }
+.pill--lv { align-self: flex-end; padding: 1px 8px; border-radius: 999px; background: var(--primary); color: #fff; }
+.area.is-gated { opacity: 0.85; border-style: dashed; }
+.goal--gate { font-weight: 700; }
+.gate { text-align: center; display: grid; gap: 10px; }
+.gate__stars { font-size: 28px; font-weight: 900; color: var(--primary); margin: 0; }
+.gate__bar { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.gate__bar i { display: block; height: 100%; background: var(--primary); border-radius: 5px; }

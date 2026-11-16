@@ -310,6 +310,9 @@ try {
   await page.evaluate(() => {
     const raw = JSON.parse(localStorage.getItem('sparkle-clean-v1'));
     raw.progress.unlocked = 96;
+    // 별 관문도 통과하도록 별을 채운다. 아래 검사에서 "처음 하는 판"으로 들어가는 판(첫 안내가 나와야 한다)은 비워 둔다
+    const fresh = new Set([25, 27, 33, 37, 43, 49, 73, 90, 96]);
+    for (let id = 14; id <= 96; id++) if (!fresh.has(id)) raw.progress.stars[id] = 3;
     raw.coins = 2000;
     localStorage.setItem('sparkle-clean-v1', JSON.stringify(raw));
   });
@@ -964,6 +967,55 @@ try {
   await page.waitForTimeout(100);
   assert((await page.locator('[data-testid="mall-us-windex"]').count()) === 1, 'switching to Amazon lists the US products');
   await page.click('[data-testid="shop"] [data-act="close"]');
+
+  // 별 관문 · 도구 강화: 판을 다 깨도 별이 모자라면 다음 구역이 잠기고, 강화·다시 하기로 이끈다
+  {
+    const ctxG = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: false });
+    const pg = await ctxG.newPage();
+    await pg.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+    await pg.waitForSelector('[data-testid="play"]');
+    // 거실 12판을 전부 별 1개로 깬 상태 (둘째 구역 관문 18개에 6개 모자람)
+    await pg.evaluate(() => { window.__sparkle.skipTour(); window.__sparkle.force2d(true); window.__sparkle.setUnlocked(13, 1); window.__sparkle.setCoins(400); });
+    // 판을 한 번 시작해 기본 도구를 지급받는다 (실제로는 판을 깨야 여기까지 오므로 늘 갖고 있다)
+    await pg.click('[data-testid="play"]');
+    await pg.waitForSelector('[data-testid="intro"]');
+    await pg.click('[data-testid="start"]');
+    await pg.waitForSelector('[data-testid="canvas"]');
+    await pg.click('[data-testid="back"]');
+    await pg.waitForTimeout(400);
+    await pg.reload({ waitUntil: 'networkidle' });
+    await pg.waitForSelector('[data-testid="gate-goal"]');
+    assert(/6 more stars/.test(await pg.locator('[data-testid="gate-goal"]').innerText()), 'home says how many stars the next area still needs (6 more)');
+    const room = pg.locator('[data-testid="area-room"]');
+    assert((await room.getAttribute('class')).includes('is-gated') && !(await room.isDisabled()) && /12\/18/.test(await room.innerText()), 'the star-gated area shows ★12/18 and can be tapped');
+    assert(/Stage 1\b/.test(await pg.locator('[data-testid="play"]').innerText()), 'while gated, Play points at the stage with the fewest stars');
+    await room.click();
+    await pg.waitForSelector('[data-testid="gate"]');
+    assert((await pg.locator('[data-testid="stage-13"]').count()) === 0, 'tapping the gated area explains the gate instead of opening it');
+    await pg.click('[data-testid="gate-upgrade"]');
+    await pg.waitForSelector('[data-testid="upgrade-cloth"]');
+    assert((await pg.locator('[data-testid="lv-cloth"]').innerText()) === 'Lv.1' && /100/.test(await pg.locator('[data-testid="upgrade-cloth"]').innerText()), 'shop offers the first cloth upgrade for 100 coins');
+    const power1 = await pg.evaluate(() => window.__sparkle.itemSpec('cloth').power);
+    await pg.click('[data-testid="upgrade-cloth"]');
+    await pg.waitForFunction(() => document.querySelector('[data-testid="lv-cloth"]')?.textContent === 'Lv.2');
+    const power2 = await pg.evaluate(() => window.__sparkle.itemSpec('cloth').power);
+    assert((await pg.evaluate(() => window.__sparkle.coins())) === 300 && power2 > power1, `upgrading costs 100 coins and makes the cloth stronger (${power1} → ${power2})`);
+    assert(/250/.test(await pg.locator('[data-testid="upgrade-cloth"]').innerText()), 'the next level costs more (250)');
+    await pg.click('[data-testid="upgrade-cloth"]');
+    await pg.waitForFunction(() => document.querySelector('[data-testid="lv-cloth"]')?.textContent === 'Lv.3');
+    await pg.click('[data-testid="upgrade-cloth"]');
+    await pg.waitForTimeout(200);
+    assert((await pg.locator('[data-testid="lv-cloth"]').innerText()) === 'Lv.3' && (await pg.evaluate(() => window.__sparkle.coins())) === 50, 'an upgrade you cannot afford changes nothing');
+    await pg.screenshot({ path: resolve(shots, '12-upgrades.png') });
+    // 별을 채우면 관문이 열린다
+    await pg.evaluate(() => window.__sparkle.setUnlocked(13, 2));
+    await pg.waitForTimeout(400);
+    await pg.reload({ waitUntil: 'networkidle' });
+    await pg.waitForSelector('[data-testid="play"]');
+    assert((await pg.locator('[data-testid="gate-goal"]').count()) === 0 && !(await pg.locator('[data-testid="area-room"]').getAttribute('class')).includes('is-locked'), 'with enough stars the gate opens');
+    assert((await pg.evaluate(() => window.__sparkle.itemSpec('cloth').power)) === power1 * 1.24, 'upgrade levels survive a reload');
+    await ctxG.close();
+  }
 
   // 3D 보기 — WebGL(SwiftShader) 켠 별도 브라우저에서: 같은 판을 3D 방 안의 면으로, 광선 투사로 닦인다
   {

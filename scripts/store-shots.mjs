@@ -40,7 +40,7 @@ const ctx = await browser.newContext({
 });
 const p = await ctx.newPage();
 await p.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
-await p.evaluate(() => { window.__sparkle.skipTour(); window.__sparkle.setUnlocked(96); window.__sparkle.setCoins(1280); });
+await p.evaluate(() => { window.__sparkle.skipTour(); window.__sparkle.setUnlocked(96, 3); window.__sparkle.setCoins(1280); });
 await p.waitForTimeout(400);
 
 const noModal = () => p.evaluate(() => document.querySelectorAll('.modal').forEach((m) => m.remove()));
