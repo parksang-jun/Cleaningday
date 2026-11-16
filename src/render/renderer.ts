@@ -4,7 +4,7 @@ import type { CleanSession } from '../game/engine';
 import { DEBRIS, makeGrimeTexture } from './grime';
 import { makeResidueTexture, sprayLook, type SprayStyle } from './sprayfx';
 import { paintLevel } from './scene';
-import { levelPhotoKey, loadScenePhotos } from './photos';
+import { levelPhotoKey, loadScenePhotos, materialPhotoKeys } from './photos';
 
 interface Sparkle {
   x: number;
@@ -199,7 +199,7 @@ export class Renderer {
     paintLevel(this.base.getContext('2d')!, s.level, this.base.width, this.base.height);
     // 실사 사진이 뒤늦게 도착하면 바탕만 다시 그린다
     const lv = s.level;
-    void loadScenePhotos([levelPhotoKey(lv.id), ...(lv.zones ? lv.zones.map((z) => z.scene) : [lv.scene])]).then((fresh) => {
+    void loadScenePhotos([levelPhotoKey(lv.id), ...(lv.zones ? lv.zones.map((z) => z.scene) : [lv.scene]), ...materialPhotoKeys()]).then((fresh) => {
       if (!fresh || this.session?.level !== lv || !this.base.width) return;
       paintLevel(this.base.getContext('2d')!, lv, this.base.width, this.base.height);
       this.hasSnap = false;

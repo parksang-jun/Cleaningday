@@ -6,6 +6,23 @@ const urls = import.meta.glob('../assets/scenes/*.{webp,jpg}', { eager: true, qu
 const URL_OF = new Map<string, string>();
 for (const [path, url] of Object.entries(urls)) URL_OF.set(path.split('/').pop()!.replace(/\.(webp|jpg)$/, ''), url);
 
+// 재질 사진 — src/assets/materials/<재질>.webp(또는 .jpg). 무료 상업용(CC0) 사진만 넣는다(출처는 같은 폴더 README).
+// 있으면 해당 재질의 결·무늬를 사진에서 가져오고, 없으면 지금처럼 캔버스로 만든 무늬를 쓴다. 키는 'mat:<재질>'.
+export const MATERIAL_PHOTOS = ['wood', 'tile', 'steel'] as const;
+export type MaterialPhoto = (typeof MATERIAL_PHOTOS)[number];
+const matUrls = import.meta.glob('../assets/materials/*.{webp,jpg}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+for (const [path, url] of Object.entries(matUrls)) URL_OF.set('mat:' + path.split('/').pop()!.replace(/\.(webp|jpg)$/, ''), url);
+
+/** 불러온 재질 사진(없으면 null) */
+export function materialPhoto(name: MaterialPhoto): HTMLImageElement | null {
+  return loaded.get('mat:' + name) ?? null;
+}
+
+/** 저장소에 들어 있는 재질 사진 키 목록 — loadScenePhotos 에 그대로 넘긴다 */
+export function materialPhotoKeys(): string[] {
+  return MATERIAL_PHOTOS.map((m) => 'mat:' + m).filter((k) => URL_OF.has(k));
+}
+
 const loaded = new Map<string, HTMLImageElement>();
 const loading = new Map<string, Promise<void>>();
 

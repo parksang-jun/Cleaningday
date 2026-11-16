@@ -11,8 +11,12 @@
 - [auto] '새 아이템' 알림: 그 판에 쓰는 것만, 조작 안내가 끝난 뒤에 → PR #9
 - [auto] AdMob 인증 파일 app-ads.txt → PR #12 (올릴 주소는 결재 app-ads-host)
 
+- [auto] 사진 재질 1단계: 재질 사진 자리(src/assets/materials/wood·tile·steel) + 마루 나뭇결 연결, 사진 없으면 기존 무늬 → agent/2026-11-16-photo-texture PR (2026-11-16)
+
 ## 다음에 처리 (위에서부터)
-- [auto] 사진 재질(CC0) 적용: Poly Haven·ambientCG 무료 상업용 사진을 마루 → 타일 → 스테인리스 순으로, 전후 스크린샷을 PR 에 첨부. 앱 용량 증가 폭 기록 (결재 graphics-assets=photo-cc0)
+- [auto] 사진 재질 2단계: Poly Haven·ambientCG CC0 마루 사진(1K webp, 결 가로)을 `src/assets/materials/wood.webp` 로 받아 README 출처표 기입, 전후 스크린샷·용량 증가 PR 첨부 → 이어서 타일·스테인리스 연결 (결재 graphics-assets=photo-cc0). 11-16 무인 실행에선 외부 다운로드가 승인 필요로 막힘 — 네트워크 되는 회차/명령에서 처리
+- [auto] Apple 연령 등급 새 '콘텐츠 설명' 항목(App Store Connect, 2026-11-16 부터) — iOS 제출 전 설문 다시 확인 (출처: developer.apple.com/news)
+- [auto] AdMob 안드로이드 Next-Gen SDK 전환 계획 조사: 구 SDK 지원 종료 2027-06-30(제3자 보도, 공식 확인 필요). 우리가 쓰는 Capacitor AdMob 플러그인의 대응 여부 확인
 - [auto] Play 스토어 등록 자료 초안(설명문 ko/en/ja·스크린샷 목록·개인정보처리방침 점검)과 비공개 테스트(12명·14일) 안내문 — 개발자 이름은 결재 play-developer-name 대기, 이름 칸만 비워 두고 먼저 작성 가능 (결재 play-console=done)
 - [auto] iOS 빌드 점검(번들 ID·서명 설정·Info.plist 권한 문구)과 App Store 등록 자료 초안 (결재 apple-developer=done)
 - [auto] 광고팀: 유료 캠페인 설계는 하지 않고 무료 게시(숏폼 오가닉)·ASO 만 계획. 리텐션 게이트 통과 시 유료 결재 재상신 (결재 ad-paid-budget=organic-first)
