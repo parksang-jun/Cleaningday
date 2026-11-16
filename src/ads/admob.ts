@@ -62,6 +62,24 @@ function adIds() {
   };
 }
 
+/** 화면이 뜬 뒤 ATT 를 묻기까지 두는 여유 — 앱이 active 가 되기 전에 요청하면 iOS 가 창을 띄우지 않는다 */
+const ATT_SETTLE_MS = 700;
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** 앱 화면이 보이는 상태가 될 때까지 기다린 뒤 잠깐 더 둔다 */
+async function whenVisible(): Promise<void> {
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+    await new Promise<void>((r) => {
+      const on = () => {
+        if (document.visibilityState !== 'visible') return;
+        document.removeEventListener('visibilitychange', on);
+        r();
+      };
+      document.addEventListener('visibilitychange', on);
+    });
+  }
+  await sleep(ATT_SETTLE_MS);
+}
+
 export class AdMobAds implements AdsProvider {
   readonly name = 'admob';
   private interstitialReady = false;
@@ -110,7 +128,11 @@ export class AdMobAds implements AdsProvider {
     };
   }
 
-  /** UMP(GDPR 등) 동의 폼 + iOS ATT 요청. 동의가 없으면 비개인화(npa) 광고로 요청한다 */
+  /**
+   * UMP(GDPR 등) 동의 폼 → iOS ATT 요청. 동의가 없으면 비개인화(npa) 광고로 요청한다.
+   * 두 단계는 서로 독립이다: AdMob 에 개인정보 메시지가 설정돼 있지 않으면 UMP 요청이 실패하는데,
+   * 그렇다고 ATT 창까지 건너뛰면 안 된다(추적 허용을 묻지 않은 채 광고를 요청하게 된다 — App Store 심사 2.1).
+   */
   private async consentFlow(): Promise<void> {
     try {
       const consent = await AdMob.requestConsentInfo();
@@ -120,17 +142,63 @@ export class AdMobAds implements AdsProvider {
         this.consent = String(after.status);
         this.npa = after.status !== AdmobConsentStatus.OBTAINED && after.status !== AdmobConsentStatus.NOT_REQUIRED;
       }
-      if (Capacitor.getPlatform() === 'ios') {
-        const att = await AdMob.trackingAuthorizationStatus();
-        if (att.status === 'notDetermined') await AdMob.requestTrackingAuthorization();
-        const after = await AdMob.trackingAuthorizationStatus();
-        this.att = String(after.status);
-        if (after.status !== 'authorized') this.npa = true;
-      }
     } catch (e) {
       this.note('동의오류', e);
       track('ads_consent_error', { message: String(e) });
     }
+    if (Capacitor.getPlatform() === 'ios') await this.requestAtt();
+  }
+
+  /**
+   * iOS 추적 허용 창(ATT). 광고를 한 건도 요청하기 전에 띄운다.
+   * 앱이 화면에 완전히 올라오기 전에 요청하면 iOS 가 창을 띄우지 않고 '미결정'으로 남기므로,
+   * 화면이 보일 때까지 기다렸다가 요청하고, 그래도 미결정이면 앱이 다시 앞으로 올 때 한 번 더 묻는다.
+   */
+  private async requestAtt(): Promise<void> {
+    try {
+      let st = await AdMob.trackingAuthorizationStatus();
+      if (st.status === 'notDetermined') {
+        await whenVisible();
+        await AdMob.requestTrackingAuthorization();
+        st = await AdMob.trackingAuthorizationStatus();
+        if (st.status === 'notDetermined') this.retryAttOnResume();
+      }
+      this.att = String(st.status);
+      if (st.status !== 'authorized') this.npa = true;
+    } catch (e) {
+      this.note('ATT오류', e);
+      this.npa = true;
+      track('ads_att_error', { message: String(e) });
+    }
+  }
+
+  private attRetryArmed = false;
+  private retryAttOnResume(): void {
+    if (this.attRetryArmed) return;
+    this.attRetryArmed = true;
+    const again = async () => {
+      if (document.visibilityState !== 'visible') return;
+      document.removeEventListener('visibilitychange', again);
+      try {
+        await sleep(ATT_SETTLE_MS);
+        await AdMob.requestTrackingAuthorization();
+        const st = await AdMob.trackingAuthorizationStatus();
+        this.att = String(st.status);
+        if (st.status === 'authorized' && this.consentAllowsPersonalized()) {
+          // 허용으로 바뀌었으면 이후 광고부터 개인화 요청
+          this.npa = false;
+          void this.loadInterstitial();
+          void this.loadRewarded();
+        }
+      } catch (e) {
+        this.note('ATT오류', e);
+      }
+    };
+    document.addEventListener('visibilitychange', again);
+  }
+
+  private consentAllowsPersonalized(): boolean {
+    return this.consent === '-' || this.consent === String(AdmobConsentStatus.OBTAINED) || this.consent === String(AdmobConsentStatus.NOT_REQUIRED);
   }
 
   private async loadInterstitial(): Promise<void> {
