@@ -12,6 +12,8 @@ export interface AdsProvider {
   /** 웹 포털 SDK용 게임플레이 신호(없으면 무시) */
   gameplayStart(): void;
   gameplayStop(): void;
+  /** 운영자 화면에 보여줄 진단값(있는 공급자만) */
+  debug?(): Record<string, string>;
 }
 
 export type AdProviderName = 'admob' | 'poki' | 'crazygames' | 'noop';

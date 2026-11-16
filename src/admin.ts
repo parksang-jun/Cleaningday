@@ -20,6 +20,10 @@ export interface AdminHooks {
   preview: (p: SponsorProduct, placement: Placement) => void;
   /** 테스트 플레이: 잠금과 상관없이 이 판을 바로 시작 */
   playStage: (id: number) => void;
+  /** 광고 진단값 (기기에서 Xcode 없이 광고 상태를 본다) */
+  adsDebug: () => Record<string, string>;
+  /** 광고를 그 자리에서 띄워 본다 */
+  adsTry: (what: 'banner' | 'inter' | 'reward') => Promise<string>;
 }
 
 type Tab = 'campaigns' | 'edit' | 'host' | 'play' | 'stats' | 'export';
@@ -36,6 +40,12 @@ const KO: Record<string, string> = {
   playTitle: '모든 판 바로 플레이',
   playNote: '잠금과 상관없이 아무 판이나 바로 시작해 광고·쇼호스트·재오염·소리를 확인하세요. 진행 저장(열린 판·별)은 건드리지 않아요.',
   testUnlock: '게임 화면에서도 모든 판 열기 (관리자 빌드에서만, 🛠 표시)',
+  adsTitle: '광고 진단',
+  adsNote: '기기에서 광고가 안 뜰 때 여기를 보세요. 단위 ID 끝자리·동의·준비 상태·마지막 오류가 나옵니다.',
+  adsRefresh: '새로고침',
+  adsTryBanner: '배너 켜기',
+  adsTryInter: '전면 광고 띄우기',
+  adsTryReward: '보상형 광고 띄우기',
   grantCoins: '코인 +1,000',
   grantBoosters: '부스터 각 +5',
   grantPremium: '프리미엄 장비 전부 보유',
@@ -170,6 +180,12 @@ const KO: Record<string, string> = {
   total: '합계',
 };
 const EN: Record<string, string> = {
+  adsTitle: 'Ad diagnostics',
+  adsNote: 'Check here when no ads show on device: unit ID tail, consent, readiness, last error.',
+  adsRefresh: 'Refresh',
+  adsTryBanner: 'Show banner',
+  adsTryInter: 'Show interstitial',
+  adsTryReward: 'Show rewarded',
   title: 'Operator mode · Sparkle Clean ops',
   toGame: 'Back to game',
   campaigns: 'Sponsored products',
@@ -771,6 +787,13 @@ function renderHost(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
 const MODE_ICON: Record<string, string> = { clean: '🧽', timed: '⏱', fragile: '🫧', rush: '🐾', spread: '🦠', spots: '🎯', dark: '🔦' };
 const MESS_ICON: Record<string, string> = { kids: '🧒', pet: '🐾', splatter: '🍳', drift: '🌬️', splash: '💦', leaves: '🍂', birds: '🐦' };
 
+/** 광고 진단 표 — 공급자·단위 ID 끝자리·동의·준비 상태·마지막 오류 */
+function adsRows(hooks: AdminHooks): string {
+  return Object.entries(hooks.adsDebug())
+    .map(([k, v]) => `<div class="admin__adsrow"><span class="small muted">${esc(k)}</span><b class="small">${esc(v)}</b></div>`)
+    .join('');
+}
+
 /** 테스트 플레이: 모든 판 목록 + 바로 시작, 전체 열기 토글, 테스트 지급 */
 function renderPlay(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
   const st = getStore();
@@ -778,6 +801,16 @@ function renderPlay(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
     <h3>${esc(A('playTitle'))}</h3>
     <p class="small muted">${esc(A('playNote'))}</p>
     <label class="setting"><span>${esc(A('testUnlock'))}</span><input type="checkbox" name="testUnlock" ${st.ops.testUnlock ? 'checked' : ''} data-testid="admin-test-unlock"></label>
+    <details class="admin__auto" data-el="ads" open><summary>${esc(A('adsTitle'))}</summary>
+      <p class="small muted">${esc(A('adsNote'))}</p>
+      <div class="admin__adsbox" data-el="adsbox" data-testid="admin-ads-debug">${adsRows(hooks)}</div>
+      <div class="btn-row">
+        <button class="btn btn--sm" data-ads="refresh" data-testid="admin-ads-refresh">↻ ${esc(A('adsRefresh'))}</button>
+        <button class="btn btn--sm" data-ads="banner">${esc(A('adsTryBanner'))}</button>
+        <button class="btn btn--sm" data-ads="inter">${esc(A('adsTryInter'))}</button>
+        <button class="btn btn--sm" data-ads="reward">${esc(A('adsTryReward'))}</button>
+      </div>
+    </details>
     <div class="btn-row admin__grants">
       <button class="btn btn--sm" data-grant="coins" data-testid="admin-grant-coins">● ${esc(A('grantCoins'))}</button>
       <button class="btn btn--sm" data-grant="boosters" data-testid="admin-grant-boosters">🧰 ${esc(A('grantBoosters'))}</button>
@@ -819,6 +852,19 @@ function renderPlay(panel: HTMLElement, app: HTMLElement, hooks: AdminHooks) {
       flash = A('granted');
       hooks.onChange();
       renderAdmin(app, hooks);
+    }),
+  );
+  const adsbox = panel.querySelector<HTMLElement>('[data-el="adsbox"]');
+  panel.querySelectorAll<HTMLButtonElement>('[data-ads]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const what = b.dataset.ads as 'refresh' | 'banner' | 'inter' | 'reward';
+      let line = '';
+      if (what !== 'refresh') {
+        b.disabled = true;
+        line = await hooks.adsTry(what);
+        b.disabled = false;
+      }
+      if (adsbox) adsbox.innerHTML = adsRows(hooks) + (line ? `<div class="admin__adsrow"><span class="small muted">결과</span><b class="small">${esc(line)}</b></div>` : '');
     }),
   );
   panel.querySelectorAll<HTMLButtonElement>('[data-play]').forEach((b) => b.addEventListener('click', () => hooks.playStage(Number(b.dataset.play))));

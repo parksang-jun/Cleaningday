@@ -54,6 +54,17 @@ export class AdsController {
     return this.provider.name;
   }
 
+  /** 운영자 화면용 진단값. 기기에서 Xcode 없이 광고가 왜 안 뜨는지 본다 */
+  debug(): Record<string, string> {
+    return {
+      공급자: this.provider.name,
+      준비: this.ready ? '됨' : '안 됨',
+      배너요청: this.bannerWanted ? '예' : '아니오',
+      배너표시: this.bannerShown ? '예' : '아니오',
+      ...(this.provider.debug?.() ?? {}),
+    };
+  }
+
   gameplayStart(): void {
     this.provider.gameplayStart();
   }
@@ -84,6 +95,17 @@ export class AdsController {
         track('ad_interstitial_shown', { provider: this.provider.name });
       }
       return shown;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** 진단 전용: 빈도 정책을 무시하고 전면 광고를 바로 띄운다 (운영자 화면) */
+  async showInterstitialNow(): Promise<boolean> {
+    if (!this.ready || this.busy) return false;
+    this.busy = true;
+    try {
+      return await this.provider.showInterstitial();
     } finally {
       this.busy = false;
     }

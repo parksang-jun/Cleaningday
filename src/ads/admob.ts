@@ -47,10 +47,13 @@ const REAL_IDS: Record<'android' | 'ios', Record<'interstitial' | 'rewarded' | '
 function adIds() {
   const env = import.meta.env;
   const isIos = Capacitor.getPlatform() === 'ios';
-  const real = isIos ? REAL_IDS.ios : REAL_IDS.android;
-  const d = real ?? (isIos ? TEST_IDS.ios : TEST_IDS.android);
-  // 테스트 모드: .env 가 정하면 그대로, 없으면 실제 ID 가 있는 플랫폼만 실제 광고를 받는다.
+  const test = isIos ? TEST_IDS.ios : TEST_IDS.android;
   const forced = env.VITE_ADMOB_TESTING;
+  // VITE_ADMOB_TESTING=true 면 구글 공식 테스트 단위 ID 로 바꾼다.
+  // 실제 단위 ID 에 isTesting 만 켜도 이 기기가 테스트 기기로 등록돼 있지 않으면 실제 광고를 요청하고,
+  // 신규 단위는 채워지지 않아 아무것도 안 뜬다. 테스트 단위 ID 는 언제나 채워진다.
+  const real = forced === 'true' ? null : (isIos ? REAL_IDS.ios : REAL_IDS.android);
+  const d = real ?? test;
   return {
     interstitial: (isIos ? env.VITE_ADMOB_IOS_INTERSTITIAL : env.VITE_ADMOB_ANDROID_INTERSTITIAL) || d.interstitial,
     rewarded: (isIos ? env.VITE_ADMOB_IOS_REWARDED : env.VITE_ADMOB_ANDROID_REWARDED) || d.rewarded,
@@ -65,29 +68,67 @@ export class AdMobAds implements AdsProvider {
   private rewardedReady = false;
   private npa = false;
   private ids = adIds();
+  /** 운영자 화면에 보여줄 마지막 오류 (기기에서 Xcode 없이 원인을 보려고) */
+  private errs: Record<string, string> = {};
+  private consent = '-';
+  private att = '-';
+  private initialized = false;
+
+  private note(where: string, e: unknown): void {
+    const m = String((e as { message?: string })?.message ?? e);
+    this.errs[where] = m.length > 120 ? `${m.slice(0, 120)}…` : m;
+  }
 
   async init(): Promise<void> {
-    await AdMob.initialize({ initializeForTesting: this.ids.isTesting });
+    try {
+      await AdMob.initialize({ initializeForTesting: this.ids.isTesting });
+      this.initialized = true;
+    } catch (e) {
+      this.note('initialize', e);
+      throw e;
+    }
     await this.consentFlow();
     void this.loadInterstitial();
     void this.loadRewarded();
+  }
+
+  /** 기기에서 바로 읽는 진단값 */
+  debug(): Record<string, string> {
+    const tail = (id: string) => id.replace(/^ca-app-pub-/, '').slice(-24);
+    return {
+      초기화: this.initialized ? 'OK' : '실패',
+      테스트광고: this.ids.isTesting ? '켬' : '끔',
+      단위_배너: tail(this.ids.banner),
+      단위_전면: tail(this.ids.interstitial),
+      단위_보상형: tail(this.ids.rewarded),
+      동의: this.consent,
+      ATT: this.att,
+      비개인화: this.npa ? '예' : '아니오',
+      전면준비: this.interstitialReady ? '됨' : '안 됨',
+      보상형준비: this.rewardedReady ? '됨' : '안 됨',
+      ...this.errs,
+    };
   }
 
   /** UMP(GDPR 등) 동의 폼 + iOS ATT 요청. 동의가 없으면 비개인화(npa) 광고로 요청한다 */
   private async consentFlow(): Promise<void> {
     try {
       const consent = await AdMob.requestConsentInfo();
+      this.consent = String(consent.status);
       if (consent.isConsentFormAvailable && consent.status === AdmobConsentStatus.REQUIRED) {
         const after = await AdMob.showConsentForm();
+        this.consent = String(after.status);
         this.npa = after.status !== AdmobConsentStatus.OBTAINED && after.status !== AdmobConsentStatus.NOT_REQUIRED;
       }
       if (Capacitor.getPlatform() === 'ios') {
         const att = await AdMob.trackingAuthorizationStatus();
         if (att.status === 'notDetermined') await AdMob.requestTrackingAuthorization();
         const after = await AdMob.trackingAuthorizationStatus();
+        this.att = String(after.status);
         if (after.status !== 'authorized') this.npa = true;
       }
     } catch (e) {
+      this.note('동의오류', e);
       track('ads_consent_error', { message: String(e) });
     }
   }
@@ -98,6 +139,7 @@ export class AdMobAds implements AdsProvider {
       this.interstitialReady = true;
     } catch (e) {
       this.interstitialReady = false;
+      this.note('전면로드', e);
       track('ads_interstitial_load_error', { message: String(e) });
     }
   }
@@ -108,6 +150,7 @@ export class AdMobAds implements AdsProvider {
       this.rewardedReady = true;
     } catch (e) {
       this.rewardedReady = false;
+      this.note('보상형로드', e);
       track('ads_rewarded_load_error', { message: String(e) });
     }
   }
@@ -127,6 +170,7 @@ export class AdMobAds implements AdsProvider {
       await dismissed;
       return true;
     } catch (e) {
+      this.note('전면표시', e);
       track('ads_interstitial_show_error', { message: String(e) });
       return false;
     } finally {
@@ -153,6 +197,7 @@ export class AdMobAds implements AdsProvider {
       await dismissed;
       return rewarded;
     } catch (e) {
+      this.note('보상형표시', e);
       track('ads_rewarded_show_error', { message: String(e) });
       return false;
     } finally {
@@ -171,6 +216,7 @@ export class AdMobAds implements AdsProvider {
     await AdMob.addListener(BannerAdPluginEvents.SizeChanged, (size) => setH(size.height));
     await AdMob.addListener(BannerAdPluginEvents.FailedToLoad, (err) => {
       setH(0); // 광고가 없으면 빈 띠를 남기지 않는다
+      this.note('배너', err?.message ?? err);
       track('ads_banner_error', { message: String(err?.message ?? err) });
     });
   }
@@ -189,6 +235,7 @@ export class AdMobAds implements AdsProvider {
       });
       return true;
     } catch (e) {
+      this.note('배너', e);
       track('ads_banner_error', { message: String(e) });
       return false;
     }

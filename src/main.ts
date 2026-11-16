@@ -2589,6 +2589,15 @@ function enterAdmin() {
       reloadItems();
       startLevel(id);
     },
+    adsDebug: () => ads.debug(),
+    adsTry: async (what) => {
+      if (what === 'banner') {
+        ads.setBanner(true);
+        return '배너 켜기 요청 — 화면 아래를 보세요';
+      }
+      if (what === 'inter') return (await ads.showInterstitialNow()) ? '전면 광고 표시됨' : '전면 광고 없음(준비 안 됨)';
+      return (await ads.showRewarded('admin_test')) ? '보상형 광고 끝까지 봤음' : '보상형 광고 없음(준비 안 됨)';
+    },
     preview: (p, placement) => {
       reloadItems();
       const entry = items.find((e) => e.sponsor?.id === p.id) ?? allItems([p]).find((e) => e.sponsor)!;
