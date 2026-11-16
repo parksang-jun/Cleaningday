@@ -2,6 +2,8 @@
 // 원칙: 전체 캔버스 픽셀 루프 금지(작은 노이즈 타일 + createPattern), 그라디언트·스트로크·블렌드 모드로 질감.
 // 조명은 항상 왼쪽 위에서 오는 부드러운 키 라이트 하나 — 모든 장면이 같은 빛을 받아야 한 집처럼 보인다.
 
+import { materialPhoto } from './photos';
+
 export type Ctx = CanvasRenderingContext2D;
 export type Rnd = () => number;
 
@@ -185,9 +187,71 @@ function periodicNoise(px: number, py: number, w: number, h: number, seed: numbe
   };
 }
 
-/** 결이 가로(x)로 흐르는 나뭇결 타일 */
+/**
+ * RGBA 픽셀을 회색으로 바꾸고 평균 밝기를 target(기본 128 = overlay 중립)에 맞춘다.
+ * 사진 재질을 overlay 로 얹을 때 사진 자체의 색·밝기가 장면 색을 바꾸지 않고 '결'만 남게 한다.
+ * contrast 로 명암 폭을 조절(1 = 그대로). 제자리에서 고치고 같은 배열을 돌려준다.
+ */
+export function grayCentered(d: Uint8ClampedArray, target = 128, contrast = 1): Uint8ClampedArray {
+  const n = d.length >> 2;
+  if (n === 0) return d;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+    d[i] = l; // 임시로 R 칸에 휘도 보관(Uint8Clamped 라 반올림됨)
+    sum += d[i];
+  }
+  const mean = sum / n;
+  for (let i = 0; i < d.length; i += 4) {
+    const q = target + (d[i] - mean) * contrast;
+    d[i] = q;
+    d[i + 1] = q;
+    d[i + 2] = q;
+    d[i + 3] = 255;
+  }
+  return d;
+}
+
+/** 사진 재질에서 나뭇결 타일을 만든다(결이 가로로 흐르도록, 사진이 세로결이면 돌린다). 사진이 없으면 null */
+function photoGrainTile(img: HTMLImageElement, variant: number): HTMLCanvasElement | null {
+  const W = 512;
+  const H = 256;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  if (!g || !img.naturalWidth || !img.naturalHeight) return null;
+  // 결 방향 추정 없이 규칙으로: 사진 파일은 '결이 가로로 흐르게' 넣는다(README). 변형마다 사진의 다른 띠를 잘라 쓴다.
+  const sw = img.naturalWidth;
+  const sh = Math.min(img.naturalHeight, Math.round((sw * H) / W));
+  const sy = Math.round(((img.naturalHeight - sh) * ((variant % 3) + 0.5)) / 3);
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(img, 0, Math.max(0, sy), sw, sh, 0, 0, W, H);
+  try {
+    const data = g.getImageData(0, 0, W, H);
+    grayCentered(data.data, 128, 1.15);
+    g.putImageData(data, 0, 0);
+  } catch {
+    return null; // 다른 출처 이미지 등으로 픽셀을 못 읽으면 기존 무늬로
+  }
+  return c;
+}
+
+/** 결이 가로(x)로 흐르는 나뭇결 타일 — src/assets/materials/wood.* 사진이 있으면 사진의 결, 없으면 캔버스 무늬 */
 export function woodGrainTile(variant = 0): HTMLCanvasElement | null {
   if (typeof document === 'undefined') return null;
+  const photo = materialPhoto('wood');
+  if (photo) {
+    const pkey = `woodgrain:photo:${variant}`;
+    const phit = tileCache.get(pkey);
+    if (phit) return phit;
+    const pt = photoGrainTile(photo, variant);
+    if (pt) {
+      tileCache.set(pkey, pt);
+      return pt;
+    }
+  }
   const key = `woodgrain:${variant}`;
   const hit = tileCache.get(key);
   if (hit) return hit;
