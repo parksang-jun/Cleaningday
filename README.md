@@ -211,6 +211,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm test           # 단위 테스트 + 밸런스 봇 (단계별 예상 완료 시간 출력: /tmp/balance.txt)
 npm run build      # dist/
+npm run e2e:setup  # (처음 한 번) e2e 용 Chromium 받기 — playwright 는 npm install 로 같이 설치됨
 npm run e2e        # Playwright 스모크 + screenshots/
 npm run cap:android / cap:ios   # 네이티브 빌드 (Android Studio / Xcode 필요)
 ```
