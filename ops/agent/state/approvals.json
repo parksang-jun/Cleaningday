@@ -92,8 +92,64 @@
       ],
       "ask": "스토어에 표시되는 개발자 이름 (예: Sparkle Clean Studio)",
       "after": "그 이름으로 스토어 등록 자료와 비공개 테스트(12명·14일) 안내문 초안을 만듭니다.",
+      "status": "done",
+      "created": "2026-11-14",
+      "decision": "done",
+      "decided": "2026-11-13 10:39",
+      "result": "개발자 이름 'Martin park'로 Play 등록 자료(ko/en/ja)와 비공개 테스트 안내문 초안을 만들었습니다 → store/play/ (PR, 2026-11-16).",
+      "progress": "개발자 이름 'Martin park'로 Play 등록 자료(ko/en/ja)와 비공개 테스트 안내문 초안을 만들었습니다 → store/play/ (PR, 2026-11-16)."
+    },
+    {
+      "id": "admob-app-id",
+      "kind": "do",
+      "title": "AdMob 앱 ID 알려 주기",
+      "oneline": "AdMob 안드로이드 앱 ID를 메모에 적어 주세요.",
+      "summary": "결재함에서 받은 결정입니다(2026-11-16 실행기 전달).",
+      "why": "앱 ID가 실제 값이어야 광고가 나옵니다.",
+      "cost": "무료",
+      "time": "1분",
+      "steps": ["AdMob '앱 › 앱 설정'에서 앱 ID를 복사해 메모에 붙입니다."],
+      "links": [{ "label": "AdMob 열기", "url": "https://admob.google.com/" }],
+      "ask": "앱 ID (ca-app-pub-…~…)",
+      "after": "게임 설정의 앱 ID와 대조합니다.",
+      "status": "done",
+      "created": "2026-11-13",
+      "decision": "done",
+      "decided": "2026-11-13 10:40",
+      "result": "받은 앱 ID가 안드로이드 설정(AndroidManifest.xml)에 이미 들어간 값과 같습니다. 추가 작업 없음.",
+      "progress": "받은 앱 ID가 안드로이드 설정(AndroidManifest.xml)에 이미 들어간 값과 같습니다. 추가 작업 없음."
+    },
+    {
+      "id": "privacy-operator-name",
+      "kind": "choose",
+      "title": "개인정보처리방침 이름, 맞출까요?",
+      "oneline": "방침 운영자 이름을 'Martin park(박상준)'으로 함께 적는 안을 권장합니다.",
+      "summary": "스토어 개발자 이름은 'Martin park'인데, 개인정보처리방침에는 'Sangjun Park / 박상준'만 적혀 있습니다.",
+      "why": "이름이 달라 보이면 심사나 이용자 문의 때 같은 사람인지 헷갈릴 수 있습니다.",
+      "cost": "무료",
+      "time": "결정 1분",
+      "options": [
+        {
+          "id": "both",
+          "label": "둘 다 적기: Martin park(박상준)",
+          "desc": "스토어와 방침이 바로 연결되고 실명도 남습니다. 방침 날짜만 바뀝니다.",
+          "recommended": true,
+          "why": "가장 헷갈리지 않고 되돌리기도 쉽습니다."
+        },
+        {
+          "id": "keep",
+          "label": "지금처럼 두기",
+          "desc": "변경 없음. 이름이 다른 이유를 묻는 경우 직접 설명해야 할 수 있습니다."
+        },
+        {
+          "id": "memo",
+          "label": "다른 표기(메모에 적기)",
+          "desc": "예: 'Martin Park'처럼 대문자로 바꾸기 등. Play Console 표기와 같게 적어 주세요."
+        }
+      ],
+      "after": "고른 표기로 public/·docs/ 개인정보처리방침을 고쳐 변경안(PR)으로 올립니다. 점검표: store/play/README.md",
       "status": "open",
-      "created": "2026-11-14"
+      "created": "2026-11-16"
     },
     {
       "id": "app-names-zh-hi-pick",
