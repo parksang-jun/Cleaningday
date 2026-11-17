@@ -10,6 +10,7 @@
     "preview": "vite preview --port 4173 --strictPort",
     "test": "vitest run",
     "e2e": "node scripts/e2e.mjs",
+    "store:play": "SHOT_SIZES=1080x1920 SHOT_FEATURE=1 node scripts/store-shots.mjs",
     "cap:sync": "npm run build && cap sync",
     "cap:android": "npm run cap:sync && cap open android",
     "cap:ios": "npm run cap:sync && cap open ios",

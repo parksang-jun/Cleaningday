@@ -1,6 +1,9 @@
 // 스토어 등록용 스크린샷 — 큰 문구 + 실제 게임 화면(실사 사진)
 //   node scripts/store-shots.mjs             기본 크기 전부 (6.9형 1320x2868, 중형 1179x2556)
 //   SHOT_LANG=en node scripts/store-shots.mjs   영어
+//   npm run store:play                       Google Play 용: 9:16 1080x1920 + 그래픽 이미지 1024x500(JPEG)
+//     Play 규격(Play Console 도움말 answer/9866151): 긴 변 ≤ 짧은 변 × 2, 각 변 320~3840px. 애플 규격(≈2.17)은 이를 넘는다
+//   SHOT_REUSE=1 …                           게임 화면을 다시 찍지 않고 screenshots/store-raw/ 의 원본으로 합성만
 // 순서: 1 시작 페이지 · 2~4 게임 화면 · 5 리워드(결과) 화면
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -10,9 +13,13 @@ import { resolve } from 'node:path';
 const { chromium } = createRequire(import.meta.url)('playwright');
 const root = resolve(import.meta.dirname, '..');
 const LANG = process.env.SHOT_LANG || 'ko';
-const PORT = 4176;
+const PORT = Number(process.env.SHOT_PORT) || 4176;
 // 애플 규격: 6.9형 1320x2868, 중형(Dynamic Island) 1179x2556
-const SIZES = (process.env.SHOT_SIZES || '1320x2868,1179x2556').split(',').map((s) => s.split('x').map(Number));
+const SIZES = (process.env.SHOT_SIZES || '1320x2868,1179x2556').split(',').filter(Boolean).map((s) => s.split('x').map(Number));
+const FEATURE = process.env.SHOT_FEATURE === '1';
+// 일본어는 일본 글꼴을 먼저(같은 한자라도 한국 글꼴은 모양이 다르다)
+const FONT = LANG === 'ja' ? "'Hiragino Sans','Noto Sans CJK JP','Noto Sans JP',sans-serif" : "'Noto Sans CJK KR','Noto Sans KR','Apple SD Gothic Neo',sans-serif";
+const REUSE = process.env.SHOT_REUSE === '1';
 // 게임 화면은 논리 440x956 에 3배로 찍어 어느 규격에든 선명하게 들어간다
 const VIEW = { width: 440, height: 956 };
 const DSF = 3;
@@ -28,8 +35,11 @@ function startPreview() {
     proc.stderr.on('data', (d) => process.stderr.write(d));
   });
 }
-const preview = await startPreview();
+const preview = REUSE ? null : await startPreview();
 const browser = await chromium.launch();
+if (!REUSE) await captureRaw();
+
+async function captureRaw() {
 const ctx = await browser.newContext({
   viewport: VIEW,
   deviceScaleFactor: DSF,
@@ -119,6 +129,8 @@ box = await enter('garden', 60);
 await p.evaluate(() => window.__sparkle.clearAll());
 await p.waitForSelector('[data-testid="result"]', { timeout: 30000 });
 await p.waitForTimeout(1800); await shot('5-result.png', true);
+await ctx.close();
+}
 
 // ---------- 스토어용 합성: 큰 문구 + 기기 틀 안의 게임 화면 ----------
 const COPY = {
@@ -136,7 +148,14 @@ const COPY = {
     ['4-car', 'Swipe.\nSparkle!', 'From filthy to brand new', ['#0b2f52', '#04121f'], '#56b8ff'],
     ['5-result', '3 Stars\nCleared!', 'Earn gear with your rewards', ['#3a1060', '#17062b'], '#c08bff'],
   ],
-}[LANG === 'ko' ? 'ko' : 'en'];
+  ja: [
+    ['1-home', '96ステージ', 'お部屋・庭・車まで', ['#1b2a4a', '#0d1628'], '#7cc4ff'],
+    ['2-rug', 'カーペットも\n新品みたい', '泥も髪の毛もスッキリ', ['#14342a', '#071913'], '#5fe0a0'],
+    ['3-kitchen', 'こびりつき\n油汚れも', '汚れに合った洗剤で', ['#5a2708', '#2a1104'], '#ffa743'],
+    ['4-car', 'こすって\nピカピカ!', '汚れた車が新車みたいに', ['#0b2f52', '#04121f'], '#56b8ff'],
+    ['5-result', '星3つで\nクリア!', 'ごほうびで道具を集めよう', ['#3a1060', '#17062b'], '#c08bff'],
+  ],
+}[LANG === 'ko' || LANG === 'ja' ? LANG : 'en'];
 
 for (const [W, H] of SIZES) {
   const out = resolve(root, 'store-assets', `${LANG}-${W}x${H}`);
@@ -144,14 +163,20 @@ for (const [W, H] of SIZES) {
   const c = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   const cp = await c.newPage();
   const u = W / 1320; // 1320 기준으로 잡은 치수를 규격에 맞게 줄인다
+  // 9:16 처럼 덜 긴 화면(Play)은 기기 틀이 아래로 잘리면 맨 아래 도구 칸이 안 보인다 → 틀을 화면 높이에 맞춰 줄인다.
+  // 애플 규격(세로/가로 > 2)은 예전 배치 그대로(이미 낸 스크린샷과 같게)
+  const fit = H / W <= 2;
   let n = 0;
   for (const [key, head, sub, [c1, c2], accent] of COPY) {
     n++;
     const img = readFileSync(resolve(raw, `${key}.png`)).toString('base64');
     const two = head.includes('\n');
+    const pad = Math.round(16 * u);
+    const top = Math.round((two ? (fit ? 640 : 700) : (fit ? 520 : 560)) * u);
+    const phoneW = fit ? Math.min(Math.round(1040 * u), Math.floor((H - top - Math.round(48 * u) - 2 * pad) * (VIEW.width / VIEW.height)) + 2 * pad) : Math.round(1040 * u);
     await cp.setContent(`<style>
       *{margin:0;box-sizing:border-box}
-      body{width:${W}px;height:${H}px;overflow:hidden;background:${c2};font-family:'Noto Sans CJK KR','Noto Sans KR',sans-serif;color:#fff;text-align:center;position:relative}
+      body{width:${W}px;height:${H}px;overflow:hidden;background:${c2};font-family:${FONT};color:#fff;text-align:center;position:relative}
       .bg{position:absolute;inset:0;background:
         radial-gradient(120% 70% at 50% -10%, ${c1} 0%, ${c2} 62%),
         radial-gradient(60% 30% at 84% 6%, ${accent}55, transparent 70%),
@@ -159,8 +184,8 @@ for (const [W, H] of SIZES) {
       .grain{position:absolute;inset:0;opacity:.5;background-image:radial-gradient(rgba(255,255,255,.14) 1px, transparent 1px);background-size:${Math.round(5 * u)}px ${Math.round(5 * u)}px}
       h1{position:relative;padding-top:${Math.round((two ? 112 : 150) * u)}px;font-size:${Math.round((two ? 184 : 196) * u)}px;line-height:1.04;font-weight:900;letter-spacing:${Math.round(-6 * u)}px;white-space:pre-line;text-shadow:0 ${Math.round(10 * u)}px ${Math.round(40 * u)}px rgba(0,0,0,.55)}
       p{position:relative;margin-top:${Math.round(30 * u)}px;font-size:${Math.round(66 * u)}px;font-weight:700;color:${accent};letter-spacing:${Math.round(-2 * u)}px}
-      .ph{position:absolute;left:50%;transform:translateX(-50%);top:${Math.round((two ? 700 : 560) * u)}px;width:${Math.round(1040 * u)}px;
-        border-radius:${Math.round(96 * u)}px;padding:${Math.round(16 * u)}px;background:linear-gradient(160deg,#5c6672,#1a1f26 40%,#0b0e12);
+      .ph{position:absolute;left:50%;transform:translateX(-50%);top:${top}px;width:${phoneW}px;
+        border-radius:${Math.round(96 * u)}px;padding:${pad}px;background:linear-gradient(160deg,#5c6672,#1a1f26 40%,#0b0e12);
         box-shadow:0 ${Math.round(50 * u)}px ${Math.round(110 * u)}px rgba(0,0,0,.6), 0 0 ${Math.round(90 * u)}px ${accent}33}
       .scr{border-radius:${Math.round(82 * u)}px;overflow:hidden;background:#000;display:block}
       .scr img{display:block;width:100%}
@@ -178,6 +203,48 @@ for (const [W, H] of SIZES) {
   await c.close();
 }
 
+// ---------- Play 그래픽 이미지 1024x500 (JPEG — 투명 없는 이미지여야 함) ----------
+// 실제 게임 화면 두 장(자동차·주방)을 기울인 기기 틀에 넣고 왼쪽에 게임 이름. 가장자리엔 글자를 두지 않는다
+if (FEATURE) {
+  const FW = 1024, FH = 500;
+  const T = {
+    ko: ['싹싹 클린', '문지르면 반짝! 청소 퍼즐 96판'],
+    ja: ['ピカピカクリーン', 'こすってピカピカ！お掃除パズル96ステージ'],
+    en: ['Sparkle Clean', 'Swipe. Sparkle! 96 cleaning puzzles'],
+  }[LANG] ?? ['Sparkle Clean', 'Swipe. Sparkle! 96 cleaning puzzles'];
+  const icon = readFileSync(resolve(root, 'public', 'icon-512.png')).toString('base64');
+  const b64 = (k) => readFileSync(resolve(raw, `${k}.png`)).toString('base64');
+  const c = await browser.newContext({ viewport: { width: FW, height: FH }, deviceScaleFactor: 1 });
+  const cp = await c.newPage();
+  const phone = (k, x, y, rot, w) => `<div class="ph" style="left:${x}px;top:${y}px;width:${w}px;transform:rotate(${rot}deg)"><div class="scr"><img src="data:image/png;base64,${b64(k)}"></div></div>`;
+  await cp.setContent(`<style>
+    *{margin:0;box-sizing:border-box}
+    body{width:${FW}px;height:${FH}px;overflow:hidden;position:relative;color:#fff;font-family:${FONT};
+      background:radial-gradient(90% 120% at 18% 30%, #1d4f86 0%, #0b2340 55%, #050f1d 100%)}
+    .glow{position:absolute;right:-60px;top:-80px;width:620px;height:620px;border-radius:50%;background:radial-gradient(circle, #56b8ff55, transparent 65%)}
+    .grain{position:absolute;inset:0;opacity:.45;background-image:radial-gradient(rgba(255,255,255,.13) 1px, transparent 1px);background-size:5px 5px}
+    .t{position:absolute;left:64px;top:118px;width:470px}
+    .t img{width:96px;height:96px;border-radius:22px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+    h1{margin-top:22px;font-size:${T[0].length > 9 ? 54 : 72}px;font-weight:900;letter-spacing:-2px;line-height:1.05;text-shadow:0 6px 24px rgba(0,0,0,.5)}
+    p{margin-top:14px;font-size:26px;font-weight:700;color:#7cc4ff;letter-spacing:-.5px}
+    .ph{position:absolute;border-radius:34px;padding:7px;background:linear-gradient(160deg,#5c6672,#1a1f26 40%,#0b0e12);box-shadow:0 24px 50px rgba(0,0,0,.6), 0 0 40px #56b8ff33}
+    .scr{border-radius:28px;overflow:hidden;background:#000}
+    .scr img{display:block;width:100%}
+    .sp{position:absolute;font-size:44px;filter:drop-shadow(0 4px 8px rgba(0,0,0,.4))}
+  </style>
+  <div class="glow"></div><div class="grain"></div>
+  ${phone('3-kitchen', 590, 70, -8, 210)}
+  ${phone('4-car', 770, 40, 7, 220)}
+  <div class="t"><img src="data:image/png;base64,${icon}"><h1>${T[0]}</h1><p>${T[1]}</p></div>
+  <span class="sp" style="left:520px;top:60px">✨</span><span class="sp" style="left:960px;top:380px;font-size:34px">✨</span>`);
+  await cp.waitForTimeout(350);
+  const file = resolve(root, 'store-assets', `${LANG}-feature-1024x500.jpg`);
+  mkdirSync(resolve(root, 'store-assets'), { recursive: true });
+  await cp.screenshot({ path: file, type: 'jpeg', quality: 92 });
+  console.log('그래픽 이미지 -', `${LANG}-feature-1024x500.jpg`);
+  await c.close();
+}
+
 await browser.close();
-try { process.kill(-preview.pid); } catch { /* 이미 종료 */ }
+if (preview) try { process.kill(-preview.pid); } catch { /* 이미 종료 */ }
 console.log(`\n완료 → store-assets/${LANG}-*/`);

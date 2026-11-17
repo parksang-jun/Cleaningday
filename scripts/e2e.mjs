@@ -8,12 +8,13 @@ const { chromium, devices } = createRequire(import.meta.url)('playwright');
 const root = resolve(import.meta.dirname, '..');
 const shots = resolve(root, 'screenshots');
 mkdirSync(shots, { recursive: true });
-const PORT = 4174;
+// 4174 를 다른 프로그램(운영센터 등)이 쓰고 있으면 E2E_PORT=4184 node scripts/e2e.mjs
+const PORT = Number(process.env.E2E_PORT) || 4174;
 
 function startPreview() {
   const proc = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { cwd: root, stdio: 'pipe', detached: true });
   return new Promise((res, rej) => {
-    const timer = setTimeout(() => rej(new Error('preview start timeout')), 20000);
+    const timer = setTimeout(() => rej(new Error(`preview start timeout (port ${PORT} 사용 중이면 E2E_PORT 로 다른 포트 지정)`)), 20000);
     proc.stdout.on('data', (d) => {
       if (String(d).includes(String(PORT))) {
         clearTimeout(timer);
