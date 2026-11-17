@@ -65,6 +65,10 @@ function adIds() {
 /** 화면이 뜬 뒤 ATT 를 묻기까지 두는 여유 — 앱이 active 가 되기 전에 요청하면 iOS 가 창을 띄우지 않는다 */
 const ATT_SETTLE_MS = 700;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const CONSENT_TIMEOUT_MS = 6000;
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(label)), ms))]);
+}
 /** 앱 화면이 보이는 상태가 될 때까지 기다린 뒤 잠깐 더 둔다 */
 async function whenVisible(): Promise<void> {
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -91,6 +95,8 @@ export class AdMobAds implements AdsProvider {
   private consent = '-';
   private att = '-';
   private initialized = false;
+  /** 초기화가 어디까지 갔는지 — 창이 안 뜰 때 어느 단계에서 멈췄는지 본다 */
+  private stage = '시작 전';
 
   private note(where: string, e: unknown): void {
     const m = String((e as { message?: string })?.message ?? e);
@@ -106,6 +112,7 @@ export class AdMobAds implements AdsProvider {
       throw e;
     }
     await this.consentFlow();
+    this.stage = '광고 요청';
     void this.loadInterstitial();
     void this.loadRewarded();
   }
@@ -115,6 +122,7 @@ export class AdMobAds implements AdsProvider {
     const tail = (id: string) => id.replace(/^ca-app-pub-/, '').slice(-24);
     return {
       초기화: this.initialized ? 'OK' : '실패',
+      단계: this.stage,
       테스트광고: this.ids.isTesting ? '켬' : '끔',
       단위_배너: tail(this.ids.banner),
       단위_전면: tail(this.ids.interstitial),
@@ -135,9 +143,12 @@ export class AdMobAds implements AdsProvider {
    */
   private async consentFlow(): Promise<void> {
     try {
-      const consent = await AdMob.requestConsentInfo();
+      this.stage = '동의 정보 요청 중';
+      // 응답이 오지 않아도 ATT 로 넘어가도록 시간 제한을 둔다
+      const consent = await withTimeout(AdMob.requestConsentInfo(), CONSENT_TIMEOUT_MS, '동의 정보 응답 없음');
       this.consent = String(consent.status);
       if (consent.isConsentFormAvailable && consent.status === AdmobConsentStatus.REQUIRED) {
+        this.stage = '동의 폼 표시 중';
         const after = await AdMob.showConsentForm();
         this.consent = String(after.status);
         this.npa = after.status !== AdmobConsentStatus.OBTAINED && after.status !== AdmobConsentStatus.NOT_REQUIRED;
@@ -156,10 +167,15 @@ export class AdMobAds implements AdsProvider {
    */
   private async requestAtt(): Promise<void> {
     try {
+      this.stage = 'ATT 상태 확인 중';
       let st = await AdMob.trackingAuthorizationStatus();
+      this.att = String(st.status);
       if (st.status === 'notDetermined') {
+        this.stage = 'ATT 화면 대기 중';
         await whenVisible();
+        this.stage = 'ATT 창 요청함';
         await AdMob.requestTrackingAuthorization();
+        this.stage = 'ATT 응답 받음';
         st = await AdMob.trackingAuthorizationStatus();
         if (st.status === 'notDetermined') this.retryAttOnResume();
       }
