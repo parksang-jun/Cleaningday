@@ -16,7 +16,7 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 440, height: 956 }, deviceScaleFactor: 2, isMobile: true });
 const p = await ctx.newPage();
 await p.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
-await p.evaluate(() => { window.__sparkle.skipTour(); window.__sparkle.setUnlocked(96); });
+await p.evaluate(() => { window.__sparkle.skipTour(); window.__sparkle.setUnlocked(96, 3); });
 await p.waitForTimeout(500);
 const [area, n] = spec.split(':');
 for (const id of list.split(',')) {

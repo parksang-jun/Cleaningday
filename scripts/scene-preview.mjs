@@ -16,7 +16,7 @@ const ctx = await browser.newContext({ viewport: { width: 440, height: 956 }, de
 const p = await ctx.newPage();
 const HIDE = '#ad-banner,.beta-tag,.toast{display:none!important}';
 await p.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
-await p.evaluate(() => { window.__sparkle.skipTour(); window.__sparkle.setUnlocked(96); });
+await p.evaluate(() => { window.__sparkle.skipTour(); window.__sparkle.setUnlocked(96, 3); });
 await p.waitForTimeout(500);
 for (const spec of process.argv.slice(2)) {
   const [area, n] = spec.split(':');

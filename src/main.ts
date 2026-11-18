@@ -28,6 +28,9 @@ import type { View3D } from './render/view3d';
 import { getStore, loadStore, persist, resetStore, type HostConfig } from './storage';
 import { AD_COINS, AD_COINS_PER_DAY, AD_FREE_PASSES, adFree, buyAdFree, adBoostersLeft, adCoinsLeft, BOOSTER_IDS, BOOSTERS, claimDailyBonus, todayKey, CONTINUE_COINS, daily, type BoosterId } from './economy';
 import { iconFor } from './ui/icons';
+import { markReviewAsked, requestNativeReview, shouldAskReview } from './review';
+import { applyUpgrade, buyUpgrade, upgradeCost, upgradeGain, upgradeLevel } from './upgrades';
+import { allAreas, areaGate, areaOf, starsShort, totalStars } from './game/gates';
 import { COMEBACK_COINS, ATTENDANCE, attendanceIndex, attendanceReward, CHEST_COINS, chestReady, claimChest, claimMission, MISSION_COINS, missionDone, missionProgress, MISSIONS, missions, recordClear, recordVisit, type MissionId } from './retention';
 import { cancelComebackNotifications, notifySupported, refreshComebackNotifications } from './notify';
 
@@ -54,7 +57,10 @@ function reloadItems() {
   const today = new Date().toISOString().slice(0, 10);
   affiliates = hostConfig().affiliate && mallEnabled() ? activeAffiliates(sponsorList(), today, countryFor(getLang())).map(affiliateEntry) : [];
   // 실제 제품도 체험 가능한 게임 아이템 (유형 기준 성능 × 공개 사양)
-  items = [...allItems(activeSponsors(sponsorList(), today, countryFor(getLang()))), ...affiliates];
+  // 기본·프로 아이템은 강화 단계를 반영한다 (광고 제품은 근거 수치 그대로 — 강화하지 않는다)
+  const st = getStore();
+  const base = allItems(activeSponsors(sponsorList(), today, countryFor(getLang()))).map((e) => (e.sponsor ? e : { ...e, spec: applyUpgrade(e.spec, upgradeLevel(st, e.spec.id)) }));
+  items = [...base, ...affiliates];
 }
 
 function esc(s: string): string {
@@ -192,7 +198,32 @@ function testUnlock(): boolean {
 }
 /** 이 판을 열 수 있나: 진행으로 열렸거나, 관리자 테스트 플레이 */
 function stageOpen(id: number): boolean {
-  return id <= getStore().progress.unlocked || testUnlock();
+  if (testUnlock()) return true;
+  return id <= getStore().progress.unlocked && gateShort(id) === 0;
+}
+/** 이 판의 구역을 여는 데 모자란 별 수 (0 = 관문 통과). 판을 다 깨도 별이 모자라면 다음 구역은 잠긴다 */
+function gateShort(id: number): number {
+  return testUnlock() ? 0 : starsShort(id, getStore().progress.stars);
+}
+/** 진행상 다음 구역까지 왔는데 별이 모자라 막힌 구역 (없으면 null) */
+function gatedArea(): AreaInfo | null {
+  const st = getStore();
+  const n = Math.min(st.progress.unlocked, LEVELS.length);
+  return gateShort(n) > 0 ? (areaOf(n) ?? null) : null;
+}
+/** 별을 더 딸 판: 깬 판 중 별이 가장 적은 앞쪽 판 */
+function replayTarget(): number {
+  const st = getStore();
+  let best = 1;
+  let bestStars = 4;
+  for (let id = 1; id < st.progress.unlocked && id <= LEVELS.length; id++) {
+    const s2 = st.progress.stars[id] ?? 0;
+    if (s2 < bestStars) {
+      best = id;
+      bestStars = s2;
+    }
+  }
+  return best;
 }
 function areaUnlocked(a: AreaInfo): boolean {
   return stageOpen(a.levelIds[0]);
@@ -202,7 +233,9 @@ function areaStars(a: AreaInfo): number {
   return a.levelIds.reduce((n, id) => n + (st.progress.stars[id] ?? 0), 0);
 }
 function nextLevelId(): number {
-  return Math.min(getStore().progress.unlocked, LEVELS.length);
+  const n = Math.min(getStore().progress.unlocked, LEVELS.length);
+  // 별 관문에 막혀 있으면 "계속하기"는 별이 가장 모자란 판으로 간다
+  return gateShort(n) > 0 ? replayTarget() : n;
 }
 
 // ---------- 홈: 월드·구역 ----------
@@ -217,7 +250,7 @@ function renderHome() {
     persist();
     track('daily_bonus', { coins: bonus.coins, streak: bonus.streak, comeback: Boolean(bonus.comeback) });
   }
-  const totalStars = Object.values(st.progress.stars).reduce((a, b) => a + b, 0);
+  const starSum = totalStars(st.progress.stars);
   const next = getLevel(nextLevelId())!;
   const worldCard = (w: WorldInfo) => `
     <section class="world" data-testid="world-${w.id}">
@@ -228,10 +261,12 @@ function renderHome() {
             const locked = !areaUnlocked(a);
             const stars = areaStars(a);
             const done = a.levelIds.filter((id) => (st.progress.stars[id] ?? 0) > 0).length;
-            return `<button class="area${locked ? ' is-locked' : ''}" data-area="${a.id}" ${locked ? 'disabled' : ''} data-testid="area-${a.id}">
+            // 판은 다 깼는데 별이 모자라 잠긴 구역: 눌러서 무엇이 필요한지 볼 수 있다
+            const gated = locked && gatedArea()?.id === a.id;
+            return `<button class="area${locked ? ' is-locked' : ''}${gated ? ' is-gated' : ''}" data-area="${a.id}" ${gated ? 'data-gated="1"' : ''} ${locked && !gated ? 'disabled' : ''} data-testid="area-${a.id}">
               <span class="area__icon">${AREA_ICON[a.id]}</span>
               <span class="area__name">${esc(t(`area_${a.id}`))}</span>
-              <span class="area__meta">${locked ? '🔒' : `${done}/${a.levelIds.length} · ★${stars}`}</span>
+              <span class="area__meta">${gated ? `🔒 ★${totalStars(st.progress.stars)}/${areaGate(a.id)}` : locked ? '🔒' : `${done}/${a.levelIds.length} · ★${stars}`}</span>
             </button>`;
           })
           .join('')}
@@ -251,7 +286,7 @@ function renderHome() {
         <p class="tagline">${esc(t('tagline'))}</p>
         ${import.meta.env.VITE_BETA === 'true' && import.meta.env.VITE_FEEDBACK_URL ? `<a class="btn btn--ghost btn--sm beta-feedback" href="${esc(import.meta.env.VITE_FEEDBACK_URL)}" target="_blank" rel="noopener" data-testid="beta-feedback">💬 ${esc(t('feedback'))}</a>` : ''}
         <button class="btn btn--primary btn--big" data-act="continue" data-testid="play">${t('play')} · ${t('stage', { n: next.id })} ${esc(t(`scene_${next.scene}`))}</button>
-        <p class="muted small">★ ${totalStars} / ${LEVELS.length * 3} · 📖 ${st.journal.length}</p>
+        <p class="muted small">★ ${starSum} / ${LEVELS.length * 3} · 📖 ${st.journal.length}</p>
         ${nextAreaGoalHtml()}
         ${(st.progress.winStreak ?? 0) >= 2 ? `<p class="goal goal--streak" data-testid="home-streak">🔥 ${esc(t('streakHome', { n: st.progress.winStreak!, p: Math.round(streakBonus(st.progress.winStreak! + 1) * 100) }))}</p>` : ''}
       </section>
@@ -265,7 +300,8 @@ function renderHome() {
   app.querySelector('[data-act="shop"]')!.addEventListener('click', () => openShop());
   app.querySelector('[data-act="shop-coins"]')!.addEventListener('click', () => openShop());
   app.querySelector('[data-act="settings"]')!.addEventListener('click', openSettings);
-  app.querySelectorAll<HTMLButtonElement>('.area').forEach((b) => b.addEventListener('click', () => renderArea(b.dataset.area!)));
+  app.querySelectorAll<HTMLButtonElement>('.area').forEach((b) => b.addEventListener('click', () => (b.dataset.gated ? openGate() : renderArea(b.dataset.area!))));
+  app.querySelector('[data-act="gate"]')?.addEventListener('click', openGate);
   bindTodayCard();
   if (bonus) {
     const base = bonus.coins - (bonus.comeback ? COMEBACK_COINS : 0);
@@ -279,10 +315,50 @@ function renderHome() {
 /** 다음 구역이 열리기까지 남은 판 수 — "조금만 더 하면 새 곳이 열린다"를 보여 준다 */
 function nextAreaGoalHtml(): string {
   const st = getStore();
-  const nextArea = WORLDS.flatMap((w) => w.areas).find((a) => a.levelIds[0] > st.progress.unlocked);
+  // 별 관문에 막혀 있으면 남은 판 수가 아니라 모자란 별 수를 보여 준다
+  const gated = gatedArea();
+  if (gated) {
+    const need = areaGate(gated.id);
+    const have = totalStars(st.progress.stars);
+    return `<p class="goal goal--gate" data-testid="gate-goal">🔒 ${esc(t('gateGoal', { area: t(`area_${gated.id}`), n: need - have, have, need }))} <button class="link-btn small" data-act="gate" data-testid="gate-open">${esc(t('gateHow'))} ›</button></p>`;
+  }
+  const nextArea = allAreas().find((a) => a.levelIds[0] > st.progress.unlocked);
   if (!nextArea) return '';
   const left = nextArea.levelIds[0] - st.progress.unlocked;
   return `<p class="goal" data-testid="next-area-goal">🔓 ${esc(t(left === 1 ? 'nextAreaGoalOne' : 'nextAreaGoal', { area: t(`area_${nextArea.id}`), n: left }))}</p>`;
+}
+
+/** 별 관문 안내: 무엇이 모자라고, 어떻게 채우는지 (강화 · 다시 하기) */
+function openGate() {
+  const gated = gatedArea();
+  if (!gated) return;
+  const st = getStore();
+  const need = areaGate(gated.id);
+  const have = totalStars(st.progress.stars);
+  const target = replayTarget();
+  track('gate_open', { area: gated.id, have, need });
+  modal(
+    `<div class="gate" data-testid="gate">
+      <h2>🔒 ${esc(t(`area_${gated.id}`))}</h2>
+      <p class="gate__stars">★ ${have} / ${need}</p>
+      <div class="gate__bar"><i style="width:${Math.min(100, Math.round((have / Math.max(1, need)) * 100))}%"></i></div>
+      <p>${esc(t('gateBody', { n: need - have }))}</p>
+      <button class="btn btn--primary btn--block" data-act="upgrade" data-testid="gate-upgrade">⬆ ${esc(t('gateUpgrade'))}</button>
+      <button class="btn btn--block" data-act="replay" data-testid="gate-replay">★ ${esc(t('gateReplay', { n: target }))}</button>
+      <button class="btn btn--block" data-act="close">${t('close')}</button>
+    </div>`,
+    (root, close) => {
+      root.querySelector('[data-act="close"]')!.addEventListener('click', close);
+      root.querySelector('[data-act="upgrade"]')!.addEventListener('click', () => {
+        close();
+        openShop();
+      });
+      root.querySelector('[data-act="replay"]')!.addEventListener('click', () => {
+        close();
+        startLevel(target);
+      });
+    },
+  );
 }
 
 function missionRowsHtml(withClaim: boolean): string {
@@ -2102,7 +2178,9 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
   const bonusBlock = bonusLines.length ? `<ul class="result__bonus" data-testid="result-bonus">${bonusLines.join('')}</ul>` : '';
   const recordBadge = extra?.record ? `<p class="result__record" data-testid="new-record">🏅 ${esc(t('newRecord', { s: r.timeSec }))}</p>` : '';
   const confetti = r.stars === 3 ? `<div class="confetti" aria-hidden="true">${Array.from({ length: 26 }, (_, i) => `<i style="left:${(i * 37) % 100}%;animation-delay:${(i % 9) * 0.07}s;background:hsl(${(i * 47) % 360} 85% 60%)"></i>`).join('')}</div>` : '';
-  const hasNext = level.id < LEVELS.length;
+  const hasNext = level.id < LEVELS.length && stageOpen(level.id + 1);
+  // 다음 판이 별 관문 뒤에 있으면 "다음" 대신 강화·다시 하기로 이끈다
+  const gateLeft = level.id < LEVELS.length ? gateShort(level.id + 1) : 0;
   const mainDirt = level.patches[0]?.type;
   const recBase = mainDirt ? DIRT_TO_ITEM[mainDirt][0] : undefined;
   const market = defaultMarket(getLang());
@@ -2144,6 +2222,7 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
       <div class="result__today" data-testid="result-missions"><b>🎯 ${esc(t('resultMissions'))}</b><ul class="missions missions--compact">${missionRowsHtml(false)}</ul>${nextAreaGoalHtml()}</div>
       <button class="btn btn--ad btn--block" data-act="double" data-testid="double">${t('doubleAd')}</button>
       ${hasNext ? `<button class="btn btn--primary btn--block" data-act="next" data-testid="next">${t('next')}</button>` : ''}
+      ${gateLeft > 0 ? `<button class="btn btn--primary btn--block" data-act="gate-result" data-testid="result-gate">🔒 ${esc(t('gateResult', { n: gateLeft }))}</button>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry">${t('retry')}</button><button class="btn" data-act="menu" data-testid="to-menu">${t('menu')}</button></div>
       ${hostCard}${showMall ? mallCard : ''}
     </div>`,
@@ -2173,6 +2252,12 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
         fn();
       };
       root.querySelector('[data-act="next"]')?.addEventListener('click', () => after(() => startLevel(level.id + 1)));
+      root.querySelector('[data-act="gate-result"]')?.addEventListener('click', () =>
+        after(() => {
+          renderHome();
+          openGate();
+        }),
+      );
       root.querySelector('[data-act="retry"]')!.addEventListener('click', () => after(() => startLevel(level.id)));
       root.querySelector('[data-act="menu"]')!.addEventListener('click', () => after(() => renderArea(level.area)));
       root.querySelector<HTMLAnchorElement>('[data-mall]')?.addEventListener('click', (e) => {
@@ -2187,6 +2272,17 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
       });
       // 매 판 끝: 쇼호스트가 이번 판에 쓴 제품(또는 같은 종류·이 판 오염에 맞는 제품)을 소개 — 별 연출 뒤에
       if (hostEntry && canHost(hostEntry.sponsor!, 'result')) setTimeout(() => document.querySelector('[data-testid="result"]') && presentHost(hostEntry, 'result', mainDirt, pick!), 1300);
+      // 별 3개로 끝낸 기분 좋은 순간에만, 드물게 스토어 평가를 청한다 (다른 안내가 뜨는 판은 건너뛴다)
+      else if (shouldAskReview(getStore(), r.stars, Date.now())) {
+        setTimeout(async () => {
+          if (!document.querySelector('[data-testid="result"]')) return;
+          if (await requestNativeReview()) {
+            markReviewAsked(getStore(), Date.now());
+            persist();
+            track('review_ask', { level: level.id });
+          }
+        }, 1600);
+      }
     },
   );
 }
@@ -2222,7 +2318,11 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
     const harms = e.spec.harms.map((s) => t(`surf_${s}`)).join(', ');
     let action = '';
     if (e.sponsor) action = `${inGame && !trial ? `<button class="btn btn--sm btn--ad" data-try="${esc(e.spec.id)}">${t('tryAd')}</button>` : trial ? `<span class="pill">${t('owned')}</span>` : ''}${e.sponsor.affiliate ? '' : `<button class="btn btn--sm" data-evidence="${esc(e.spec.id)}">${t('evidence')}</button>`}`;
-    else if (own) action = `<span class="pill">${t('owned')}</span>`;
+    else if (own) {
+      const lv = upgradeLevel(st, e.spec.id);
+      const cost = upgradeCost(lv);
+      action = `<span class="pill pill--lv" data-testid="lv-${esc(e.spec.id)}">Lv.${lv}</span>${cost === null ? `<span class="pill">MAX</span>` : `<button class="btn btn--sm btn--primary" data-upgrade="${esc(e.spec.id)}" data-testid="upgrade-${esc(e.spec.id)}" ${st.coins < cost ? 'data-poor="1"' : ''}>⬆ ${t('upgradeBuy', { c: cost })}</button>`}`;
+    }
     else
       action = `<button class="btn btn--sm btn--primary" data-buy="${esc(e.spec.id)}" ${st.coins < e.spec.cost ? 'data-poor="1"' : ''}>${t('buy', { c: e.spec.cost })}</button>${inGame && !trial ? `<button class="btn btn--sm btn--ad" data-try="${esc(e.spec.id)}">${t('tryAd')}</button>` : ''}`;
     return `<li class="shop__item${e.sponsor ? ' is-sponsor' : ''}${e.spec.premium ? ' is-premium' : ''}" data-testid="shop-${esc(e.spec.id)}">
@@ -2231,9 +2331,16 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
         <div class="shop__name">${esc(itemName(e))} ${e.sponsor ? `<span class="tag-ad">${t('sponsored')}</span>${e.sponsor.sample ? `<span class="tag-sample">${t('sample')}</span>` : ''}` : ''}</div>
         ${e.spec.premium ? `<div class="small">${premiumBadges(e)}</div>` : `<div class="small">${esc(t('goodFor', { list: knownFor(e) }))}</div>`}
         ${harms ? `<div class="small warn">${esc(t('cautionOn', { list: harms }))}</div>` : ''}
+        ${own && !e.sponsor ? upgradeLine(e) : ''}
       </div>
       <div class="shop__act">${action}</div>
     </li>`;
+  };
+  const upgradeLine = (e: ItemEntry) => {
+    const lv = upgradeLevel(st, e.spec.id);
+    const now = upgradeGain(e.spec.kind, lv);
+    const pips = [1, 2, 3, 4, 5].map((n) => `<i class="${n <= lv ? 'on' : ''}"></i>`).join('');
+    return `<div class="upg"><span class="upg__pips">${pips}</span>${lv > 1 ? `<span class="small upg__gain">${esc(t(e.spec.kind === 'tool' ? 'upgradeToolGain' : 'upgradeDetGain', { p: now.main, r: now.radius }))}</span>` : ''}</div>`;
   };
   const sponsors = items.filter((e) => e.sponsor);
   const premium = items.filter((e) => !e.sponsor && e.spec.premium);
@@ -2260,7 +2367,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
     ${sponsors.length ? `<ul class="shop__list">${sponsors.map(row).join('')}</ul>` : ''}
     <h3>⚡ ${t('premiumTab')}</h3><p class="small muted">${esc(t('premiumIntro'))}</p>
     <ul class="shop__list" data-testid="premium-list">${premium.map(row).join('')}</ul>
-    <h3>${t('basicItems')}</h3><ul class="shop__list">${baseTools.map(row).join('')}</ul>
+    <h3>${t('basicItems')}</h3><p class="small muted" data-testid="upgrade-intro">⬆ ${esc(t('upgradeIntro'))}</p><ul class="shop__list" data-testid="base-list">${baseTools.map(row).join('')}</ul>
     <h3>${t('cleanersSection')}</h3><ul class="shop__list">${baseDets.map(row).join('')}</ul>`;
   modal(
     `<div class="shop" data-testid="shop">
@@ -2297,6 +2404,25 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
           persist();
           track('shop_buy', { item: e.spec.id, premium: Boolean(e.spec.premium) });
           sfx.buy();
+          close();
+          if (game) renderToolbar();
+          openShop(inGame);
+        }),
+      );
+      root.querySelectorAll<HTMLButtonElement>('[data-upgrade]').forEach((b) =>
+        b.addEventListener('click', () => {
+          const id = b.dataset.upgrade!;
+          const st2 = getStore();
+          if (!buyUpgrade(st2, id)) {
+            toast(t('needCoins'), 'warn');
+            return;
+          }
+          persist();
+          reloadItems();
+          const lv = upgradeLevel(st2, id);
+          track('upgrade_buy', { item: id, level: lv });
+          sfx.buy();
+          toast(t('upgradeDone', { item: itemName(findItem(id, items)), n: lv }));
           close();
           if (game) renderToolbar();
           openShop(inGame);
@@ -2642,12 +2768,13 @@ declare global {
       coins: () => number;
       selected: () => string | null;
       clearAll: () => void;
-      setUnlocked: (n: number) => void;
+      setUnlocked: (n: number, stars?: number) => void;
       boosters: () => Record<string, number>;
       mess: () => { count: number; next: number | undefined; shield: number; kind: string | undefined };
       forceMess: () => void;
       setShield: (sec: number) => void;
       gearTip: (reason: 'slow' | 'mess' | 'fail', dirt?: string) => boolean;
+      itemSpec: (id: string) => { power?: number; radius: number } | null;
       setCoins: (n: number) => void;
       force2d: (on: boolean) => void;
       skipTour: () => void;
@@ -2709,8 +2836,11 @@ function exposeDebug() {
     clearAll: () => {
       if (game) game.session.clearAll();
     },
-    setUnlocked: (n: number) => {
-      getStore().progress.unlocked = n;
+    setUnlocked: (n: number, stars = 0) => {
+      const st = getStore();
+      st.progress.unlocked = n;
+      // stars 를 주면 그 앞 판들을 그 별 수로 채운다 (별 관문 너머를 바로 보려는 미리보기·스크린샷용)
+      if (stars > 0) for (let id = 1; id < n; id++) st.progress.stars[id] = Math.max(st.progress.stars[id] ?? 0, stars);
       persist();
     },
     mess: () => ({ count: game?.session.messCount ?? 0, next: game?.session.messIn, shield: game?.session.shieldLeft ?? 0, kind: game?.level.mess?.kind }),
@@ -2727,6 +2857,7 @@ function exposeDebug() {
       getStore().settings.tourDone = true;
       persist();
     },
+    itemSpec: (id: string) => findItem(id, items)?.spec ?? null,
     setCoins: (n: number) => {
       getStore().coins = n;
       persist();

@@ -95,6 +95,10 @@ export interface Store {
   /** 일일 카운터: 광고 코인·광고 부스터 횟수, 접속 보너스 */
   daily: { day: string; adCoins: number; adBoosters: number; bonusDay: string; streak: number; missions?: MissionState | null };
   owned: string[]; // 보유 아이템 id
+  /** 스토어 평가 요청 기록 (review.ts) */
+  review?: { last: number; count: number };
+  /** 아이템 강화 단계 (upgrades.ts) — 없으면 Lv1 */
+  upgrades: Record<string, number>;
   journal: string[]; // 발견한 조합 키 "dirt|tool|cleaner" (recipeKey)
   ops: Ops;
 }
@@ -112,6 +116,7 @@ const DEFAULTS: Store = {
   boosters: { time: 0, bomb: 0, scan: 0, shield: 0 },
   daily: { day: '', adCoins: 0, adBoosters: 0, bonusDay: '', streak: 0 },
   owned: [],
+  upgrades: {},
   journal: [],
   ops: { sponsors: [], overrides: {}, host: { ...DEFAULT_HOST }, counters: {}, lastHostAt: {}, lastIntroAt: {}, testUnlock: false },
 };
@@ -154,6 +159,8 @@ export async function loadStore(): Promise<Store> {
         boosters: { ...DEFAULTS.boosters, ...(p.boosters ?? {}) },
         daily: { ...DEFAULTS.daily, ...(p.daily ?? {}) },
         owned: Array.isArray(p.owned) ? p.owned : [],
+        upgrades: p.upgrades && typeof p.upgrades === 'object' ? { ...p.upgrades } : {},
+        review: p.review && typeof p.review.last === 'number' ? { last: p.review.last, count: Number(p.review.count) || 1 } : undefined,
         journal: Array.isArray(p.journal) ? p.journal : [],
         ops: {
           sponsors: Array.isArray(p.ops?.sponsors) ? p.ops!.sponsors : [],
