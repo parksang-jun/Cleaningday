@@ -2532,3 +2532,7 @@ body.has-banner .ad-banner {
 .gate__stars { font-size: 28px; font-weight: 900; color: var(--primary); margin: 0; }
 .gate__bar { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
 .gate__bar i { display: block; height: 100%; background: var(--primary); border-radius: 5px; }
+
+/* 결과 화면: 다음 전면 광고를 코인으로 건너뛰기 */
+.adskip { margin-top: 8px; border-style: dashed; }
+.adskip:disabled { opacity: 0.7; border-style: solid; }

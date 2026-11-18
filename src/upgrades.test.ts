@@ -70,3 +70,11 @@ describe('별 관문', () => {
     expect(starsShort(areas[1].levelIds[0], stars)).toBe(0);
   });
 });
+
+describe('전면 광고 건너뛰기 가격', () => {
+  it('한 판 보상보다 싸다 — 깬 직후 바로 살 수 있어야 한다', async () => {
+    const { AD_SKIP_COINS } = await import('./economy');
+    expect(AD_SKIP_COINS).toBeGreaterThan(0);
+    expect(AD_SKIP_COINS).toBeLessThanOrEqual(50); // 1티어 별 3개 보상
+  });
+});

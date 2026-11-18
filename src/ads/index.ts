@@ -100,6 +100,23 @@ export class AdsController {
     }
   }
 
+  /** 다음 화면 전환에서 전면 광고가 나올 차례인가 (상태를 바꾸지 않는다) — "코인으로 건너뛰기" 버튼을 보일지 정한다 */
+  interstitialDue(now = Date.now()): boolean {
+    const st = getStore();
+    const ads = st.ads;
+    if ((ads.adFreeUntil ?? 0) > now) return false;
+    if (!this.ready || st.stats.gamesPlayed <= 1) return false;
+    return ads.gamesSinceInterstitial + 1 >= INTERSTITIAL_MIN_GAMES && now - ads.lastInterstitialAt >= INTERSTITIAL_MIN_INTERVAL_MS;
+  }
+
+  /** 이번 차례의 전면 광고를 건너뛴다 — 방금 본 것으로 치고 간격을 다시 센다 */
+  skipInterstitial(now = Date.now()): void {
+    const ads = getStore().ads;
+    ads.lastInterstitialAt = now;
+    ads.gamesSinceInterstitial = 0;
+    persist();
+  }
+
   /** 진단 전용: 빈도 정책을 무시하고 전면 광고를 바로 띄운다 (운영자 화면) */
   async showInterstitialNow(): Promise<boolean> {
     if (!this.ready || this.busy) return false;

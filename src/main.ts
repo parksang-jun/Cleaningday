@@ -26,7 +26,7 @@ import { Renderer } from './render/renderer';
 import { sprayLook } from './render/sprayfx';
 import type { View3D } from './render/view3d';
 import { getStore, loadStore, persist, resetStore, type HostConfig } from './storage';
-import { AD_COINS, AD_COINS_PER_DAY, AD_FREE_PASSES, adFree, buyAdFree, adBoostersLeft, adCoinsLeft, BOOSTER_IDS, BOOSTERS, claimDailyBonus, todayKey, CONTINUE_COINS, daily, type BoosterId } from './economy';
+import { AD_SKIP_COINS, AD_COINS, AD_COINS_PER_DAY, AD_FREE_PASSES, adFree, buyAdFree, adBoostersLeft, adCoinsLeft, BOOSTER_IDS, BOOSTERS, claimDailyBonus, todayKey, CONTINUE_COINS, daily, type BoosterId } from './economy';
 import { iconFor } from './ui/icons';
 import { markReviewAsked, requestNativeReview, shouldAskReview } from './review';
 import { applyUpgrade, buyUpgrade, upgradeCost, upgradeGain, upgradeLevel } from './upgrades';
@@ -326,6 +326,29 @@ function nextAreaGoalHtml(): string {
   if (!nextArea) return '';
   const left = nextArea.levelIds[0] - st.progress.unlocked;
   return `<p class="goal" data-testid="next-area-goal">🔓 ${esc(t(left === 1 ? 'nextAreaGoalOne' : 'nextAreaGoal', { area: t(`area_${nextArea.id}`), n: left }))}</p>`;
+}
+
+/** 결과·실패 화면: 다음 전환에 전면 광고가 나올 차례면 "코인으로 건너뛰기" 버튼을 보인다 */
+function adSkipHtml(): string {
+  if (!ads.interstitialDue()) return '';
+  return `<button class="btn btn--sm btn--block adskip" data-act="adskip" data-testid="ad-skip">🚫 ${esc(t('adSkip', { c: AD_SKIP_COINS }))}</button>`;
+}
+function bindAdSkip(root: HTMLElement): void {
+  const b = root.querySelector<HTMLButtonElement>('[data-act="adskip"]');
+  b?.addEventListener('click', () => {
+    const st = getStore();
+    if (st.coins < AD_SKIP_COINS) {
+      toast(t('needCoins'), 'warn');
+      return;
+    }
+    st.coins -= AD_SKIP_COINS;
+    ads.skipInterstitial();
+    persist();
+    track('ad_skip_buy', { coins: AD_SKIP_COINS });
+    sfx.buy();
+    b.disabled = true;
+    b.textContent = `✓ ${t('adSkipDone')}`;
+  });
 }
 
 /** 별 관문 안내: 무엇이 모자라고, 어떻게 채우는지 (강화 · 다시 하기) */
@@ -1962,9 +1985,11 @@ function failLevel(reason: 'time' | 'ruined' = 'time') {
       ${reason === 'ruined' ? '' : `<button class="btn btn--ad btn--block" data-act="extend" data-testid="extend">${t('extendAd')}</button><button class="btn btn--block" data-act="extend-coins" data-testid="extend-coins" ${getStore().coins < CONTINUE_COINS ? 'disabled' : ''}>${esc(t('extendCoins', { c: CONTINUE_COINS, s: BOOSTERS.time.amount }))}</button>`}
       ${failGear ? `<p class="result__gear" data-testid="fail-gear">${iconFor(failGear.spec.base)} ${esc(t('gearLine_fail', { item: t(`item_${failGear.spec.base}`), dirt: t(`dirt_${failGear.dirt}`), x: failGear.x }))} <button class="link-btn small" data-act="fail-shop">${t('shop')} ›</button></p>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry" data-testid="fail-retry">${t('retry')}</button><button class="btn" data-act="menu">${t('menu')}</button></div>
+      ${adSkipHtml()}
     </div>`,
     (root, close) => {
       root.parentElement!.dataset.dismiss = 'no';
+      bindAdSkip(root);
       root.querySelector('[data-act="fail-shop"]')?.addEventListener('click', () => {
         track('gear_tip', { level: g.level.id, item: failGear!.spec.id, reason: 'fail', dirt: failGear!.dirt });
         openShop(true);
@@ -2224,10 +2249,12 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
       ${hasNext ? `<button class="btn btn--primary btn--block" data-act="next" data-testid="next">${t('next')}</button>` : ''}
       ${gateLeft > 0 ? `<button class="btn btn--primary btn--block" data-act="gate-result" data-testid="result-gate">🔒 ${esc(t('gateResult', { n: gateLeft }))}</button>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry">${t('retry')}</button><button class="btn" data-act="menu" data-testid="to-menu">${t('menu')}</button></div>
+      ${adSkipHtml()}
       ${hostCard}${showMall ? mallCard : ''}
     </div>`,
     (root, closeFn) => {
       root.parentElement!.dataset.dismiss = 'no';
+      bindAdSkip(root);
       [0, 1, 2].forEach((i) => i < r.stars && setTimeout(() => sfx.star(i), 250 + i * 200));
       for (let i = 0; i < Math.min(6, Math.ceil(r.coins / 20)); i++) setTimeout(() => sfx.coin(i), 900 + i * 70);
       duckMusic(false);

@@ -29,6 +29,8 @@ export const AD_COINS = 80;
 export const AD_COINS_PER_DAY = 5;
 /** 부스터 "광고 보고 1개 받기" 하루 한도 */
 export const AD_BOOSTERS_PER_DAY = 3;
+/** 판 사이 전면 광고 한 번을 코인으로 건너뛰기 */
+export const AD_SKIP_COINS = 40;
 /** 실패 화면: 코인으로 이어하기 (+time 부스터만큼) */
 export const CONTINUE_COINS = 100;
 

@@ -1014,6 +1014,27 @@ try {
     await pg.waitForSelector('[data-testid="play"]');
     assert((await pg.locator('[data-testid="gate-goal"]').count()) === 0 && !(await pg.locator('[data-testid="area-room"]').getAttribute('class')).includes('is-locked'), 'with enough stars the gate opens');
     assert((await pg.evaluate(() => window.__sparkle.itemSpec('cloth').power)) === power1 * 1.24, 'upgrade levels survive a reload');
+    // 전면 광고 건너뛰기: 광고가 나올 차례에만 버튼이 보이고, 코인을 내면 이번 광고가 빠진다
+    await pg.evaluate(() => window.__sparkle.setCoins(100));
+    const playOnce = async (entry) => {
+      await pg.click(entry);
+      await pg.waitForSelector('[data-testid="intro"]');
+      await pg.click('[data-testid="start"]');
+      await pg.waitForSelector('[data-testid="canvas"]');
+      await pg.evaluate(() => window.__sparkle.clearAll());
+      await pg.waitForSelector('[data-testid="result"]', { timeout: 15000 });
+    };
+    await playOnce('[data-testid="play"]');
+    assert((await pg.locator('[data-testid="ad-skip"]').count()) === 0, 'no ad-skip offer when no ad is due (first finished stage)');
+    await pg.click('[data-testid="to-menu"]');
+    await pg.waitForSelector('[data-testid="stage-13"]');
+    await playOnce('[data-testid="stage-13"]');
+    const coinsBefore = await pg.evaluate(() => window.__sparkle.coins());
+    assert(/40/.test(await pg.locator('[data-testid="ad-skip"]').innerText()), 'when an ad is due, the result offers to skip it for 40 coins');
+    await pg.click('[data-testid="ad-skip"]');
+    await pg.waitForTimeout(300);
+    const adState = await pg.evaluate(() => JSON.parse(localStorage.getItem('sparkle-clean-v1')).ads);
+    assert((await pg.evaluate(() => window.__sparkle.coins())) === coinsBefore - 40 && (await pg.locator('[data-testid="ad-skip"]').isDisabled()) && adState.gamesSinceInterstitial === 0 && Date.now() - adState.lastInterstitialAt < 60000, 'paying skips this ad: coins go down and the ad interval restarts');
     await ctxG.close();
   }
 
