@@ -52,6 +52,43 @@ function smooth(a: number): number {
   return Math.min(1, Math.pow(a, 0.65) * 1.2);
 }
 
+/** 진척 없이 이만큼 지나면 남은 오염을 짚어 준다 (80% 이상 닦았으면 더 빨리) */
+export const LOCATE_WAIT_MS = 5000;
+export const LOCATE_WAIT_LATE_MS = 2500;
+
+/**
+ * 오염이 남은 곳을 굵은 구획으로 묶어 중심·반경을 낸다 (가장 많이 남은 순으로 최대 max 곳).
+ * 좌표·반경은 격자 칸 단위.
+ */
+export function locateDirt(amount: ArrayLike<number>, under: ArrayLike<number>, w: number, h: number, max = 5): { x: number; y: number; r: number }[] {
+  const B = Math.max(4, Math.round(w / 6));
+  const bw = Math.ceil(w / B);
+  const bh = Math.ceil(h / B);
+  const sum = new Float32Array(bw * bh);
+  const sx = new Float32Array(bw * bh);
+  const sy = new Float32Array(bw * bh);
+  const n = new Uint16Array(bw * bh);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const a = amount[i] + under[i];
+      if (a < 0.04) continue;
+      const b = Math.floor(y / B) * bw + Math.floor(x / B);
+      sum[b] += a;
+      sx[b] += (x + 0.5) * a;
+      sy[b] += (y + 0.5) * a;
+      n[b]++;
+    }
+  }
+  const out: { x: number; y: number; r: number; s: number }[] = [];
+  for (let b = 0; b < sum.length; b++) {
+    if (n[b] < 2) continue;
+    out.push({ x: sx[b] / sum[b], y: sy[b] / sum[b], r: Math.min(B * 0.75, Math.max(2, Math.sqrt(n[b] / Math.PI) * 1.3)), s: sum[b] });
+  }
+  out.sort((a, b) => b.s - a.s);
+  return out.slice(0, max).map(({ x, y, r }) => ({ x, y, r }));
+}
+
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private base = document.createElement('canvas');
@@ -82,6 +119,14 @@ export class Renderer {
   private dpr = 1;
   private shakeUntil = 0;
   private reveal: { t: number; done: () => void } | null = null;
+  /** 남은 오염 찾기: 한동안 진척이 없으면 남은 곳에 고리를 띄운다 */
+  private locClean = -1;
+  private locSince = 0;
+  private locCalcAt = 0;
+  private locSpots: { x: number; y: number; r: number }[] = [];
+  private locShown = false;
+  /** 고리가 처음 뜰 때 한 번 (안내 문구용) */
+  onLocate: (() => void) | null = null;
   private hasSnap = false;
   private sweepT = -1;
   private lastClean = 0;
@@ -123,6 +168,9 @@ export class Renderer {
     this.flashlight = null;
     this.sweepT = -1;
     this.lastClean = 0;
+    this.locClean = -1;
+    this.locSpots = [];
+    this.locShown = false;
     this.prevCursor = null;
     // 세부 노이즈(농담)와 가장자리 흔들기(샘플 위치 비틀기) — 값 노이즈를 보간해 블록 느낌 없이 울퉁불퉁한 얼룩 윤곽
     let seed = (s.level.seed * 2654435761) >>> 0;
@@ -716,6 +764,8 @@ export class Renderer {
     // 닦는 자국(광): 지금 닦이는 중이면 커서 궤적이 하얗게 빛난다
     this.drawTrail(now, cw, false);
 
+    this.drawLocator(now, cw);
+
     // 스팟 모드: 표적 링 (완료되면 체크)
     if (s.spots.length) {
       const pulse = 0.5 + 0.5 * Math.sin(now / 300);
@@ -1015,6 +1065,56 @@ export class Renderer {
   }
 
   /** 커서 궤적: wet=true 면 오염층 아래 젖은 광택, false 면 위에 닦는 빛 */
+  /**
+   * 남은 오염 찾기. 옅은 먼지·물때는 사진 바닥과 섞여 잘 안 보인다 — 어디를 닦아야 할지 몰라 멈춘 사람을 위해,
+   * 진척이 없는 채로 몇 초 지나면 오염이 남은 곳을 고리로 짚어 준다(거의 다 닦았을수록 더 빨리).
+   * 닦기 시작하면 바로 사라진다.
+   */
+  private drawLocator(now: number, cw: number) {
+    const s = this.session!;
+    const clean = s.cleanliness;
+    if (Math.abs(clean - this.locClean) > 0.0015) {
+      this.locClean = clean;
+      this.locSince = now;
+      this.locSpots = [];
+      return;
+    }
+    if (clean >= 0.999 || this.reveal) return;
+    const wait = clean >= 0.8 ? LOCATE_WAIT_LATE_MS : LOCATE_WAIT_MS;
+    const idle = now - this.locSince;
+    if (idle < wait) return;
+    if (!this.locSpots.length || now - this.locCalcAt > 700) {
+      this.locSpots = locateDirt(s.amount, s.under, s.w, s.h);
+      this.locCalcAt = now;
+    }
+    if (!this.locSpots.length) return;
+    if (!this.locShown) {
+      this.locShown = true;
+      this.onLocate?.();
+    }
+    const { ctx } = this;
+    const fade = Math.min(1, (idle - wait) / 400);
+    const pulse = 0.5 + 0.5 * Math.sin(now / 260);
+    ctx.save();
+    for (const sp of this.locSpots) {
+      const x = sp.x * cw;
+      const y = sp.y * cw;
+      const r = (sp.r + 0.4 + pulse * 0.5) * cw;
+      ctx.setLineDash([]);
+      ctx.lineWidth = 5 * this.dpr;
+      ctx.strokeStyle = `rgba(0,0,0,${0.28 * fade})`;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 2.5 * this.dpr;
+      ctx.strokeStyle = `rgba(255,214,64,${(0.6 + pulse * 0.4) * fade})`;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   private drawTrail(now: number, cw: number, wet: boolean) {
     const life = wet ? 1500 : 420;
     const pts = this.trail.filter((p) => p.wet === wet && now - p.t < life);

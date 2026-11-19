@@ -2536,3 +2536,8 @@ body.has-banner .ad-banner {
 /* 결과 화면: 다음 전면 광고를 코인으로 건너뛰기 */
 .adskip { margin-top: 8px; border-style: dashed; }
 .adskip:disabled { opacity: 0.7; border-style: solid; }
+
+/* 실패 화면 요령 */
+.failtips { text-align: left; background: rgba(255, 214, 64, 0.18); border: 1px solid rgba(214, 160, 0, 0.35); border-radius: 12px; padding: 10px 12px; margin: 8px 0; }
+.failtips ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.failtips li { font-size: 14px; line-height: 1.35; }

@@ -969,6 +969,8 @@ function startLevel(id: number) {
   for (const id of pendingTrials) game.trials.delete(id);
   renderToolbar();
   renderer.setSession(session);
+  // 남은 오염 고리가 처음 뜰 때 한 번 알려 준다
+  renderer.onLocate = () => toast(esc(t('locateHint')));
   renderer.onMilestone = (m) => {
     sfx.shine(m);
     haptic('light');
@@ -1927,6 +1929,7 @@ function finishLevel() {
     if (id === st.progress.unlocked && id < LEVELS.length) st.progress.unlocked = id + 1;
   }
   st.coins += result.coins;
+  if (st.failRuns) delete st.failRuns[id];
   st.stats.gamesPlayed++;
   st.stats.totalCleanedCells += g.cleanedCells;
   // 오늘의 미션 진행 (보상은 홈에서 직접 받는다)
@@ -1962,6 +1965,27 @@ function breakStreak() {
 }
 
 /** 실패 — 제한시간 초과(광고로 연장 가능) 또는 표면 손상(정밀 모드) */
+/** 이 횟수만큼 같은 판에서 연달아 실패하면 요령을 보여 준다 */
+const FAIL_TIPS_AFTER = 2;
+
+/** 실패 화면 요령: 가장 많이 남은 오염의 맞는 도구·세제부터, 그다음 실패 이유에 맞는 조언 (최대 3줄) */
+function failTips(g: NonNullable<typeof game>, reason: 'time' | 'ruined'): string[] {
+  const out: string[] = [];
+  const left = [...g.session.dirtKinds].filter((d) => g.session.remainingOf(d) > 0).sort((a, b) => g.session.remainingOf(b) - g.session.remainingOf(a));
+  for (const d of left.slice(0, 2)) {
+    const hr = hintRecipe(d);
+    if (!hr) continue;
+    g.hints.set(d, 2); // 수첩에도 남겨 다음 판에서 다시 볼 수 있게
+    out.push(hr.cleaner ? t('failTipRecipe', { dirt: t(`dirt_${d}`), cleaner: familyName(hr.cleaner), tool: familyName(hr.tool) }) : t('failTipTool', { dirt: t(`dirt_${d}`), tool: familyName(hr.tool) }));
+  }
+  if (reason === 'ruined') out.push(t('failTipRuined'));
+  else {
+    if (left.some((d) => hintRecipe(d)?.cleaner)) out.push(t('failTipSoak'));
+    out.push(t('failTipUpgrade'));
+  }
+  return out.slice(0, 3);
+}
+
 function failLevel(reason: 'time' | 'ruined' = 'time') {
   const g = game;
   if (!g || g.failed || g.finished) return;
@@ -1976,12 +2000,21 @@ function failLevel(reason: 'time' | 'ruined' = 'time') {
   const streakNow = getStore().progress.winStreak ?? 0;
   if (reason === 'ruined') breakStreak(); // 표면을 망가뜨리면 이어 할 수 없다
   const streakLine = streakNow >= 2 ? `<p class="result__streak is-risk" data-testid="streak-risk">🔥 ${esc(t(reason === 'ruined' ? 'streakLost' : 'streakRisk', { n: streakNow }))}</p>` : '';
+  // 같은 판에서 연달아 실패하면 요령을 알려 준다
+  const stf = getStore();
+  stf.failRuns = stf.failRuns ?? {};
+  const failRun = (stf.failRuns[g.level.id] = (stf.failRuns[g.level.id] ?? 0) + 1);
+  persist();
+  const tips = failRun >= FAIL_TIPS_AFTER ? failTips(g, reason) : [];
+  if (tips.length) track('fail_tips', { level: g.level.id, run: failRun, reason });
+  const tipsHtml = tips.length ? `<div class="failtips" data-testid="fail-tips"><b>💡 ${esc(t('failTipsTitle'))}</b><ul>${tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
   const failGear = failDirt && g.level.id > 3 ? premiumFor(failDirt, mainSurfaceOf(failDirt) as SurfaceType, [...getStore().owned, ...g.trials]) : null;
   modal(
     `<div class="result" data-testid="fail">
       <h2>${reason === 'ruined' ? `💔 ${t('ruinedTitle')}` : `⏱ ${t('failTitle')}`}</h2>
       <p class="muted">${esc(reason === 'ruined' ? t('ruinedText') : t('failText'))} · ${Math.floor(g.session.cleanliness * 100)}% / ${Math.round(g.level.passClean * 100)}%</p>
       ${streakLine}
+      ${tipsHtml}
       ${reason === 'ruined' ? '' : `<button class="btn btn--ad btn--block" data-act="extend" data-testid="extend">${t('extendAd')}</button><button class="btn btn--block" data-act="extend-coins" data-testid="extend-coins" ${getStore().coins < CONTINUE_COINS ? 'disabled' : ''}>${esc(t('extendCoins', { c: CONTINUE_COINS, s: BOOSTERS.time.amount }))}</button>`}
       ${failGear ? `<p class="result__gear" data-testid="fail-gear">${iconFor(failGear.spec.base)} ${esc(t('gearLine_fail', { item: t(`item_${failGear.spec.base}`), dirt: t(`dirt_${failGear.dirt}`), x: failGear.x }))} <button class="link-btn small" data-act="fail-shop">${t('shop')} ›</button></p>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry" data-testid="fail-retry">${t('retry')}</button><button class="btn" data-act="menu">${t('menu')}</button></div>
@@ -2811,6 +2844,7 @@ declare global {
       kit: () => string[];
       audio: () => ReturnType<typeof audioDebug>;
       audioSuspend: () => Promise<void>;
+      setGamesPlayed: (n: number) => void;
       polish: () => number;
       paused: () => boolean;
       openAdmin: () => void;
@@ -2913,6 +2947,10 @@ function exposeDebug() {
     kit: () => [...(game?.kit ?? [])],
     audio: () => audioDebug(),
     audioSuspend: () => suspendAudioForTest(),
+    setGamesPlayed: (n: number) => {
+      getStore().stats.gamesPlayed = n;
+      persist();
+    },
     polish: () => game?.session.polish ?? 0,
     paused: () => game?.paused ?? false,
     hostPending: () => hostPending > 0,

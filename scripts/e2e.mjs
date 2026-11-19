@@ -1037,12 +1037,37 @@ try {
     await pg.click('[data-testid="to-menu"]');
     await pg.waitForSelector('[data-testid="stage-13"]');
     await playOnce('[data-testid="stage-13"]');
+    assert((await pg.locator('[data-testid="ad-skip"]').count()) === 0, 'new players see no between-stage ads for their first stages');
+    // 초반 유예가 끝난 사람
+    await pg.click('[data-testid="to-menu"]');
+    await pg.waitForSelector('[data-testid="stage-13"]');
+    await pg.evaluate(() => window.__sparkle.setGamesPlayed(10));
+    await playOnce('[data-testid="stage-13"]');
     const coinsBefore = await pg.evaluate(() => window.__sparkle.coins());
     assert(/40/.test(await pg.locator('[data-testid="ad-skip"]').innerText()), 'when an ad is due, the result offers to skip it for 40 coins');
     await pg.click('[data-testid="ad-skip"]');
     await pg.waitForTimeout(300);
     const adState = await pg.evaluate(() => JSON.parse(localStorage.getItem('sparkle-clean-v1')).ads);
     assert((await pg.evaluate(() => window.__sparkle.coins())) === coinsBefore - 40 && (await pg.locator('[data-testid="ad-skip"]').isDisabled()) && adState.gamesSinceInterstitial === 0 && Date.now() - adState.lastInterstitialAt < 60000, 'paying skips this ad: coins go down and the ad interval restarts');
+    // 실패 요령: 같은 판에서 두 번째로 실패하면 무엇을 쓰면 되는지 알려 준다
+    await pg.click('[data-testid="to-menu"]');
+    await pg.waitForSelector('[data-testid="stage-13"]');
+    await pg.click('[data-testid="stage-13"]');
+    await pg.waitForSelector('[data-testid="intro"]');
+    await pg.click('[data-testid="start"]');
+    await pg.waitForSelector('[data-testid="canvas"]');
+    await pg.evaluate(() => window.__sparkle.forceExpire());
+    await pg.waitForSelector('[data-testid="fail"]', { timeout: 8000 });
+    assert((await pg.locator('[data-testid="fail-tips"]').count()) === 0, 'the first fail shows no tips yet');
+    await pg.click('[data-testid="fail-retry"]');
+    await pg.waitForSelector('[data-testid="canvas"]');
+    await pg.waitForFunction(() => !document.querySelector('[data-testid="fail"]'));
+    await pg.waitForTimeout(300);
+    await pg.evaluate(() => window.__sparkle.forceExpire());
+    await pg.waitForSelector('[data-testid="fail"]', { timeout: 8000 });
+    const tipLines = await pg.locator('[data-testid="fail-tips"] li').allInnerTexts();
+    assert(tipLines.length >= 2 && tipLines.every((x) => x.length > 10), `failing the same stage twice shows concrete tips (${tipLines.length}: ${tipLines[0]})`);
+    await pg.screenshot({ path: resolve(shots, '13-fail-tips.png') });
     await ctxG.close();
   }
 

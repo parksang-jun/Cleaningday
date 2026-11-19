@@ -8,6 +8,8 @@ import { getStore, persist } from '../storage';
 import { track } from '../analytics';
 
 export const INTERSTITIAL_MIN_GAMES = 2;
+/** 처음 이만큼의 판은 전면 광고 없이 — 게임에 재미를 붙이기 전에 광고부터 보면 지운다 */
+export const INTERSTITIAL_GRACE_GAMES = 6;
 export const INTERSTITIAL_MIN_INTERVAL_MS = 150_000;
 
 export function resolveProviderName(): AdProviderName {
@@ -80,7 +82,7 @@ export class AdsController {
     persist();
     const now = Date.now();
     const intervalOk = now - ads.lastInterstitialAt >= INTERSTITIAL_MIN_INTERVAL_MS;
-    const firstEver = getStore().stats.gamesPlayed <= 1;
+    const firstEver = getStore().stats.gamesPlayed <= INTERSTITIAL_GRACE_GAMES;
     // 코인으로 산 광고 제거 이용권 기간에는 전면 광고 없음
     if ((ads.adFreeUntil ?? 0) > now) return false;
     if (!this.ready || this.busy || firstEver || ads.gamesSinceInterstitial < INTERSTITIAL_MIN_GAMES || !intervalOk) {
@@ -107,7 +109,7 @@ export class AdsController {
     const st = getStore();
     const ads = st.ads;
     if ((ads.adFreeUntil ?? 0) > now) return false;
-    if (!this.ready || st.stats.gamesPlayed <= 1) return false;
+    if (!this.ready || st.stats.gamesPlayed <= INTERSTITIAL_GRACE_GAMES) return false;
     return ads.gamesSinceInterstitial + 1 >= INTERSTITIAL_MIN_GAMES && now - ads.lastInterstitialAt >= INTERSTITIAL_MIN_INTERVAL_MS;
   }
 

@@ -95,6 +95,8 @@ export interface Store {
   /** 일일 카운터: 광고 코인·광고 부스터 횟수, 접속 보너스 */
   daily: { day: string; adCoins: number; adBoosters: number; bonusDay: string; streak: number; missions?: MissionState | null };
   owned: string[]; // 보유 아이템 id
+  /** 판별 연속 실패 횟수 — 여러 번 막히면 실패 화면에 요령을 보여 준다. 깨면 지운다 */
+  failRuns?: Record<number, number>;
   /** 스토어 평가 요청 기록 (review.ts) */
   review?: { last: number; count: number };
   /** 아이템 강화 단계 (upgrades.ts) — 없으면 Lv1 */
@@ -160,6 +162,7 @@ export async function loadStore(): Promise<Store> {
         daily: { ...DEFAULTS.daily, ...(p.daily ?? {}) },
         owned: Array.isArray(p.owned) ? p.owned : [],
         upgrades: p.upgrades && typeof p.upgrades === 'object' ? { ...p.upgrades } : {},
+        failRuns: p.failRuns && typeof p.failRuns === 'object' ? { ...p.failRuns } : {},
         review: p.review && typeof p.review.last === 'number' ? { last: p.review.last, count: Number(p.review.count) || 1 } : undefined,
         journal: Array.isArray(p.journal) ? p.journal : [],
         ops: {

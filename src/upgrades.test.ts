@@ -78,3 +78,24 @@ describe('전면 광고 건너뛰기 가격', () => {
     expect(AD_SKIP_COINS).toBeLessThanOrEqual(50); // 1티어 별 3개 보상
   });
 });
+
+describe('남은 오염 찾기', () => {
+  it('오염이 남은 곳만, 많이 남은 순으로 짚는다', async () => {
+    const { locateDirt } = await import('./render/renderer');
+    const w = 48;
+    const h = 64;
+    const amount = new Float32Array(w * h);
+    const under = new Float32Array(w * h);
+    expect(locateDirt(amount, under, w, h)).toEqual([]);
+    for (let y = 10; y < 14; y++) for (let x = 4; x < 8; x++) amount[y * w + x] = 1; // 큰 얼룩
+    for (let y = 50; y < 52; y++) for (let x = 40; x < 42; x++) under[y * w + x] = 0.5; // 아래층에 조금
+    amount[30 * w + 24] = 1; // 한 칸짜리 티끌은 무시
+    const spots = locateDirt(amount, under, w, h);
+    expect(spots).toHaveLength(2);
+    expect(spots[0].x).toBeCloseTo(6, 0);
+    expect(spots[0].y).toBeCloseTo(12, 0);
+    expect(spots[1].x).toBeCloseTo(41, 0);
+    expect(spots[1].y).toBeCloseTo(51, 0);
+    for (const s of spots) expect(s.r).toBeGreaterThanOrEqual(2);
+  });
+});
