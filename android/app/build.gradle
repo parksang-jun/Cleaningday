@@ -27,7 +27,8 @@ android {
     signingConfigs {
         release {
             if (keystorePropertiesFile.exists()) {
-                storeFile file(keystoreProperties['storeFile'])
+                // 키스토어는 android/ 바로 아래에 둔다(keystore.properties 와 같은 자리) — app 모듈 기준이 아니라 루트 기준으로 찾는다
+                storeFile rootProject.file(keystoreProperties['storeFile'])
                 storePassword keystoreProperties['storePassword']
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']
