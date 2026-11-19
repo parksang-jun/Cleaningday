@@ -3,7 +3,7 @@ import './style.css';
 import { Capacitor } from '@capacitor/core';
 import { AdsController } from './ads';
 import { track } from './analytics';
-import { audioDebug, duckMusic, installAudioUnlock, scrubSound, setMusicEnabled, setSoundEnabled, sfx, stopScrub, unlockAudio, type ScrubProfile, type ScrubTarget } from './audio';
+import { audioDebug, suspendAudioForTest, duckMusic, installAudioUnlock, scrubSound, setMusicEnabled, setSoundEnabled, sfx, stopScrub, unlockAudio, type ScrubProfile, type ScrubTarget } from './audio';
 import { resolveTiming } from './game/bot';
 import { BASE_TOOLS, DIRT_COLOR, DIRT_SURFACES, DIRT_TYPES, familyItem, RECIPES, recipesFor, SURFACES, type CleanerFamily, type DetergentId, type DetergentSpec, type DirtType, type SurfaceType, type ToolFamily, type ToolId, type ToolSpec } from './game/catalog';
 import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, type Timing } from './game/engine';
@@ -2810,6 +2810,7 @@ declare global {
       resultPick: () => { id: string; context: string; usedItem?: string } | null;
       kit: () => string[];
       audio: () => ReturnType<typeof audioDebug>;
+      audioSuspend: () => Promise<void>;
       polish: () => number;
       paused: () => boolean;
       openAdmin: () => void;
@@ -2911,6 +2912,7 @@ function exposeDebug() {
     },
     kit: () => [...(game?.kit ?? [])],
     audio: () => audioDebug(),
+    audioSuspend: () => suspendAudioForTest(),
     polish: () => game?.session.polish ?? 0,
     paused: () => game?.paused ?? false,
     hostPending: () => hostPending > 0,

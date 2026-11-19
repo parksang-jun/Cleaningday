@@ -194,28 +194,57 @@ function iosUnmute(): void {
   }
 }
 
-/** 페이지 어디서든 첫 입력에 잠금 해제 (한 번만) */
+/**
+ * 소리가 끊겼으면 되살린다.
+ *  iOS 는 전면·보상형 광고(네이티브 화면)나 전화·알림이 오디오를 가져가면 컨텍스트를 'interrupted'/'suspended' 로
+ *  바꾸고, 끝나도 저절로 돌려주지 않는다. 그 사이 웹뷰는 "보이는" 상태 그대로라 visibilitychange 도 오지 않는다.
+ *  그래서 광고가 닫힌 직후와, 그 뒤의 모든 터치에서 상태를 확인해 다시 켠다.
+ */
+export function recoverAudio(): void {
+  if (!ctx || !unlocked) return;
+  if (ctx.state === 'running') {
+    if (bgmEnabled) startMusic();
+    return;
+  }
+  iosUnmute(); // 광고가 오디오 세션을 바꿔 놓았을 수 있다 — 미디어 재생 카테고리로 되돌린다
+  void ctx
+    .resume()
+    .then(() => {
+      // 멈춰 있던 동안 밀린 박자를 몰아서 내지 않도록 음악 시계를 다시 맞춘다
+      pauseMusic();
+      if (bgmEnabled) startMusic();
+    })
+    .catch(() => {
+      /* 사용자 입력이 필요한 경우 — 다음 터치에서 다시 시도한다 */
+    });
+}
+
+/** 테스트용: 광고·전화가 오디오를 가져간 상황을 흉내 낸다 */
+export function suspendAudioForTest(): Promise<void> {
+  return ctx ? ctx.suspend() : Promise.resolve();
+}
+
+/** 페이지 어디서든 첫 입력에 잠금 해제, 그 뒤로는 입력마다 소리가 살아 있는지 확인한다 */
 export function installAudioUnlock(): void {
-  const once = () => {
-    unlockAudio();
-    if (unlocked) {
-      window.removeEventListener('pointerdown', once, true);
-      window.removeEventListener('touchend', once, true);
-      window.removeEventListener('keydown', once, true);
-    }
+  const onInput = () => {
+    if (!unlocked) unlockAudio();
+    else if (ctx && ctx.state !== 'running') recoverAudio();
   };
-  window.addEventListener('pointerdown', once, true);
-  window.addEventListener('touchend', once, true);
-  window.addEventListener('keydown', once, true);
+  window.addEventListener('pointerdown', onInput, true);
+  window.addEventListener('touchend', onInput, true);
+  window.addEventListener('keydown', onInput, true);
   document.addEventListener('visibilitychange', () => {
     if (!ctx) return;
     if (document.hidden) {
       stopScrub();
       pauseMusic();
-    } else if (bgmEnabled && unlocked) {
-      void ctx.resume().then(() => startMusic());
+    } else if (unlocked) {
+      recoverAudio();
     }
   });
+  // 앱이 다시 앞으로 오거나 창이 초점을 되찾을 때도 확인한다 (iOS 웹뷰는 visibilitychange 를 빼먹기도 한다)
+  window.addEventListener('focus', () => recoverAudio());
+  window.addEventListener('pageshow', () => recoverAudio());
 }
 
 function tone(freq: number, dur: number, type: OscillatorType, gain = 0.2, delay = 0, slideTo?: number, bus: GainNode | null = sfxBus): void {

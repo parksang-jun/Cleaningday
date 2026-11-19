@@ -1,5 +1,6 @@
 // 공급자 선택 + 노출 빈도 정책(AdsController)
 // 정책(보고서 3장 벤치마크 반영): 전면 광고는 게임 종료 시점에만, 2게임 이상·150초 이상 간격, 첫 게임 제외.
+import { recoverAudio } from '../audio';
 import { Capacitor } from '@capacitor/core';
 import type { AdsProvider, AdProviderName } from './types';
 import { NoopAds } from './noop';
@@ -88,6 +89,7 @@ export class AdsController {
     this.busy = true;
     try {
       const shown = await this.provider.showInterstitial();
+      recoverAudio(); // 광고가 오디오를 가져갔다가 돌려주지 않는다 (iOS)
       if (shown) {
         ads.lastInterstitialAt = now;
         ads.gamesSinceInterstitial = 0;
@@ -124,6 +126,7 @@ export class AdsController {
     try {
       return await this.provider.showInterstitial();
     } finally {
+      recoverAudio();
       this.busy = false;
     }
   }
@@ -135,6 +138,7 @@ export class AdsController {
     track('ad_rewarded_request', { placement });
     try {
       const ok = await this.provider.showRewarded();
+      recoverAudio();
       track(ok ? 'ad_rewarded_earned' : 'ad_rewarded_failed', { placement, provider: this.provider.name });
       return ok;
     } finally {

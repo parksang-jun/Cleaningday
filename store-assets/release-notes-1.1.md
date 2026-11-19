@@ -1,6 +1,6 @@
 # 1.1 출시 메모
 
-App Store Connect → 배포 → (+) 새 버전 `1.1` → 빌드 9 선택.
+App Store Connect → 배포 → (+) 새 버전 `1.1` → 빌드 10 선택.
 마케팅 URL(한국어·영어 둘 다): https://parksang-jun.github.io/Cleaningday/
 
 ## 이 버전의 새로운 기능 — 한국어

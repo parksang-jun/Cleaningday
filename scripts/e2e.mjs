@@ -1014,6 +1014,14 @@ try {
     await pg.waitForSelector('[data-testid="play"]');
     assert((await pg.locator('[data-testid="gate-goal"]').count()) === 0 && !(await pg.locator('[data-testid="area-room"]').getAttribute('class')).includes('is-locked'), 'with enough stars the gate opens');
     assert((await pg.evaluate(() => window.__sparkle.itemSpec('cloth').power)) === power1 * 1.24, 'upgrade levels survive a reload');
+    // 소리 복구: 광고·전화가 오디오를 끊어도 다음 터치에서 되살아난다
+    await pg.mouse.click(20, 20);
+    await pg.waitForFunction(() => window.__sparkle.audio().state === 'running');
+    await pg.evaluate(() => window.__sparkle.audioSuspend());
+    assert((await pg.evaluate(() => window.__sparkle.audio().state)) === 'suspended', 'audio can be interrupted (as an ad or a call does)');
+    await pg.mouse.click(20, 20);
+    await pg.waitForFunction(() => window.__sparkle.audio().state === 'running', null, { timeout: 5000 });
+    assert(true, 'the next touch brings the sound back after an interruption');
     // 전면 광고 건너뛰기: 광고가 나올 차례에만 버튼이 보이고, 코인을 내면 이번 광고가 빠진다
     await pg.evaluate(() => window.__sparkle.setCoins(100));
     const playOnce = async (entry) => {
