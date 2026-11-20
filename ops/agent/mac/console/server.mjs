@@ -148,9 +148,20 @@ async function stateData() {
   const main = all.find((x) => x.name === 'main');
   const latest = all[0] || null; // 가장 최근 커밋이 있는 브랜치
   const ref = latest ? latest.ref : 'main';
-  const [pipeline, ledger, backlog, log, feedback, improvements, approvalsRaw, creatives, campaigns] = await Promise.all(['state/pipeline.csv', 'state/ledger.csv', 'state/backlog.md', 'state/log.md', 'state/feedback.csv', 'state/improvements.md', 'state/approvals.json', 'state/creatives.csv', 'state/campaigns.csv'].map((f) => readAt(ref, f)));
+  const [pipeline, ledger, backlog, logMd, feedback, improvements, approvalsRaw, creatives, campaigns] = await Promise.all(['state/pipeline.csv', 'state/ledger.csv', 'state/backlog.md', 'state/log.md', 'state/feedback.csv', 'state/improvements.md', 'state/approvals.json', 'state/creatives.csv', 'state/campaigns.csv'].map((f) => readAt(ref, f)));
   const parseItems = (raw) => { try { return JSON.parse(raw).items || []; } catch { return []; } };
   let approvals = parseItems(approvalsRaw);
+  // 실행 기록: 2026-11-20 부터 실행마다 state/log/날짜-루틴.md 새 파일(같은 log.md 끝에 줄을 덧붙이면 브랜치마다 충돌했다).
+  // log.md(옛 기록) 뒤에 main·병합 안 된 agent 브랜치의 state/log/*.md 를 파일 이름 순으로 붙인다.
+  const logFiles = new Map();
+  for (const b of all.length ? all : [{ ref: 'main' }]) {
+    const ls = await git(['ls-tree', '--name-only', `${b.ref}:ops/agent/state/log`]);
+    if (!ls.ok) continue;
+    for (const f of ls.out.trim().split('\n').filter((x) => /^[\w\-.]+\.md$/.test(x) && x !== 'README.md')) {
+      if (!logFiles.has(f)) logFiles.set(f, (await readAt(b.ref, `state/log/${f}`)).trim());
+    }
+  }
+  const log = [logMd.trimEnd(), ...[...logFiles.keys()].sort().map((f) => logFiles.get(f)).filter(Boolean)].join('\n') + '\n';
   // 보고서: 모든 에이전트 브랜치 + main
   const reports = []; const seen = new Set();
   for (const b of all.length ? all : [{ ref: 'main', name: 'main', date: '' }]) {
