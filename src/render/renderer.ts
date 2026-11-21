@@ -958,7 +958,22 @@ export class Renderer {
       this.debris.push({ x, y, vx: 0, vy: 0, g: 0, life: 0.4, max: 0.4, size: 0.15, rot: 0, spin: 0, suck: false, ...o });
     ctx.save();
     ctx.setLineDash([]);
-    if (has('squeegee')) {
+    if (has('scraper')) {
+      // 긁개 날: 움직이는 방향에 직각인 짧고 단단한 날 + 벗겨져 말리는 조각
+      const nx = moving ? -uy : 1;
+      const ny = moving ? ux : 0;
+      ctx.lineCap = 'butt';
+      ctx.strokeStyle = 'rgba(60,70,80,0.9)';
+      ctx.lineWidth = 5 * this.dpr;
+      ctx.beginPath();
+      ctx.moveTo(px - nx * r * 0.9, py - ny * r * 0.9);
+      ctx.lineTo(px + nx * r * 0.9, py + ny * r * 0.9);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(235,240,245,0.95)';
+      ctx.lineWidth = 1.5 * this.dpr;
+      ctx.stroke();
+      if (emit && hot && moving) push({ shape: 'chip', color: '#f4e8be', x: x + (Math.random() - 0.5) * R, y: y + (Math.random() - 0.5) * R * 0.4, vx: ux * 4 + (Math.random() - 0.5) * 3, vy: uy * 4 - 2, g: 14, life: 0.5, max: 0.5, size: 0.3, spin: 8 });
+    } else if (has('squeegee')) {
       // 고무 날: 움직이는 방향에 직각인 굵은 직선
       const nx = moving ? -uy : 1;
       const ny = moving ? ux : 0;

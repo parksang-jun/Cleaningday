@@ -709,7 +709,7 @@ try {
   // 실제 제품 몰 탭: 마켓 칩, 종류별 링크, 제휴 고지
   await page.click('[data-testid="tab-mall"]');
   await page.waitForSelector('[data-testid="mall"]');
-  assert((await page.locator('[data-testid^="mallcat-"]').count()) === 44, 'mall lists all 44 product categories (incl. household tip items)');
+  assert((await page.locator('[data-testid^="mallcat-"]').count()) === 45, 'mall lists all 45 product categories (incl. household tip items)');
   assert((await page.locator('[data-testid="market-amazon_us"].is-on').count()) === 1, 'English UI defaults to Amazon');
   await page.click('[data-testid="market-coupang"]');
   await page.waitForTimeout(100);

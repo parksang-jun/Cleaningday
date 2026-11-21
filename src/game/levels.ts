@@ -15,6 +15,7 @@
 // 각 스테이지의 오염은 "맞는 도구(+세정제)" 로만 지워진다(catalog.ts RECIPES). 지급(grants)은 그 오염이 처음 나오는 판에
 // 맞는 아이템을 다른 후보와 함께 주어, 플레이어가 여러 시도 끝에 맞는 조합을 찾게 한다.
 // 목표 시간(parSec)·제한시간(limitSec)은 봇(bot.ts) 플레이 시간 × 단계 배수 → resolveTiming()
+import { LEAVES_UNDER } from './catalog'
 import type { DirtType, ItemId, SurfaceType } from './catalog'
 
 export interface DirtPatch {
@@ -394,17 +395,17 @@ const WORLD_SEEDS: WorldSeed[] = [
         scale: 1.0,
         stages: [
           { scene: 'floor', dirt: ['dust'], grants: ['cloth', 'vacuum', 'sponge', 'allpurpose'], hint: 'hintDust', theme: 'morning' },
-          { scene: 'floor', dirt: ['stain', 'dust'], hint: 'hintTry', theme: 'kids' },
+          { scene: 'floor', dirt: ['stain', 'crumbs', 'dust'], hint: 'hintTry', theme: 'kids' },
           { scene: 'sofa', dirt: ['hair', 'dust'], grants: ['lintroller', 'rubberglove'], hint: 'hintHair', mode: 'rush', spawnType: 'hair', theme: 'cat' },
           { scene: 'window', dirt: ['film', 'dust'], grants: ['glass', 'squeegee', 'vinegar', 'newspaper', 'dishsoap'], hint: 'hintFilm', theme: 'pollen' },
           { scene: 'rug', dirt: ['mud', 'hair', 'dust'], hint: 'hintRug', mode: 'rush', spawnType: 'mud', theme: 'pet' },
-          { scene: 'shelf', dirt: ['film', 'stain'], hint: 'hintJournal', mode: 'spots', theme: 'movein' },
+          { scene: 'shelf', dirt: ['sticker', 'film'], grants: ['scraper', 'cookingoil'], hint: 'hintSticker', mode: 'spots', theme: 'movein' },
           { scene: 'floor', dirt: ['mud', 'stain', 'dust'], hint: 'hintMud', theme: 'rain' },
-          { scene: 'sofa', dirt: ['stain', 'hair'], grants: ['fabric'], hint: 'hintFabricStain', mode: 'spots', theme: 'party' },
-          { scene: 'window', dirt: ['stain', 'film', 'dust'], mode: 'dark', theme: 'blackout' },
-          { scene: 'livingMix', dirt: ['dust', 'hair', 'stain'], hint: 'hintZones', theme: 'guests' },
-          { scene: 'livingMix', dirt: ['stain', 'mud', 'hair', 'film'], mode: 'rush', spawnType: 'stain', theme: 'birthday' },
-          { scene: 'livingMix', dirt: ['stain', 'mud', 'hair', 'film', 'dust'], hint: 'hintBig', theme: 'marathon' },
+          { scene: 'sofa', dirt: ['spill', 'hair'], grants: ['fabric'], hint: 'hintSpill', mode: 'spots', theme: 'party' },
+          { scene: 'window', dirt: ['stain', 'film', 'dust'], hint: 'hintJournal', mode: 'dark', theme: 'blackout' },
+          { scene: 'livingMix', dirt: ['crumbs', 'hair', 'stain'], hint: 'hintZones', theme: 'guests' },
+          { scene: 'livingMix', dirt: ['spill', 'crumbs', 'hair', 'film'], mode: 'rush', spawnType: 'crumbs', theme: 'birthday' },
+          { scene: 'livingMix', dirt: ['stain', 'crumbs', 'hair', 'sticker', 'dust'], hint: 'hintBig', theme: 'marathon' },
         ],
       },
       {
@@ -414,32 +415,32 @@ const WORLD_SEEDS: WorldSeed[] = [
           { scene: 'desk', dirt: ['film', 'dust'], hint: 'hintLimit', theme: 'latenight' },
           { scene: 'bed', dirt: ['hair', 'dust'], mode: 'rush', spawnType: 'hair', theme: 'cat' },
           { scene: 'desk', dirt: ['stain', 'dust'], layered: true, hint: 'hintLayered', mode: 'spots', theme: 'kids' },
-          { scene: 'closet', dirt: ['film', 'stain', 'dust'], theme: 'movein' },
-          { scene: 'bed', dirt: ['stain', 'hair'], layered: true, theme: 'morning' },
+          { scene: 'closet', dirt: ['crayon', 'film', 'dust'], grants: ['bakingsoda'], hint: 'hintCrayon', theme: 'movein' },
+          { scene: 'bed', dirt: ['spill', 'crumbs', 'hair'], theme: 'morning' },
           { scene: 'floor', dirt: ['mud', 'dust'], layered: true, mode: 'rush', spawnType: 'mud', theme: 'rain' },
           { scene: 'mirror', dirt: ['film', 'dust'], mode: 'fragile', theme: 'precision' },
           { scene: 'roomMix', dirt: ['dust', 'hair', 'stain'], layered: true, mode: 'dark', theme: 'blackout' },
           { scene: 'desk', dirt: ['film', 'stain', 'dust'], layered: true, mode: 'spots', theme: 'latenight' },
-          { scene: 'closet', dirt: ['stain', 'film', 'mud'], layered: true, theme: 'rental' },
+          { scene: 'closet', dirt: ['sticker', 'crayon', 'film'], theme: 'rental' },
           { scene: 'roomMix', dirt: ['mud', 'hair', 'stain', 'film'], layered: true, mode: 'rush', spawnType: 'hair', theme: 'pet' },
-          { scene: 'roomMix', dirt: ['stain', 'mud', 'hair', 'film', 'dust'], layered: true, hint: 'hintBig', theme: 'marathon' },
+          { scene: 'roomMix', dirt: ['stain', 'crayon', 'hair', 'crumbs', 'dust'], layered: true, hint: 'hintBig', theme: 'marathon' },
         ],
       },
       {
         id: 'kitchen',
         scale: 1.2,
         stages: [
-          { scene: 'stove', dirt: ['grease', 'dust'], grants: ['degreaser', 'scrubpad', 'bakingsoda'], hint: 'hintGrease', theme: 'cooking' },
+          { scene: 'stove', dirt: ['grease', 'dust'], grants: ['degreaser', 'scrubpad'], hint: 'hintGrease', theme: 'cooking' },
           { scene: 'sink', dirt: ['scale', 'grease'], grants: ['descaler', 'citric'], hint: 'hintScale', theme: 'morning' },
           { scene: 'table', dirt: ['stain', 'grease'], hint: 'hintWoodGrease', mode: 'fragile', theme: 'precision' },
-          { scene: 'fridge', dirt: ['film', 'stain'], hint: 'hintBudget', mode: 'spots', theme: 'kids' },
+          { scene: 'fridge', dirt: ['sticker', 'stain'], hint: 'hintBudget', mode: 'spots', theme: 'kids' },
           { scene: 'kitchenTile', dirt: ['grease', 'stain', 'dust'], layered: true, mode: 'rush', spawnType: 'grease', theme: 'cooking' },
           { scene: 'stove', dirt: ['grease', 'stain'], layered: true, mode: 'spots', theme: 'bbq' },
           { scene: 'sink', dirt: ['scale', 'grease', 'film'], mode: 'dark', theme: 'blackout' },
           { scene: 'fridge', dirt: ['stain', 'grease', 'film'], layered: true, theme: 'party' },
-          { scene: 'kitchenMix', dirt: ['grease', 'stain', 'dust'], theme: 'guests' },
+          { scene: 'kitchenMix', dirt: ['grease', 'spill', 'crumbs'], theme: 'guests' },
           { scene: 'kitchenMix', dirt: ['grease', 'scale', 'stain'], layered: true, mode: 'spots', theme: 'rental' },
-          { scene: 'table', dirt: ['stain', 'film', 'dust'], layered: true, theme: 'holiday' },
+          { scene: 'table', dirt: ['spill', 'crumbs', 'film'], theme: 'holiday' },
           { scene: 'kitchenMix', dirt: ['grease', 'scale', 'stain', 'film', 'dust'], layered: true, hint: 'hintBig', theme: 'marathon' },
         ],
       },
@@ -526,12 +527,12 @@ const WORLD_SEEDS: WorldSeed[] = [
           { scene: 'seat', dirt: ['dust', 'hair'], grants: ['interior'], hint: 'hintSeat', theme: 'morning' },
           { scene: 'dashboard', dirt: ['dust', 'film'], hint: 'hintVinyl', mode: 'fragile', theme: 'precision' },
           { scene: 'floorMat', dirt: ['mud', 'dust', 'hair'], mode: 'rush', spawnType: 'mud', theme: 'rain' },
-          { scene: 'seat', dirt: ['stain', 'hair'], hint: 'hintFabricStain', mode: 'spots', theme: 'kidsCar' },
+          { scene: 'seat', dirt: ['spill', 'crumbs', 'hair'], hint: 'hintFabricStain', mode: 'spots', theme: 'kidsCar' },
           { scene: 'dashboard', dirt: ['film', 'grease', 'dust'], hint: 'hintVinylGrease', theme: 'roadtrip' },
           { scene: 'trunk', dirt: ['mud', 'dust', 'stain'], layered: true, theme: 'beach' },
           { scene: 'seat', dirt: ['stain', 'mud', 'hair'], layered: true, mode: 'rush', spawnType: 'hair', theme: 'pet' },
           { scene: 'floorMat', dirt: ['mud', 'stain', 'hair'], layered: true, mode: 'dark', theme: 'latenight' },
-          { scene: 'carIntMix', dirt: ['dust', 'film', 'stain'], theme: 'weekend' },
+          { scene: 'carIntMix', dirt: ['crumbs', 'film', 'stain'], theme: 'weekend' },
           { scene: 'carIntMix', dirt: ['stain', 'hair', 'grease', 'film'], layered: true, mode: 'spots', theme: 'kidsCar' },
           { scene: 'trunk', dirt: ['mud', 'hair', 'stain', 'grease'], layered: true, mode: 'rush', spawnType: 'mud', theme: 'beach' },
           { scene: 'carIntMix', dirt: ['stain', 'mud', 'hair', 'grease', 'film', 'dust'], layered: true, hint: 'hintBig', theme: 'marathon' },
@@ -584,6 +585,15 @@ function patchesFor(seed: StageSeed, t: number, scale: number): DirtPatch[] {
       p.underAmount = [round2(0.25 + 0.1 * t), round2(0.35 + 0.15 * t)]
       p.underChance = 0.5
     }
+    // 걷어내면 반드시 밑에 남는 것: 쏟은 음료 → 얼룩, 스티커 → 끈끈이 (구역·모드와 상관없이)
+    const leaves = LEAVES_UNDER[type]
+    if (leaves) {
+      p.under = leaves
+      p.underAmount = [0.4, 0.6]
+      p.underChance = 1
+    }
+    // 부스러기는 넓게 흩어져 있다 (낱알이 여기저기)
+    if (type === 'crumbs' && mode !== 'spots') p.coverage = round2(0.1 + 0.06 * t)
     out.push(p)
   })
   return out
@@ -620,7 +630,7 @@ const MESS_SCENE: Record<SceneId, MessKind> = {
 }
 /** 종류별로 "새로 생기는" 오염 후보 (그 판에 이미 있는 오염 중에서 고른다 — 플레이어가 지울 도구를 반드시 갖고 있도록) */
 const MESS_DIRT: Record<MessKind, DirtType[]> = {
-  kids: ['mud', 'dust', 'stain'],
+  kids: ['crumbs', 'mud', 'dust', 'stain'],
   pet: ['hair', 'dust', 'mud'],
   splatter: ['grease', 'stain', 'dust'],
   drift: ['dust', 'film'],
@@ -630,7 +640,7 @@ const MESS_DIRT: Record<MessKind, DirtType[]> = {
 }
 const MESS_PATTERN: Record<MessKind, MessPattern> = { kids: 'trail', pet: 'trail', splatter: 'scatter', drift: 'haze', splash: 'scatter', leaves: 'scatter', birds: 'scatter' }
 /** 재오염으로는 생기지 않는 오염 (곰팡이·이끼·녹은 "자라는" 것이지 "떨어지는" 것이 아니다) */
-const NEVER_FRESH: DirtType[] = ['mold', 'moss', 'iron']
+const NEVER_FRESH: DirtType[] = ['mold', 'moss', 'iron', 'sticker', 'glue', 'crayon', 'spill']
 
 export function messFor(seed: StageSeed, id: number, tier: TierDef, total = 0): MessDef | undefined {
   if (id < MESS_FROM) return undefined

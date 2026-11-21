@@ -21,8 +21,7 @@ import {
   type NoEffectReason,
   type SurfaceType,
   type ToolFamily,
-  type ToolSpec,
-} from './catalog'
+  type ToolSpec, BLOT_DIRT, PUSHED_DIRT,} from './catalog'
 import { GRID_H, GRID_W, type LevelDef, type MessKind } from './levels'
 import { mulberry32 } from './rng'
 
@@ -61,6 +60,19 @@ export interface Timing {
 export function recipeKey(dirt: DirtType, tool: ToolFamily, cleaner: CleanerFamily | null): string {
   return `${dirt}|${tool}|${cleaner ?? '-'}`
 }
+
+/** 문지름이 이어진 것으로 보는 최대 간격(초) */
+const STROKE_GAP_SEC = 0.25
+/** 눌러 흡수: 이 속도(칸/초) 이하면 "누르고 있다" → 흡수 배율 BLOT_BONUS, BLOT_FAST 이상이면 "문지른다" → BLOT_RUB 배율 + 번짐 */
+export const BLOT_SLOW = 3
+export const BLOT_FAST = 10
+export const BLOT_BONUS = 1.5
+export const BLOT_RUB = 0.1
+/** 번짐·밀려남: 초당 옮겨지는 양, 옮겨지는 거리(칸) */
+const SMEAR_RATE = 1.4
+const SMEAR_REACH = 1.6
+const PUSH_RATE = 6
+const PUSH_REACH = 2.2
 
 export class CleanSession {
   readonly w = GRID_W
@@ -117,6 +129,15 @@ export class CleanSession {
   engaged = false
   private lastHarmAt = -10
   private lastBlockedAt = -10
+  /** 손놀림: 직전 문지른 자리·시각, 매끄럽게 한 속도(칸/초)와 방향 — 밀려나는 부스러기·번지는 음료가 이걸 본다 */
+  private strokeX = 0
+  private strokeY = 0
+  private strokeT = -10
+  private strokeDirX = 0
+  private strokeDirY = 0
+  strokeSpeed = 0
+  /** 지금 눌러서 흡수하는 중인가 (HUD 안내용, 세션 시각) */
+  blotUntil = -1
   private lastEmptyAt = -10
   private lastMixAt = -10
   private lastNoEffectAt = new Map<string, number>()
@@ -724,6 +745,80 @@ export class CleanSession {
     events.push({ kind: 'noeffect', reason, dirt, surface, item })
   }
 
+  /** 문지른 자리로 손놀림 속도·방향을 갱신한다. 멀리 건너뛴 것(손을 뗐다 다른 곳을 누름)은 속도로 치지 않는다 */
+  private trackStroke(cx: number, cy: number, radius: number) {
+    const gap = this.time - this.strokeT
+    const dx = cx - this.strokeX
+    const dy = cy - this.strokeY
+    const dist = Math.hypot(dx, dy)
+    if (gap <= 0 || gap > STROKE_GAP_SEC || dist > radius * 1.5) {
+      this.strokeSpeed = 0
+      this.strokeDirX = 0
+      this.strokeDirY = 0
+    } else {
+      this.strokeSpeed += (dist / gap - this.strokeSpeed) * 0.35
+      if (dist > 1e-3) {
+        this.strokeDirX = dx / dist
+        this.strokeDirY = dy / dist
+      }
+    }
+    this.strokeX = cx
+    this.strokeY = cy
+    this.strokeT = this.time
+  }
+
+  /**
+   * i 칸의 오염 일부를 (dirX,dirY) 쪽 옆 칸으로 옮긴다 — 총량은 그대로, 자리만 바뀐다(밀려남·번짐).
+   * 방향이 없으면 (cx,cy) 에서 바깥쪽으로. 옮길 자리가 없으면(벽·다른 오염·못 놓는 표면) 그대로 둔다.
+   */
+  private shiftDirt(i: number, cx: number, cy: number, amt: number, reach: number): boolean {
+    const x = i % this.w
+    const y = (i - x) / this.w
+    let dx = this.strokeDirX
+    let dy = this.strokeDirY
+    if (this.strokeSpeed < 0.5 || (dx === 0 && dy === 0)) {
+      dx = x + 0.5 - cx
+      dy = y + 0.5 - cy
+      const d = Math.hypot(dx, dy)
+      if (d < 1e-3) return false
+      dx /= d
+      dy /= d
+    }
+    const tx = Math.round(x + dx * reach)
+    const ty = Math.round(y + dy * reach)
+    if (tx < 0 || ty < 0 || tx >= this.w || ty >= this.h) return false
+    const j = ty * this.w + tx
+    if (j === i) return false
+    const t = this.type[i]
+    if (this.amount[j] > 0 && this.type[j] !== t) return false
+    if (!DIRT_SURFACES[DIRT_TYPES[t]].includes(this.surfaceAt(j))) return false
+    const m = Math.min(amt, this.amount[i], 1 - this.amount[j])
+    if (m <= 0) return false
+    if (this.amount[j] <= 0) {
+      this.type[j] = t
+      this.dirtyCellsSeen++
+      if (this.shine[j]) {
+        this.shine[j] = 0
+        this.shineCells--
+      }
+    }
+    this.amount[j] += m
+    this.amount[i] -= m
+    if (this.amount[i] < 0.02) {
+      // 거의 다 옮겨 갔다 — 남은 티끌도 넘기고, 밑에 깔린 것이 있으면 드러낸다
+      const rest = Math.min(this.amount[i], 1 - this.amount[j])
+      this.amount[j] += rest
+      this.amount[i] -= rest
+      if (this.amount[i] <= 1e-4 && this.under[i] > 0) {
+        this.amount[i] = this.under[i]
+        this.type[i] = this.underType[i]
+        this.under[i] = 0
+      }
+    }
+    this.version++
+    return true
+  }
+
   /** 도구로 (cx,cy) 지점을 dt 초 동안 문지름 — 레시피가 맞는 칸만 지워진다 */
   scrub(tool: ToolSpec, cx: number, cy: number, dt: number): SessionEvent[] {
     const events: SessionEvent[] = []
@@ -735,6 +830,12 @@ export class CleanSession {
       return events
     }
     this.applyHarm(tool, cx, cy, dt, events)
+    this.trackStroke(cx, cy, tool.radius)
+    // 눌러 흡수하는 오염: 손이 느릴수록 잘 빨아들이고, 빠르게 문지르면 거의 안 닦이고 번진다
+    const sp = this.strokeSpeed
+    const blotRate = sp <= BLOT_SLOW ? BLOT_BONUS : sp >= BLOT_FAST ? BLOT_RUB : BLOT_BONUS + ((sp - BLOT_SLOW) / (BLOT_FAST - BLOT_SLOW)) * (BLOT_RUB - BLOT_BONUS)
+    let pushed: { dirt: DirtType; surface: SurfaceType } | null = null
+    let smeared: { dirt: DirtType; surface: SurfaceType } | null = null
     const cleared: number[] = []
     const revealed: number[] = []
     const resistMul = this.level.resistMul
@@ -757,6 +858,11 @@ export class CleanSession {
       const det = s && s.until > this.time ? s.det : null
       const fam = det ? det.family : null
       const recipe = matchRecipe(dirt, surface, tool, fam)
+      if (!recipe && !isRinse && PUSHED_DIRT.includes(dirt)) {
+        // 부스러기: 닦개로는 지워지지 않고 밀려나기만 한다
+        if (this.shiftDirt(i, cx, cy, Math.min(a, PUSH_RATE * dt * w), PUSH_REACH)) pushed = { dirt, surface }
+        return
+      }
       if (!recipe) {
         // 이유는 "양"으로 가중 — 얇게 깔린 먼지보다 플레이어가 노리는 진한 얼룩의 이유를 말해 준다
         const reason = diagnose(dirt, surface, tool, fam)
@@ -776,6 +882,12 @@ export class CleanSession {
       const mult = det ? det.mult[dirt] : 1
       const pro = Boolean(tool.pro || det?.pro)
       let rate = (tool.power * tool.effect[dirt] * recipe.speed * mult * w * this.boost) / (DIRT_RESIST[dirt] * resistMul)
+      if (BLOT_DIRT.includes(dirt) && !tool.families.includes('steam')) {
+        rate *= blotRate
+        if (sp >= BLOT_FAST) {
+          if (this.shiftDirt(i, cx, cy, Math.min(a * 0.5, SMEAR_RATE * dt * w), SMEAR_REACH)) smeared = { dirt, surface }
+        } else if (sp <= BLOT_SLOW) this.blotUntil = this.time + 0.25
+      }
       // 찌든 때: 마지막 층은 일반 도구로는 더디다 (고성능 장비는 끝까지 같은 속도)
       if (!pro && a < TAIL_AMOUNT) rate *= tailRate
       const next = Math.max(0, a - rate * dt)
@@ -796,6 +908,15 @@ export class CleanSession {
         }
       }
     }
+    const note = (hit: { dirt: DirtType; surface: SurfaceType } | null, reason: NoEffectReason) => {
+      if (!hit) return
+      const set = this.tried.get(hit.dirt) ?? new Set<string>()
+      set.add(tool.id)
+      this.tried.set(hit.dirt, set)
+      this.noEffect(reason, hit.dirt, hit.surface, tool.id, events)
+    }
+    note(pushed, 'pushed')
+    note(smeared, 'smeared')
     if (revealed.length) events.push({ kind: 'revealed', cells: revealed })
     if (cleared.length) {
       events.push({ kind: 'cleared', cells: cleared })

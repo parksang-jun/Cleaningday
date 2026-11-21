@@ -4,9 +4,25 @@
 // 맞지 않는 조합은 아무리 문질러도 지워지지 않는다(RECIPES). 플레이어는 여러 시도 끝에 맞는 조합을 찾는다.
 // 수치는 "일반(무브랜드) 기준 제품"의 게임 성능이다. 스폰서 제품은 sponsor.ts 가 시험 결과를 이 기준 대비로 환산한다.
 
-/** 오염 12종 */
-export type DirtType = 'dust' | 'hair' | 'mud' | 'grease' | 'stain' | 'scale' | 'soap' | 'mold' | 'moss' | 'iron' | 'tar' | 'film';
-export const DIRT_TYPES: DirtType[] = ['dust', 'hair', 'mud', 'grease', 'stain', 'scale', 'soap', 'mold', 'moss', 'iron', 'tar', 'film'];
+/**
+ * 오염 17종. 뒤의 5종은 "닦는 방법이 다른" 오염이다:
+ *  · crumbs  부스러기 — 걸레로 닦으면 밀려나기만 한다. 청소기로 빨아들인다.
+ *  · spill   쏟은 음료 — 문지르면 번진다. 걸레를 꾹 눌러 흡수시키고, 밑에 남은 얼룩은 따로 지운다.
+ *  · sticker 스티커 — 긁개로 떼거나 기름에 불려 벗긴다. 떼면 끈끈이가 남는다.
+ *  · glue    끈끈이 — 스티커 밑에만 있다. 식용유·타르 리무버로 녹여 닦는다.
+ *  · crayon  낙서 — 치약·베이킹소다의 고운 연마로 지운다.
+ * (새 종류는 반드시 목록 끝에 붙인다 — 저장·격자가 순서 번호를 쓴다)
+ */
+export type DirtType = 'dust' | 'hair' | 'mud' | 'grease' | 'stain' | 'scale' | 'soap' | 'mold' | 'moss' | 'iron' | 'tar' | 'film' | 'crumbs' | 'spill' | 'sticker' | 'glue' | 'crayon';
+export const DIRT_TYPES: DirtType[] = ['dust', 'hair', 'mud', 'grease', 'stain', 'scale', 'soap', 'mold', 'moss', 'iron', 'tar', 'film', 'crumbs', 'spill', 'sticker', 'glue', 'crayon'];
+
+/** 문지르는 방식에 반응하는 오염 */
+/** 맞지 않는 닦개로 문지르면 밀려나기만 하는 오염 */
+export const PUSHED_DIRT: DirtType[] = ['crumbs'];
+/** 빠르게 문지르면 번지고, 천천히 눌러야 흡수되는 오염 */
+export const BLOT_DIRT: DirtType[] = ['spill'];
+/** 이 오염을 다 걷어내면 반드시 그 밑에 남는 것 (스테이지 생성 시 아래층으로 깐다) */
+export const LEAVES_UNDER: Partial<Record<DirtType, DirtType>> = { spill: 'stain', sticker: 'glue' };
 
 /** 표면: 원목 · 타일 · 스테인리스 · 유리 · 도기 · 패브릭 · 석재 · 도장(자동차·담장·문) · 벽돌 · 플라스틱 · 금속(휠·그릴) · 비닐(대시보드) */
 export type SurfaceType = 'wood' | 'tile' | 'steel' | 'glass' | 'ceramic' | 'fabric' | 'stone' | 'paint' | 'brick' | 'plastic' | 'metal' | 'vinyl';
@@ -26,12 +42,17 @@ export const DIRT_SURFACES: Record<DirtType, SurfaceType[]> = {
   iron: ['metal', 'paint', 'steel'],
   tar: ['paint', 'glass', 'plastic', 'metal'],
   film: ['glass', 'steel', 'wood', 'vinyl', 'plastic', 'paint', 'tile', 'ceramic'],
+  crumbs: ['wood', 'tile', 'steel', 'ceramic', 'fabric', 'stone', 'plastic', 'vinyl'],
+  spill: ['wood', 'tile', 'steel', 'ceramic', 'fabric', 'stone', 'plastic', 'vinyl'],
+  sticker: ['glass', 'wood', 'steel', 'plastic', 'paint', 'tile', 'ceramic', 'metal', 'vinyl'],
+  glue: ['glass', 'wood', 'steel', 'plastic', 'paint', 'tile', 'ceramic', 'metal', 'vinyl'],
+  crayon: ['wood', 'paint', 'tile', 'steel', 'glass', 'ceramic', 'stone', 'plastic', 'vinyl'],
 };
 
 export type Chemistry = 'neutral' | 'alkaline' | 'acid' | 'chlorine' | 'solvent' | 'oxygen';
 
 /** 도구군 — 레시피는 도구군으로 판정하고, 프리미엄 도구는 여러 군을 겸한다 */
-export type ToolFamily = 'cloth' | 'vacuum' | 'lintroller' | 'sponge' | 'scrubpad' | 'tilebrush' | 'squeegee' | 'deckbrush' | 'hose' | 'washer' | 'mitt' | 'wheelbrush' | 'rinse' | 'steam' | 'eraser' | 'claybar';
+export type ToolFamily = 'scraper' | 'cloth' | 'vacuum' | 'lintroller' | 'sponge' | 'scrubpad' | 'tilebrush' | 'squeegee' | 'deckbrush' | 'hose' | 'washer' | 'mitt' | 'wheelbrush' | 'rinse' | 'steam' | 'eraser' | 'claybar';
 /** 세정제군 */
 export type CleanerFamily = 'allpurpose' | 'glass' | 'degreaser' | 'descaler' | 'bathroom' | 'mold' | 'fabric' | 'deck' | 'moss' | 'carshampoo' | 'wheel' | 'tar' | 'interior' | 'bakingsoda' | 'oxy' | 'vinegar' | 'polish' | 'dishsoap' | 'soapsoda' | 'soapvinegar' | 'fizz';
 
@@ -54,6 +75,7 @@ export type ToolId =
   | 'toothbrush'
   | 'newspaper'
   | 'claybar'
+  | 'scraper'
   // 프리미엄(상점 전용) — 더 빠르거나 세정제 없이도 닦임
   | 'cordlessvac'
   | 'scrubber'
@@ -101,6 +123,11 @@ export const DIRT_RESIST: Record<DirtType, number> = {
   iron: 0.5,
   tar: 0.44,
   film: 0.28,
+  crumbs: 0.12,
+  spill: 0.3,
+  sticker: 0.5,
+  glue: 0.4,
+  crayon: 0.42,
 };
 
 /**
@@ -127,10 +154,15 @@ export const DIRT_COLOR: Record<DirtType, [number, number, number, number]> = {
   iron: [86, 52, 30, 0.95],
   tar: [22, 20, 22, 0.97],
   film: [190, 214, 230, 0.55],
+  crumbs: [196, 150, 88, 1],
+  spill: [150, 84, 40, 0.82],
+  sticker: [244, 232, 190, 1],
+  glue: [214, 196, 150, 0.6],
+  crayon: [226, 64, 84, 0.95],
 };
 
 /** 오염 질감(렌더링): 균일막 · 가닥 · 점 · 얼룩 · 분말 · 반투명 */
-export type DirtTexture = 'film' | 'strand' | 'dots' | 'blotch' | 'powder' | 'sheen';
+export type DirtTexture = 'film' | 'strand' | 'dots' | 'blotch' | 'powder' | 'sheen' | 'bits' | 'puddle' | 'label' | 'scribble';
 export const DIRT_TEXTURE: Record<DirtType, DirtTexture> = {
   dust: 'powder',
   hair: 'strand',
@@ -144,6 +176,11 @@ export const DIRT_TEXTURE: Record<DirtType, DirtTexture> = {
   iron: 'dots',
   tar: 'dots',
   film: 'sheen',
+  crumbs: 'bits',
+  spill: 'puddle',
+  sticker: 'label',
+  glue: 'film',
+  crayon: 'scribble',
 };
 
 export type Effect = Record<DirtType, number>;
@@ -215,6 +252,8 @@ export const BASE_TOOLS: Record<ToolId, ToolSpec> = {
   /** 신문지 — 유리 마무리 (잉크의 기름이 잔여물을 잡고 보풀이 없다) */
   newspaper: { id: 'newspaper', base: 'newspaper', kind: 'tool', families: ['cloth'], radius: 3.2, power: 1.15, effect: effect(1, { film: 1.2 }), harms: [], onlyOn: ['glass'], cost: 0 },
   /** 클레이바 — 윤활(카샴푸)과 함께 도장면의 철분·타르를 떼어낸다. 떨어뜨리면 버릴 것 */
+  /** 플라스틱 긁개 — 스티커·테이프를 모서리부터 밀어 뗀다. 유리·타일·스테인리스엔 안전, 원목·도장·비닐은 긁힌다 */
+  scraper: { id: 'scraper', base: 'scraper', kind: 'tool', families: ['scraper'], radius: 2.0, power: 1.2, effect: flat(1), harms: ['wood', 'paint', 'vinyl', 'fabric'], cost: 0 },
   claybar: { id: 'claybar', base: 'claybar', kind: 'tool', families: ['claybar'], radius: 2.2, power: 1.0, effect: flat(1), harms: [], onlyOn: ['paint', 'glass'], cost: 0 },
   // ---- 프리미엄: 실제로 더 빨리 닦이는 장비 (상점 구매) ----
   cordlessvac: { id: 'cordlessvac', base: 'cordlessvac', kind: 'tool', families: ['vacuum', 'lintroller'], radius: 5.2, power: 1.8, effect: flat(1), harms: [], cost: 600, premium: true, pro: true },
@@ -437,13 +476,39 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 1.0 },
     { tools: ['sponge', 'deckbrush'], cleaner: 'deck', on: ['plastic', 'paint'], speed: 0.9 }, // 실외 가구의 뿌연 막
     { tools: ['cloth', 'sponge'], cleaner: 'dishsoap', on: ['wood', 'steel', 'tile', 'ceramic', 'paint'], speed: 0.9 }, // 손때·기름막은 주방세제 희석액을 꼭 짠 걸레로 (다목적 세정제로는 번지기만 한다)
+    { tools: ['cloth', 'sponge'], cleaner: 'soapsoda', on: ['wood', 'steel', 'tile', 'ceramic', 'paint'], speed: 0.9 }, // 베이킹소다가 남은 자리에 주방세제가 섞여도 손때는 닦인다
     { tools: ['mitt'], cleaner: 'carshampoo', on: ['paint', 'glass', 'plastic'], speed: 1.0 },
     { tools: ['eraser'], not: ['fabric'], speed: 1.1 },
     { tools: ['steam'], not: ['fabric'], speed: 1.0 },
   ],
+  crumbs: [
+    { tools: ['vacuum'], speed: 1.3 }, // 빨아들인다 — 걸레·스펀지로 닦으면 밀려나기만 한다(PUSHED_DIRT)
+    { tools: ['lintroller'], on: ['fabric'], speed: 0.9 },
+  ],
+  spill: [
+    { tools: ['cloth', 'sponge'], speed: 1.0 }, // 꾹 눌러 흡수 — 빠르게 문지르면 번진다(BLOT_DIRT)
+    { tools: ['steam'], speed: 0.8 },
+  ],
+  sticker: [
+    { tools: ['scraper'], speed: 1.0 }, // 긁개 (원목·도장·비닐은 긁힌다 → 기름으로)
+    { tools: ['cloth', 'sponge'], cleaner: 'tar', speed: 0.55 }, // 꿀팁: 식용유를 발라 불린 뒤 문질러 벗긴다
+    { tools: ['steam'], speed: 1.0 },
+  ],
+  glue: [
+    { tools: ['cloth', 'sponge'], cleaner: 'tar', speed: 1.0 }, // 식용유·타르 리무버가 끈끈이를 녹인다
+    { tools: ['eraser'], speed: 0.8 },
+    { tools: ['steam'], speed: 0.8 },
+  ],
+  crayon: [
+    { tools: ['sponge', 'cloth'], cleaner: 'bakingsoda', speed: 1.0 }, // 꿀팁: 젖은 걸레에 베이킹소다를 묻혀 — 고운 연마가 왁스를 벗긴다 (도장면도 안전)
+    { tools: ['cloth', 'sponge', 'tilebrush'], cleaner: 'polish', speed: 1.0 }, // 흰 치약도 같은 원리 (도장면은 흠집)
+    { tools: ['sponge', 'cloth'], cleaner: 'soapsoda', speed: 1.15 },
+    { tools: ['eraser'], speed: 1.2 }, // 멜라민 스펀지
+    { tools: ['sponge'], cleaner: 'allpurpose', on: ['tile', 'plastic', 'glass', 'steel', 'ceramic'], speed: 0.5 }, // 매끈한 면은 중성세제로도 느리게
+  ],
 };
 
-export type NoEffectReason = 'wrong_tool' | 'need_cleaner' | 'wrong_cleaner' | 'wrong_surface';
+export type NoEffectReason = 'wrong_tool' | 'need_cleaner' | 'wrong_cleaner' | 'wrong_surface' | 'pushed' | 'smeared';
 
 /** 오염·표면·도구·(활성 세정제군) → 맞는 레시피, 없으면 null */
 export function matchRecipe(dirt: DirtType, surface: SurfaceType, tool: ToolSpec, cleaner: CleanerFamily | null): Recipe | null {
