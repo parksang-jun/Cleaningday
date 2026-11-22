@@ -1838,6 +1838,17 @@ body.has-banner .ad-banner {
   line-height: 1.5;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   animation: scan-in 0.25s ease-out;
+  /* 안내판이 그 밑의 오염을 못 닦게 막지 않도록: 터치는 통과시키고, 문지르는 동안은 흐리게 */
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.scan--dim {
+  opacity: 0.22;
+}
+.scan__under {
+  font-weight: 400;
+  opacity: 0.75;
+  font-size: 12px;
 }
 .scan__title {
   font-weight: 800;

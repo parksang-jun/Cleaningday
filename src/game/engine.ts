@@ -570,6 +570,13 @@ export class CleanSession {
   }
 
   /** 종류별 남은 양 */
+  /** 지금 겉에 드러나 있는 오염 종류 — 다른 오염 밑에 깔려 아직 안 보이는 층은 빠진다 */
+  get surfaceKinds(): DirtType[] {
+    const seen = new Set<number>()
+    for (let i = 0; i < this.amount.length; i++) if (this.amount[i] > 0) seen.add(this.type[i])
+    return DIRT_TYPES.filter((_, k) => seen.has(k))
+  }
+
   remainingOf(d: DirtType): number {
     return Math.max(0, this.perType[DIRT_TYPES.indexOf(d)])
   }

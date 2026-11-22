@@ -36,6 +36,8 @@ import { cancelComebackNotifications, notifySupported, refreshComebackNotificati
 
 const app = document.getElementById('app')!;
 const ads = new AdsController();
+// 보상형 광고가 보상 없이 끝나면 이유를 알린다 — 아무 반응이 없으면 "준다고 해 놓고 안 준다"로 보인다
+ads.onRewardedNotice = (why) => toast(esc(t(why === 'loading' ? 'adLoading' : why === 'closed' ? 'adClosedEarly' : 'adNotReady')), why === 'loading' ? 'info' : 'warn');
 let items: ItemEntry[] = allItems();
 /** 제휴 추천(실제 판매 제품) — 게임 아이템이 아니라 쇼호스트 카드 전용 */
 let affiliates: ItemEntry[] = [];
@@ -1205,12 +1207,16 @@ function useBooster(id: BoosterId): boolean {
     toast(esc(t('boosterUsed_shield', { s: def.amount })), 'good');
   } else {
     // 오염 스캔: 이 판의 모든 오염에 대해 도구·세정제를 알려 주고(수첩에도 기록), 잠시 패널로 보여 준다
+    // 겉에 보이는 오염을 먼저, 그 밑에 깔린 오염은 "겉을 닦은 뒤"라고 밝혀 뒤에 적는다
+    // (밑에 깔린 얼룩의 세제를 먼저 적어 두면, 그대로 따라 해도 겉의 막에는 듣지 않아 고장처럼 보였다)
     const rows: string[] = [];
-    for (const d of g.session.dirtKinds) {
-      if (g.session.remainingOf(d) <= 0) continue;
+    const onTop = new Set(g.session.surfaceKinds);
+    const left = g.session.dirtKinds.filter((d) => g.session.remainingOf(d) > 0);
+    for (const d of [...left.filter((k) => onTop.has(k)), ...left.filter((k) => !onTop.has(k))]) {
       g.hints.set(d, 2);
       const hr = hintRecipe(d);
-      rows.push(`<div class="scan__row"><b>${esc(t(`dirt_${d}`))}</b> → ${hr ? `${iconFor(familyItem(hr.tool))} ${esc(familyName(hr.tool))}${hr.cleaner ? ` + ${iconFor(familyItem(hr.cleaner))} ${esc(familyName(hr.cleaner))}` : ''}` : `<span class="muted">${esc(t('scanNoTool'))}</span>`}</div>`);
+      const under = onTop.has(d) ? '' : ` <span class="scan__under">${esc(t('scanUnder'))}</span>`;
+      rows.push(`<div class="scan__row${under ? ' scan__row--under' : ''}"><b>${esc(t(`dirt_${d}`))}</b>${under} → ${hr ? `${iconFor(familyItem(hr.tool))} ${esc(familyName(hr.tool))}${hr.cleaner ? ` + ${iconFor(familyItem(hr.cleaner))} ${esc(familyName(hr.cleaner))}` : ''}` : `<span class="muted">${esc(t('scanNoTool'))}</span>`}</div>`);
     }
     const panel = app.querySelector<HTMLElement>('[data-el="scan"]');
     if (panel) {
@@ -1510,6 +1516,7 @@ function bindInput(canvas: HTMLCanvasElement) {
     const p = gridAt(e.clientX, e.clientY);
     if (!p) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    app.querySelector('[data-el="scan"]')?.classList.add('scan--dim');
     game.view3d?.setPressing(true);
     game.pointer = p;
     game.pending = [];
@@ -1530,6 +1537,7 @@ function bindInput(canvas: HTMLCanvasElement) {
     game.pointer = p;
   };
   const up = () => {
+    app.querySelector('[data-el="scan"]')?.classList.remove('scan--dim');
     if (!game) return;
     game.view3d?.setPressing(false);
     game.pointer = null;
@@ -2307,8 +2315,6 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
           coinsShown *= 2;
           root.querySelector('[data-el="coins"]')!.textContent = t('reward', { c: coinsShown });
         } else {
-          // 광고가 아직 안 왔거나 끝까지 보지 않았다 — 아무 반응 없이 버튼만 꺼지면 고장난 것처럼 보인다
-          toast(t('adNotReady'), 'warn');
           b.disabled = false;
         }
       });

@@ -106,3 +106,16 @@ describe('닦는 방법이 다른 오염', () => {
     for (const d of ['crumbs', 'spill', 'sticker', 'glue', 'crayon'] as const) expect(DIRT_SURFACES[d].length).toBeGreaterThan(3)
   })
 })
+
+describe('겉에 드러난 오염', () => {
+  it('surfaceKinds 는 밑에 깔린 층을 빼고 지금 보이는 오염만 돌려준다', async () => {
+    const { CleanSession } = await import('./engine')
+    const { LEVELS } = await import('./levels')
+    const lv = LEVELS.find((l) => l.patches.some((p) => p.under))!
+    const s = new CleanSession(lv)
+    const top = new Set<string>()
+    s.amount.forEach((a, i) => a > 0 && top.add(s.dirtAt(i)))
+    expect(new Set(s.surfaceKinds)).toEqual(top)
+    expect(s.surfaceKinds.length).toBeLessThanOrEqual(s.dirtKinds.length)
+  })
+})

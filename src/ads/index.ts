@@ -133,16 +133,30 @@ export class AdsController {
     }
   }
 
+  /** 보상형 광고가 보상 없이 끝났을 때 화면에 알릴 곳 — 'loading': 광고를 불러오는 중, 'unavailable': 볼 광고가 없음, 'closed': 끝까지 보지 않음 */
+  onRewardedNotice: ((why: 'loading' | 'unavailable' | 'closed') => void) | null = null;
+
   /** 보상형 광고. placement는 분석용 라벨(revive, slide) */
   async showRewarded(placement: string): Promise<boolean> {
-    if (!this.ready || this.busy) return false;
+    if (this.busy) return false;
+    if (!this.ready) {
+      this.onRewardedNotice?.('unavailable');
+      return false;
+    }
     this.busy = true;
     track('ad_rewarded_request', { placement });
     try {
+      if (this.provider.rewardedReadyNow?.() === false) this.onRewardedNotice?.('loading');
       const ok = await this.provider.showRewarded();
       recoverAudio();
-      track(ok ? 'ad_rewarded_earned' : 'ad_rewarded_failed', { placement, provider: this.provider.name });
+      const miss = ok ? null : (this.provider.rewardedMiss ?? 'unavailable');
+      track(ok ? 'ad_rewarded_earned' : 'ad_rewarded_failed', { placement, provider: this.provider.name, ...(miss ? { why: miss } : {}) });
+      if (miss) this.onRewardedNotice?.(miss);
       return ok;
+    } catch (e) {
+      track('ad_rewarded_failed', { placement, provider: this.provider.name, why: String(e) });
+      this.onRewardedNotice?.('unavailable');
+      return false;
     } finally {
       this.busy = false;
     }

@@ -66,6 +66,12 @@ function adIds() {
 const ATT_SETTLE_MS = 700;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const CONSENT_TIMEOUT_MS = 6000;
+/** 광고를 띄우라고 한 뒤 이 시간 안에 화면에 나타나지 않으면 포기한다 */
+const SHOW_WATCHDOG_MS = 8000;
+/** 닫힌 뒤 보상 이벤트를 더 기다리는 시간 */
+const REWARD_GRACE_MS = 400;
+/** 준비된 보상형 광고가 없을 때 그 자리에서 불러오기를 기다리는 시간 */
+const REWARDED_LOAD_WAIT_MS = 7000;
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(label)), ms))]);
 }
@@ -239,53 +245,92 @@ export class AdMobAds implements AdsProvider {
     }
   }
 
+  /**
+   * 전체 화면 광고가 닫힐 때까지 기다린다. 닫힘·표시 실패 이벤트를 듣고, 광고가 끝내 뜨지 않으면(SHOW_WATCHDOG_MS) 포기한다.
+   * 플러그인의 show 호출 자체는 기다리지 않는다 — iOS 의 보상형 show 는 "보상을 받았을 때만" 끝나서,
+   * 중간에 닫으면 영영 돌아오지 않는다(그동안 광고 버튼이 모두 멈췄던 원인).
+   */
+  private async untilClosed(ev: { showed: string; dismissed: string; failed: string; rewarded?: string }, show: () => Promise<unknown>): Promise<{ shown: boolean; rewarded: boolean; error?: unknown }> {
+    const out: { shown: boolean; rewarded: boolean; error?: unknown } = { shown: false, rewarded: false };
+    let finish!: () => void;
+    const closed = new Promise<void>((resolve) => (finish = resolve));
+    const on = AdMob.addListener.bind(AdMob) as (name: string, fn: () => void) => Promise<{ remove: () => Promise<void> }>;
+    const handles = await Promise.all([
+      on(ev.showed, () => (out.shown = true)),
+      on(ev.dismissed, () => finish()),
+      on(ev.failed, () => finish()),
+      ...(ev.rewarded ? [on(ev.rewarded, () => (out.rewarded = true))] : []),
+    ]);
+    // 광고가 떠 있는 동안 웹뷰가 멈췄다 깨어나면 타이머와 "표시됨" 이벤트가 한꺼번에 밀려온다 — 한 박자 더 기다린 뒤에 판단한다
+    const watchdog = setTimeout(() => {
+      setTimeout(() => {
+        if (!out.shown) finish();
+      }, 300);
+    }, SHOW_WATCHDOG_MS);
+    try {
+      void show().catch((e) => {
+        out.error = e;
+        finish();
+      });
+      await closed;
+      // 보상 이벤트가 닫힘보다 한 박자 늦게 오는 기기가 있어 잠깐 더 기다린다
+      if (ev.rewarded && out.shown && !out.rewarded) await new Promise((r) => setTimeout(r, REWARD_GRACE_MS));
+      return out;
+    } finally {
+      clearTimeout(watchdog);
+      for (const h of handles) void h.remove();
+    }
+  }
+
   async showInterstitial(): Promise<boolean> {
     if (!this.interstitialReady) {
       void this.loadInterstitial();
       return false;
     }
     this.interstitialReady = false;
-    const dismissed = new Promise<void>((resolve) => {
-      void AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => resolve());
-      void AdMob.addListener(InterstitialAdPluginEvents.FailedToShow, () => resolve());
-    });
     try {
-      await AdMob.showInterstitial();
-      await dismissed;
-      return true;
-    } catch (e) {
-      this.note('전면표시', e);
-      track('ads_interstitial_show_error', { message: String(e) });
-      return false;
+      const r = await this.untilClosed(
+        { showed: InterstitialAdPluginEvents.Showed, dismissed: InterstitialAdPluginEvents.Dismissed, failed: InterstitialAdPluginEvents.FailedToShow },
+        () => AdMob.showInterstitial(),
+      );
+      if (r.error) {
+        this.note('전면표시', r.error);
+        track('ads_interstitial_show_error', { message: String(r.error) });
+      }
+      return r.shown;
     } finally {
       void this.loadInterstitial();
     }
   }
 
+  /** 마지막 보상형 광고가 보상 없이 끝난 이유 — 'unavailable': 볼 광고가 없음, 'closed': 끝까지 보지 않고 닫음 */
+  rewardedMiss: 'unavailable' | 'closed' | null = null;
+
+  rewardedReadyNow(): boolean {
+    return this.rewardedReady;
+  }
+
   async showRewarded(): Promise<boolean> {
+    this.rewardedMiss = null;
+    // 준비된 광고가 없으면 그 자리에서 한 번 불러와 본다(광고가 적게 채워지는 동안에는 미리 받아 둔 것이 없는 일이 잦다)
+    if (!this.rewardedReady) await withTimeout(this.loadRewarded(), REWARDED_LOAD_WAIT_MS, '보상형 광고 응답 없음').catch(() => undefined);
     if (!this.rewardedReady) {
-      void this.loadRewarded();
+      this.rewardedMiss = 'unavailable';
       return false;
     }
     this.rewardedReady = false;
-    let rewarded = false;
-    const handle = await AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
-      rewarded = true;
-    });
-    const dismissed = new Promise<void>((resolve) => {
-      void AdMob.addListener(RewardAdPluginEvents.Dismissed, () => resolve());
-      void AdMob.addListener(RewardAdPluginEvents.FailedToShow, () => resolve());
-    });
     try {
-      await AdMob.showRewardVideoAd();
-      await dismissed;
-      return rewarded;
-    } catch (e) {
-      this.note('보상형표시', e);
-      track('ads_rewarded_show_error', { message: String(e) });
-      return false;
+      const r = await this.untilClosed(
+        { showed: RewardAdPluginEvents.Showed, dismissed: RewardAdPluginEvents.Dismissed, failed: RewardAdPluginEvents.FailedToShow, rewarded: RewardAdPluginEvents.Rewarded },
+        () => AdMob.showRewardVideoAd(),
+      );
+      if (r.error && !r.rewarded) {
+        this.note('보상형표시', r.error);
+        track('ads_rewarded_show_error', { message: String(r.error) });
+      }
+      if (!r.rewarded) this.rewardedMiss = r.shown ? 'closed' : 'unavailable';
+      return r.rewarded;
     } finally {
-      void handle.remove();
       void this.loadRewarded();
     }
   }
