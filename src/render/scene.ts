@@ -9,6 +9,7 @@ import { mulberry32 } from '../game/rng';
 import * as M from './materials';
 import * as P from './props';
 import { drawCover, levelPhotoKey, scenePhoto } from './photos';
+import { levelLook, recolor, zoneLook } from './looks';
 
 type Ctx = CanvasRenderingContext2D;
 type Rnd = () => number;
@@ -21,11 +22,21 @@ export function paintLevel(ctx: Ctx, level: LevelDef, w: number, h: number): voi
     drawCover(ctx, own, w, h);
     return;
   }
+  // 같은 장면이 여러 판에 쓰이면 판마다 색·방향을 바꾼다(looks.ts). 실사 사진으로 그리는 장면은 그대로 둔다
   if (!level.zones) {
+    const { look, flip } = scenePhoto(level.scene) ? { look: null, flip: false } : levelLook(level);
+    ctx.save();
+    if (flip) {
+      ctx.translate(w, 0);
+      ctx.scale(-1, 1);
+    }
     paintScene(ctx, level.scene, w, h);
+    ctx.restore();
+    if (look) recolor(ctx, 0, 0, w, h, look);
     return;
   }
-  for (const z of level.zones) {
+  for (let zi = 0; zi < level.zones.length; zi++) {
+    const z = level.zones[zi];
     const x = Math.floor(z.x0 * w);
     const y = Math.floor(z.y0 * h);
     const zw = Math.ceil((z.x1 - z.x0) * w);
@@ -49,6 +60,7 @@ export function paintLevel(ctx: Ctx, level: LevelDef, w: number, h: number): voi
     ctx.translate(x, y);
     paintScene(ctx, z.scene, zw, zh);
     ctx.restore();
+    if (!scenePhoto(z.scene)) recolor(ctx, x, y, Math.min(zw, w - x), Math.min(zh, h - y), zoneLook(level, zi, z.surface));
     // 구역 경계: 단차 그늘 + 가는 하이라이트
     ctx.save();
     M.innerShadow(ctx, x, y, zw, zh, Math.max(6, w * 0.018), inset ? 0.18 : 0.12);
