@@ -76,6 +76,11 @@ const DIRT_TEXTURE: Record<DirtType, { kind: TextureKind; amount: number }> = {
   tar: { kind: 'squelch', amount: 0.7 },
   mold: { kind: 'scrape', amount: 0.5 },
   moss: { kind: 'rustle', amount: 0.6 },
+  crumbs: { kind: 'grit', amount: 0.8 }, // 바삭
+  spill: { kind: 'squelch', amount: 1 }, // 철벅
+  sticker: { kind: 'scrape', amount: 1 }, // 드드득
+  glue: { kind: 'squelch', amount: 0.8 }, // 끈적
+  crayon: { kind: 'scrape', amount: 0.4 },
 };
 const TEXTURE: Record<TextureKind, { type: BiquadFilterType; freq: number; q: number; lfoType: OscillatorType; lfo: number; gain: number }> = {
   grit: { type: 'highpass', freq: 2800, q: 0.7, lfoType: 'square', lfo: 23, gain: 0.5 }, // 짧은 모래알 튀는 소리

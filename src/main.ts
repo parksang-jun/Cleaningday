@@ -488,6 +488,7 @@ const SCRUB_PROFILE: Record<ToolId, ScrubProfile> = {
   toothbrush: 'brush',
   newspaper: 'cloth',
   claybar: 'mitt',
+  scraper: 'squeegee',
 };
 const MODE_ICON: Record<StageMode, string> = { clean: '', spots: '🎯', rush: '🐾', spread: '🦠', fragile: '⚠️', dark: '🔦' };
 const SPAWN_ICON: Partial<Record<DirtType, string>> = { hair: '🐈', mud: '🐾', stain: '🧃', grease: '🍳', tar: '🪰', dust: '🌼' };
@@ -906,7 +907,7 @@ function startLevel(id: number) {
         <button class="icon-btn hud__journal" data-act="journal" aria-label="${t('journal')}" data-testid="journal">📖<span class="badge" data-el="unknown"></span></button>
       </header>
       <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : goalText(level))}</div>
-      <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><canvas class="canvas3d" data-el="canvas3d" data-testid="canvas3d" hidden></canvas><div class="fever" data-el="fever" data-testid="fever" aria-hidden="true"><i data-el="fever-fill"></i></div><div class="combo" data-el="combo" hidden></div><div class="scan" data-el="scan" hidden></div><div class="mess-warn" data-el="mess-warn" data-testid="mess-warn" hidden></div><div class="gear" data-el="gear" data-testid="gear-tip" hidden></div></div>
+      <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><canvas class="canvas3d" data-el="canvas3d" data-testid="canvas3d" hidden></canvas><div class="fever" data-el="fever" data-testid="fever" aria-hidden="true"><i data-el="fever-fill"></i></div><div class="combo" data-el="combo" hidden></div><div class="blot" data-el="blot" data-testid="blot" hidden>💧 ${esc(t('blotHint'))}</div><div class="scan" data-el="scan" hidden></div><div class="mess-warn" data-el="mess-warn" data-testid="mess-warn" hidden></div><div class="gear" data-el="gear" data-testid="gear-tip" hidden></div></div>
       <div class="boosters" data-el="boosters" data-testid="boosters"></div>
       <nav class="toolbar" data-el="toolbar"></nav>
     </div>`;
@@ -1695,7 +1696,9 @@ function onNoEffect(reason: string, dirt: DirtType, surface: string, item: strin
   const name = itemName(findItem(item, items));
   const isGuided = guided(g.level);
   // 안내 단계에서만 "왜" 안 되는지 알려 준다. 그 뒤로는 효과 없음만 — 조합은 직접 찾아야 한다
-  toast(isGuided ? t(`noeffect_${reason}`, { item: name, dirt: t(`dirt_${dirt}`), surface: t(`surf_${surface}`) }) : t('noeffect_generic', { item: name }), 'warn');
+  // 밀려남·번짐은 "조합"이 아니라 "닦는 방법"에 대한 반응이라 언제나 이유를 말해 준다
+  const explain = isGuided || reason === 'pushed' || reason === 'smeared';
+  toast(explain ? t(`noeffect_${reason}`, { item: name, dirt: t(`dirt_${dirt}`), surface: t(`surf_${surface}`) }) : t('noeffect_generic', { item: name }), 'warn');
   track('no_effect', { level: g.level.id, dirt, reason, item });
   if (g.session.triesOn(dirt) >= HINT_AFTER_TRIES && knownRecipes(dirt).length === 0 && !g.hintNudged.has(dirt)) {
     g.hintNudged.add(dirt);
@@ -1844,6 +1847,9 @@ function step(dt: number) {
     const fill = app.querySelector<HTMLElement>('[data-el="fever-fill"]');
     if (fill) fill.style.width = `${Math.round(feverMeter(g.fever) * 100)}%`;
   }
+  // 눌러 흡수하는 중이면 알려 준다 (쏟은 음료는 가만히 대고 있어야 닦인다)
+  const blotEl = app.querySelector<HTMLElement>('[data-el="blot"]');
+  if (blotEl) blotEl.hidden = !(g.pointer && g.session.blotUntil > g.session.time);
   // HUD
   const pct = Math.floor(g.session.cleanliness * 100);
   (app.querySelector('[data-el="bar"]') as HTMLElement).style.width = `${Math.min(100, g.session.cleanliness * 100)}%`;

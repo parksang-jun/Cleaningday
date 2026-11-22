@@ -255,19 +255,20 @@ describe('engine', () => {
     expect(s.hasLayers).toBe(true)
     const bot = simulateBot(lv)
     expect(bot.passed).toBe(true)
-    // 직접: 아래층이 있는 칸을 찾아 윗층을 지움 (선반: 얼룩 위의 손때 → 주방세제 푼 물 + 걸레)
+    // 직접: 아래층이 있는 칸을 찾아 윗층을 지움 (선반: 끈끈이 위의 스티커 → 긁개)
     let cell = -1
     for (let i = 0; i < s.under.length; i++) if (s.under[i] > 0 && s.amount[i] > 0) { cell = i; break }
     expect(cell).toBeGreaterThanOrEqual(0)
     const cx = (cell % s.w) + 0.5
     const cy = Math.floor(cell / s.w) + 0.5
-    s.spray(BASE_DETERGENTS.dishsoap, cx, cy, 0.2)
+    expect(s.dirtAt(cell)).toBe('sticker')
     let revealed = false
     for (let k = 0; k < 600 && !revealed; k++) {
-      revealed = s.scrub(BASE_TOOLS.cloth, cx, cy, 1 / 30).some((e) => e.kind === 'revealed')
+      revealed = s.scrub(BASE_TOOLS.scraper, cx, cy, 1 / 30).some((e) => e.kind === 'revealed')
       s.tick(1 / 30)
     }
     expect(revealed).toBe(true)
+    expect(s.dirtAt(cell)).toBe('glue') // 스티커를 떼면 끈끈이가 남는다
     // 한 종류만 있는 판에서 다 지우면 typecleared
     const one = new CleanSession(LEVELS[0])
     let fired = false

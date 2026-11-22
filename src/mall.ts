@@ -53,6 +53,7 @@ export function marketConfigured(m: Market): boolean {
 /** 게임 아이템 계열 → 각 마켓에서 검색할 말 (실제 판매 제품군) */
 export const CATEGORY_QUERY: Record<ToolId | DetergentId, { ko: string; en: string; ja: string }> = {
   cloth: { ko: '극세사 청소 걸레', en: 'microfiber cleaning cloth', ja: 'マイクロファイバー クロス 掃除' },
+  scraper: { ko: '스티커 제거 스크래퍼', en: 'plastic sticker scraper', ja: 'シール剥がし スクレーパー' },
   vacuum: { ko: '청소기', en: 'vacuum cleaner', ja: '掃除機' },
   lintroller: { ko: '돌돌이 테이프 클리너', en: 'lint roller', ja: '粘着クリーナー コロコロ' },
   sponge: { ko: '청소 스펀지', en: 'cleaning sponge', ja: '掃除 スポンジ' },
@@ -112,6 +113,11 @@ export const DIRT_TO_ITEM: Record<DirtType, (ToolId | DetergentId)[]> = {
   iron: ['wheelcleaner', 'wheelbrush'],
   tar: ['tarremover', 'mitt'],
   film: ['glass', 'squeegee'],
+  crumbs: ['cordlessvac', 'vacuum'],
+  spill: ['cloth', 'fabric'],
+  sticker: ['scraper', 'cookingoil'],
+  glue: ['cookingoil', 'tarremover'],
+  crayon: ['magiceraser', 'bakingsoda'],
 };
 
 function queryFor(base: ToolId | DetergentId, m: Market): string {
