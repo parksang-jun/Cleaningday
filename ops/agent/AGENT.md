@@ -105,7 +105,7 @@ Sparkle Clean / 싹싹 클린 게임 사업을 예약 작업으로 돌리는 AI 
 2. **만든다 — 바로 올릴 수 있는 완성 영상 3개(나레이션·소리 포함).** 기획서만 쓰고 끝내지 않는다.
    - `npm ci && npm run build` 후, 소재마다 `ads/<소재ID>/spec.json` 을 쓰고 `node scripts/ad-montage.mjs --spec ops/agent/ads/<소재ID>/spec.json --out ops/agent/ads/<소재ID>/final.mp4` 로 만든다. 여러 판의 실제 플레이 3~4장면 + 장면별 한 줄 자막 + 한국어 나레이션 + 게임 소리 + 끝 화면이 한 영상(25~30초, 1080x1920)이 된다. spec 형식은 스크립트 맨 위 주석 참고.
    - 장면은 서로 다른 지역·오염·도구가 나오게 고른다(`node scripts/ad-levels.mjs <판 번호…>` 로 그 판의 오염과 조합을 본다). 녹화는 게임이 힌트로 알려 주는 조합 그대로 닦는다 — `steps` 는 비워 둔다. 마지막 장면은 끝까지 닦이는 쉬운 판을 `"from": "end"` 로 넣어 별이 뜨는 결과 화면으로 끝낸다(녹화가 사람보다 느려 어려운 판은 제한 시간 안에 못 끝낸다).
-   - 나레이션은 `scripts/ad-voice.py`(기기 안에서 합성, 한국어만)가 만든다. 필요한 것: `pip install --break-system-packages piper-tts onnxruntime soundfile numpy`. 못 만들면 자막과 게임 소리만 들어가고 경고가 나온다 — 그 사실을 보고에 적는다. 영어 영상은 자막만.
+   - 나레이션은 `scripts/ad-voice.py`(기기 안에서 합성하는 Supertonic 2 음성, 한국어·영어)가 만든다. 필요한 것: `pip install --break-system-packages sherpa-onnx soundfile numpy`. 문장은 짧게, 쉼표는 적게 쓴다(쉼표마다 쉬어 끊겨 들린다). 못 만들면 자막과 게임 소리만 들어가고 경고가 나온다 — 그 사실을 보고에 적는다.
    - 찍은 영상에서 프레임을 몇 장 뽑아 **직접 눈으로 확인**한다(더러운 화면 → 닦는 장면 → 반짝 결과가 보이는가, 문구가 가려지지 않는가). 이상하면 다시 찍는다.
    - 소재마다 `ads/<소재ID>/` 에 `spec.json`, `captions.md`(ko·en·ja 캡션, 해시태그 10~15개, CTA "App Store 에서 '싹싹 클린' 검색"), `brief.md`(훅·장면·다시 만드는 명령)를 둔다. 소재ID는 `cr-YYYYMMDD-NN`. 영상 파일(mp4)은 저장소에 올리지 않는다(.gitignore) — 명령으로 언제든 다시 만든다.
    - **실제 게임 화면만** 쓴다(플레이와 다른 광고 금지). 세제 혼합 소재는 "절대 섞지 마세요" 결론 필수. 실제 브랜드·스폰서 제품은 계약·검수 전 노출 금지.

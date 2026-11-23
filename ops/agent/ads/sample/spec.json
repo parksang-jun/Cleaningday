@@ -1,10 +1,11 @@
 {
   "lang": "ko",
+  "voice": 5,
   "scenes": [
-    { "area": "living", "stage": 4, "caption": "유리창, 뽀득뽀득", "say": "뿌리고, 밀면, 뽀득뽀득.", "take": 5.5, "max": 9 },
+    { "area": "living", "stage": 4, "caption": "유리창, 뽀득뽀득", "say": "뿌리고 밀면 뽀득뽀득!", "take": 5.5, "max": 9 },
     { "area": "kitchen", "stage": 26, "caption": "기름때는 세제 먼저!", "say": "기름때는 세제를 먼저 뿌려요.", "take": 6, "max": 10 },
-    { "area": "exterior", "stage": 73, "caption": "세차도 시원하게", "say": "세차도 시원하게.", "take": 5, "max": 9 },
+    { "area": "exterior", "stage": 73, "caption": "세차도 시원하게", "say": "세차도 시원하게!", "take": 5, "max": 9 },
     { "area": "living", "stage": 1, "caption": "먼지는 한 번에 쓱", "say": "먼지는 한 번에 쓱. 반짝반짝 완성!", "take": 6, "from": "end", "max": 40 }
   ],
-  "end": { "title": "싹싹 클린", "sub": "App Store 에서 '싹싹 클린' 검색", "say": "싹싹 클린. 지금 앱스토어에서 만나 보세요." }
+  "end": { "title": "싹싹 클린", "sub": "App Store 에서 '싹싹 클린' 검색", "say": "스트레스 풀리는 청소 게임 싹싹 클린. 지금 앱스토어에서 만나 보세요." }
 }

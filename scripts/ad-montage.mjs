@@ -5,7 +5,8 @@
 //     "scenes": [ { "area": "living", "stage": 1, "steps": "cloth", "caption": "먼지? 한 번에 쓱", "say": "먼지는 한 번에 쓱.", "take": 5, "from": "start" } ],
 //     "end": { "title": "싹싹 클린", "sub": "App Store 에서 검색", "say": "싹싹 클린. 지금 앱스토어에서 만나 보세요." } }
 //   take: 그 장면을 몇 초 쓸지(나레이션이 더 길면 그만큼 늘어난다) · from: "start"(더러운 화면부터) 또는 "end"(반짝 결과까지)
-//   say: 나레이션(한국어만 — scripts/ad-voice.py). 비우면 그 장면은 게임 소리만.
+//   say: 나레이션(한국어·영어 — scripts/ad-voice.py). 비우면 그 장면은 게임 소리만.
+//   맨 위에 "voice": 0~9(0~4 남성, 5~9 여성 계열, 기본 5), "voiceSpeed": 0.8~1.3(기본 1.05) 을 줄 수 있다.
 // 먼저 `npm run build`. 장면 녹화는 scripts/ad-clip.mjs 가 한다(실제 플레이만).
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
@@ -22,7 +23,7 @@ const spec = JSON.parse(readFileSync(resolve(root, arg('spec')), 'utf8'));
 const OUT = resolve(root, arg('out', 'screenshots/ad-montage.mp4'));
 const LANG = spec.lang || 'ko';
 const tmp = mkdtempSync(resolve(tmpdir(), 'ad-montage-'));
-const GAME_VOL = 0.4; // 나레이션이 깔릴 때 게임 소리 크기
+const GAME_VOL = 0.32; // 나레이션이 깔릴 때 게임 소리 크기
 const ENC = ['-c:v', 'libx264', '-crf', '20', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', '30', '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2'];
 
 const run = (cmd, args, opts = {}) => {
@@ -41,9 +42,9 @@ const seconds = (f) => Number(run('ffprobe', ['-v', 'error', '-show_entries', 'f
 /** 나레이션을 만든다. 못 만들면(한국어가 아니거나 음성 도구가 없으면) null — 그 장면은 게임 소리만 */
 let voiceWarned = false;
 const narrate = (text, name) => {
-  if (!text || LANG !== 'ko') return null;
+  if (!text || !['ko', 'en'].includes(LANG)) return null;
   const wav = resolve(tmp, `${name}.wav`);
-  const r = spawnSync('python3', ['scripts/ad-voice.py', text, wav], { cwd: root, encoding: 'utf8' });
+  const r = spawnSync('python3', ['scripts/ad-voice.py', text, wav, String(spec.voiceSpeed ?? 1.05), String(spec.voice ?? 5), LANG], { cwd: root, encoding: 'utf8' });
   if (r.status !== 0) {
     if (!voiceWarned) console.log('주의 - 나레이션을 만들지 못했습니다(자막과 게임 소리만 들어갑니다):', (r.stderr || '').trim().split('\n').pop());
     voiceWarned = true;
