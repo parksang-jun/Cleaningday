@@ -14,3 +14,7 @@ ios/App/build
 screenshots
 *.log
 scratch
+
+# 홍보 영상은 scripts/ad-clip.mjs 로 다시 만든다 — 저장소에 올리지 않는다
+ops/agent/ads/**/*.mp4
+ops/agent/ads/**/*.webm
