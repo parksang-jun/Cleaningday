@@ -536,6 +536,12 @@ export class CleanSession {
     if (this.limitSec !== undefined) this.limitSec += sec
   }
 
+  /** 시간 압박(제한시간·다음 재오염)을 sec 초 뒤로 민다 — 시계는 흐르되 압박은 멈춘 것처럼. 느린 기기에서도 종단 검사가 같은 결과를 내도록 쓰는 검사용 */
+  holdPressure(sec: number) {
+    this.extendLimit(sec)
+    if (Number.isFinite(this.nextMessAt)) this.nextMessAt += sec
+  }
+
   /** 거품 폭탄: 남은 오염의 frac 만큼을 칸 단위로 통째로 지운다(윗층이 있으면 벗겨서 아래층을 드러냄). 어느 칸이 지워졌는지 이벤트로 돌려준다 */
   blast(frac: number, rand: () => number = Math.random): SessionEvent[] {
     const events: SessionEvent[] = []

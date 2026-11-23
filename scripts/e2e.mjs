@@ -368,6 +368,8 @@ try {
   assert((await page.locator('[data-testid="intro-mess"]').innerText()).includes('Dust keeps settling'), 'stage 4 intro warns that dust keeps settling while you clean (re-soiling starts at stage 4)');
   await page.click('[data-testid="start"]');
   await page.waitForSelector('[data-testid="item-squeegee"]');
+  // 느린 기기(≈24fps)에서는 아래 문지르기 동안 먼지가 저절로 내려앉아 '첫 재오염 전' 검사가 깨졌다 — 이 판은 재오염을 forceMess 로만 일으킨다
+  await page.evaluate(() => window.__sparkle.holdPressure(true));
   assert((await page.locator('[data-testid="mess"]').innerText()).includes('⏸'), 'HUD shows the mess-maker paused until cleaning starts');
   const kit4 = await page.evaluate(() => window.__sparkle.kit());
   assert(kit4.includes('squeegee') && kit4.includes('glass') && kit4.length >= 5, `stage 4 kit mixes decoys in (${kit4.join(',')})`);
@@ -420,6 +422,7 @@ try {
   await page.waitForSelector('[data-testid="intro"]');
   await page.click('[data-testid="start"]');
   await page.evaluate(() => window.__sparkle.setShield(600)); // 이 구간은 세정제·도구 효과를 재는 곳 — 재오염(기름 튐)은 아래 차단 부스터 검사에서 다시 켠다
+  await page.evaluate(() => window.__sparkle.holdPressure(true)); // 느린 기기에서 기름때 반복 닦기 중 제한시간이 다 되어 판이 끝나던 문제 — 시간 초과 검사 직전에 푼다
   await page.waitForSelector('[data-testid="host"][data-placement="intro"]', { timeout: 4000 });
   assert((await page.locator('[data-testid="host"]').innerText()).includes('BrightMax'), 'live host introduces the sponsored degreaser at stage start');
   await page.waitForTimeout(1500);
@@ -498,7 +501,9 @@ try {
   await page.click('[data-testid="journal-modal"] [data-act="close"]');
 
   // 제한시간 초과 → 실패 모달 → 광고로 +30초
-  const limit = await page.evaluate(() => window.__sparkle.timing().limitSec);
+  await page.evaluate(() => window.__sparkle.holdPressure(false));
+  assert((await page.evaluate(() => window.__sparkle.timing().limitSec)) > 0, 'stage 25 has a time limit');
+  const limit = await page.evaluate(() => window.__sparkle.session().limitSec); // 위 압박 정지 동안 밀린 만큼 포함한 현재 제한시간 — 아래는 +30초가 붙는지만 본다
   assert(limit > 0, `stage 25 limit is ${limit}s`);
   await page.evaluate(() => window.__sparkle.forceExpire());
   await page.waitForSelector('[data-testid="fail"]');
@@ -630,8 +635,12 @@ try {
   await page.waitForSelector('[data-testid="mode"]');
   const pending0 = await page.evaluate(() => window.__sparkle.session().pendingSpawns);
   await page.click('[data-testid="item-vacuum"]');
-  await sweep(page, 3, 12, 6);
-  const pending1 = await page.evaluate(() => window.__sparkle.session().pendingSpawns);
+  // 한 번씩 문지르며 새 털이 생겼는지 본다 — 고정 3번이면 느린 기기(맥)에서 6번 다 생기고 다 치워져 판이 끝나, 결과 화면이 '뒤로'를 가렸다 (2026-11-23)
+  let pending1 = pending0;
+  for (let pass = 0; pass < 3 && pending1 >= pending0; pass++) {
+    await sweep(page, 1, 12, 6);
+    pending1 = await page.evaluate(() => window.__sparkle.session().pendingSpawns);
+  }
   assert(pending0 > 0 && pending1 < pending0, `hair keeps appearing while cleaning (${pending0} → ${pending1} left)`);
   await page.screenshot({ path: resolve(shots, '09c-rush.png') });
 
@@ -747,8 +756,12 @@ try {
     if (id === 5) {
       assert((await page.locator('[data-testid="item-cordlessvac"].is-premium').count()) === 1, 'bought premium vacuum shows up on the rug stage where it is needed');
       await page.click('[data-testid="item-cordlessvac"]');
-      await sweep(page, 2, 12, 4);
-      const polish = await page.evaluate(() => window.__sparkle.polish());
+      // 광택이 생길 때까지 한 번씩(최대 2번) — 고정 2번이면 맥에서 판이 다 닦여 결과 화면이 '뒤로'를 가렸다 (2026-11-23)
+      let polish = 0;
+      for (let pass = 0; pass < 2 && polish <= 0.05; pass++) {
+        await sweep(page, 1, 12, 4);
+        polish = await page.evaluate(() => window.__sparkle.polish());
+      }
       assert(polish > 0.05, `premium vacuum leaves a polished finish (${(polish * 100).toFixed(0)}% of cells)`);
     }
     const cb = await page.locator('[data-testid="canvas"]').boundingBox();
