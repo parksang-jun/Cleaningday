@@ -2561,3 +2561,96 @@ body.has-banner .ad-banner {
 
 /* 눌러 흡수하는 중 표시 */
 .blot { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; background: rgba(23, 50, 58, 0.82); color: #fff; font-size: 13px; font-weight: 800; white-space: nowrap; pointer-events: none; z-index: 3; }
+
+/* ── 가독성 (2026-11 제보: 글씨가 잘 안 보인다) — 판 안의 작은 글씨를 키우고 진하게 ── */
+:root {
+  --ink2: #3b565d;
+}
+.hint {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  min-height: 19px;
+}
+.hud__time {
+  font-size: 13px;
+  font-weight: 600;
+}
+.hud__limit,
+.hud__mode,
+.hud__mess {
+  font-size: 13.5px;
+}
+.hud__tier {
+  font-size: 11px;
+}
+.toolbar__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.tool__name {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink);
+  max-width: 68px;
+}
+.legend__chip .swatch {
+  margin-right: 0;
+}
+.booster__name {
+  font-size: 13px;
+  font-weight: 700;
+}
+.stage__name {
+  font-size: 13px;
+}
+.area__meta {
+  font-size: 12.5px;
+}
+.tagline {
+  color: var(--ink);
+  font-weight: 600;
+}
+.recipe .small,
+.result__found,
+.intro__mode {
+  font-size: 13px;
+}
+.tip {
+  font-size: 13.5px;
+}
+/* 남은 오염 견본 — 색으로 화면의 얼룩과 맞춰 본다 */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 6px;
+  min-height: 24px;
+  padding: 2px 8px 0;
+}
+.legend__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px 2px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 2px rgba(0, 60, 60, 0.12);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.legend__chip .swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 0, 0, 0.28);
+  flex: none;
+}
+.legend__chip.is-under {
+  opacity: 0.55;
+  border: 1px dashed rgba(0, 60, 60, 0.35);
+  box-shadow: none;
+}

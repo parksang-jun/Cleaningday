@@ -57,8 +57,10 @@ export function pickHint(session: CleanSession, d: DirtType, items: HintItems, s
       for (const det of cands) {
         const harmful = tool.harms.includes(surface) || Boolean(det && det.harms.includes(surface))
         const inKit = !items.kit || (items.kit.has(tool.id) && (!det || items.kit.has(det.id)))
-        // 안전한 것 ≫ 도구 막대에 있는 것 ≫ 빠른 것
-        const score = (harmful ? 0 : 100) + (inKit ? 10 : 0) + r.speed
+        // 안전한 것 ≫ 세제 하나로 되는 것 ≫ 도구 막대에 있는 것 ≫ 빠른 것
+        // 두 세제를 섞어야 하는 조합은 따라 하기 어렵다 — 세제 하나로 되는 방법이 없을 때만 알려 준다
+        const mixed = Boolean(r.cleaner && !det)
+        const score = (harmful ? 0 : 100) + (mixed ? 0 : 30) + (inKit ? 10 : 0) + r.speed
         if (!best || score > best.score) best = { tool: fam, cleaner: r.cleaner ?? null, toolId: tool.id, cleanerId: det ? det.id : null, surface, harmful, score }
       }
     }

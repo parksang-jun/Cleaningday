@@ -10,7 +10,7 @@ import { CleanSession, recipeKey, scoreSession, type Result, type SessionEvent, 
 import { activeAffiliates, activeSponsors, affiliateEntry, allItems, countryFor, findItem, grantsUpTo, strengths, type ItemEntry } from './game/items';
 import { CHALLENGE, getLevel, LEVELS, LIMIT_FROM, tierFor, WORLDS, type AreaInfo, type LevelDef, type MessKind, type StageMode, type WorldInfo } from './game/levels';
 import { dominantDirt, GEAR_COOLDOWN_MS, GEAR_MESS_COUNT, GEAR_SLOW_AT, GEAR_SLOW_CLEAN, GEAR_TIP_SEC, premiumFor, type GearPick, type GearReason } from './gear';
-import { findMix, MIXES, mixParts } from './game/catalog';
+import { BLOT_DIRT, findMix, MIXES, mixParts } from './game/catalog';
 import { pickHint, pickHints, type HintItems, type HintPick } from './game/hints';
 import { mulberry32 } from './game/rng';
 import { FEVER_BOOST, feverMeter, rewardFor, stepFever, streakBonus, type FeverState, type Reward } from './game/reward';
@@ -86,6 +86,27 @@ function familyName(f: ToolFamily | CleanerFamily): string {
 function ownsMix(f: CleanerFamily, ownedDets: { spec: DetergentSpec }[]): boolean {
   const parts = mixParts(f);
   return Boolean(parts && parts.every((id) => ownedDets.some((e) => e.spec.id === id)));
+}
+
+/** 이 판의 도구 막대에 염소계와 산성 세제가 함께 있는가 — 그때만 "바꾸기 전에 헹구세요"를 알려 준다(세차 판의 호스에 욕실 안내가 뜨던 문제) */
+function kitNeedsRinse(g: NonNullable<typeof game>): boolean {
+  const chems = new Set(items.filter((e) => e.spec.kind === 'detergent' && g.kit.has(e.spec.id)).map((e) => (e.spec as DetergentSpec).chemistry));
+  return chems.has('chlorine') && chems.has('acid');
+}
+
+let legendKey = '';
+/** 이 판에 남은 오염을 색 견본 + 이름으로 보여 준다 — 화면의 얼룩이 무엇인지 색으로 맞춰 볼 수 있게. 밑에 깔린 것은 흐리게 */
+function updateLegend(g: NonNullable<typeof game>): void {
+  const el = app.querySelector<HTMLElement>('[data-el="legend"]');
+  if (!el) return;
+  const onTop = new Set(g.session.surfaceKinds);
+  const left = g.session.dirtKinds.filter((d) => g.session.remainingOf(d) > 0);
+  const key = `${g.level.id}|${left.map((d) => (onTop.has(d) ? d : `_${d}`)).join(',')}`;
+  if (key === legendKey && el.childElementCount) return;
+  legendKey = key;
+  el.innerHTML = [...left.filter((d) => onTop.has(d)), ...left.filter((d) => !onTop.has(d))]
+    .map((d) => `<span class="legend__chip${onTop.has(d) ? '' : ' is-under'}" data-dirt="${d}"${onTop.has(d) ? '' : ` title="${esc(t('legendUnder'))}"`}>${dirtSwatch(d)}${esc(t(`dirt_${d}`))}</span>`)
+    .join('');
 }
 
 function dirtSwatch(d: DirtType): string {
@@ -910,6 +931,7 @@ function startLevel(id: number) {
         <button class="icon-btn hud__journal" data-act="journal" aria-label="${t('journal')}" data-testid="journal">📖<span class="badge" data-el="unknown"></span></button>
       </header>
       <div class="hint" data-el="hint">${esc(level.hint ? t(level.hint) : goalText(level))}</div>
+      <div class="legend" data-el="legend" data-testid="legend"></div>
       <div class="stage-area"><canvas data-el="canvas" data-testid="canvas"></canvas><canvas class="canvas3d" data-el="canvas3d" data-testid="canvas3d" hidden></canvas><div class="fever" data-el="fever" data-testid="fever" aria-hidden="true"><i data-el="fever-fill"></i></div><div class="combo" data-el="combo" hidden></div><div class="blot" data-el="blot" data-testid="blot" hidden>💧 ${esc(t('blotHint'))}</div><div class="scan" data-el="scan" hidden></div><div class="mess-warn" data-el="mess-warn" data-testid="mess-warn" hidden></div><div class="gear" data-el="gear" data-testid="gear-tip" hidden></div></div>
       <div class="boosters" data-el="boosters" data-testid="boosters"></div>
       <nav class="toolbar" data-el="toolbar"></nav>
@@ -1282,7 +1304,7 @@ function renderToolbar() {
       game.selected = id;
       if (entry.sponsor) track('sponsor_item_select', { sponsor: entry.sponsor.id, level: game.level.id });
       const hint = app.querySelector<HTMLElement>('[data-el="hint"]')!;
-      hint.textContent = entry.spec.kind === 'detergent' ? t('sprayHint') : entry.spec.families.includes('rinse') && !entry.spec.onlyOn ? t('hintRinse') : `${itemName(entry)} · ${t('goodFor', { list: knownFor(entry) })}`;
+      hint.textContent = entry.spec.kind === 'detergent' ? t('sprayHint') : entry.spec.families.includes('rinse') && !entry.spec.onlyOn && kitNeedsRinse(g) ? t('hintRinse') : `${itemName(entry)} · ${t('goodFor', { list: knownFor(entry) })}`;
       renderToolbar();
     }),
   );
@@ -1860,6 +1882,7 @@ function step(dt: number) {
   const blotEl = app.querySelector<HTMLElement>('[data-el="blot"]');
   if (blotEl) blotEl.hidden = !(g.pointer && g.session.blotUntil > g.session.time);
   // HUD
+  updateLegend(g);
   const pct = Math.floor(g.session.cleanliness * 100);
   (app.querySelector('[data-el="bar"]') as HTMLElement).style.width = `${Math.min(100, g.session.cleanliness * 100)}%`;
   (app.querySelector('[data-el="pct"]') as HTMLElement).textContent = `${pct}%`;
@@ -2880,6 +2903,7 @@ declare global {
       paused: () => boolean;
       openAdmin: () => void;
       hostFor: (dirt: string) => string | null;
+      plan: () => { dirt: string; surface: string; toolId: string; cleanerId: string | null; slow: boolean; points: [number, number][] }[];
     };
   }
 }
@@ -2974,6 +2998,33 @@ function exposeDebug() {
     resultPick: () => {
       const pk = resultSponsor(game, game?.session.level.patches[0]?.type);
       return pk ? { id: pk.entry.sponsor!.id, context: pk.context, usedItem: pk.usedItem } : null;
+    },
+    // 힌트대로 닦는 순서: 겉에 드러난 오염마다(표면별) 알려 줄 조합과 그 오염이 있는 자리(0~1 좌표, 굵은 칸) — 홍보 영상 녹화와 "힌트대로 하면 닦인다" 검사에 쓴다
+    plan: () => {
+      const g = game;
+      if (!g) return [];
+      const s = g.session;
+      const cols = 9;
+      const rows = Math.max(1, Math.round((cols * s.h) / s.w));
+      const groups = new Map<string, { dirt: DirtType; surface: SurfaceType; cells: Map<number, number> }>();
+      for (let i = 0; i < s.amount.length; i++) {
+        if (s.amount[i] <= 0) continue;
+        const d = s.dirtAt(i);
+        const sf = s.surfaceAt(i);
+        const k = `${d}|${sf}`;
+        const gr = groups.get(k) ?? { dirt: d, surface: sf, cells: new Map<number, number>() };
+        groups.set(k, gr);
+        const c = Math.min(rows - 1, Math.floor((Math.floor(i / s.w) / s.h) * rows)) * cols + Math.min(cols - 1, Math.floor(((i % s.w) / s.w) * cols));
+        gr.cells.set(c, (gr.cells.get(c) ?? 0) + s.amount[i]);
+      }
+      const out: { dirt: string; surface: string; toolId: string; cleanerId: string | null; slow: boolean; points: [number, number][] }[] = [];
+      for (const gr of groups.values()) {
+        const h = pickHint(s, gr.dirt, hintItems(), gr.surface);
+        if (!h) continue;
+        const points = [...gr.cells].filter(([, a]) => a > 0.4).map(([c]) => [((c % cols) + 0.5) / cols, (Math.floor(c / cols) + 0.5) / rows] as [number, number]);
+        if (points.length) out.push({ dirt: gr.dirt, surface: gr.surface, toolId: h.toolId, cleanerId: h.cleanerId, slow: BLOT_DIRT.includes(gr.dirt), points });
+      }
+      return out;
     },
     kit: () => [...(game?.kit ?? [])],
     audio: () => audioDebug(),

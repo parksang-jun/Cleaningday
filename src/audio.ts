@@ -98,13 +98,15 @@ let scrub: ScrubNode | null = null;
 let scrubAt = 0;
 // 노드를 만든 시각 — 재질·오염 경계를 오갈 때 매 프레임 다시 만들지 않게 잠깐 붙잡는다
 let scrubBornAt = 0;
+let lastPopAt = 0;
 let scrubWatch: number | null = null;
 
 export type ScrubProfile = 'cloth' | 'sponge' | 'brush' | 'vacuum' | 'water' | 'washer' | 'squeegee' | 'steam' | 'roller' | 'mitt';
 
 const PROFILE: Record<ScrubProfile, { type: BiquadFilterType; freq: number; q: number; gain: number; hum?: number; humType?: OscillatorType; lfo?: number; lfoDepth?: number }> = {
-  cloth: { type: 'bandpass', freq: 1500, q: 0.7, gain: 0.5 },
-  sponge: { type: 'bandpass', freq: 1100, q: 0.9, gain: 0.55, lfo: 7, lfoDepth: 0.5 },
+  // 걸레와 스펀지는 휴대폰 스피커로도 구분되게 음색을 멀리 둔다: 걸레는 마른 천이 스치는 높고 고른 '스윽', 스펀지는 낮고 물기 있는 '뽀득뽀득'(느린 떨림 + 거품 터지는 소리)
+  cloth: { type: 'highpass', freq: 2300, q: 0.5, gain: 0.42 },
+  sponge: { type: 'lowpass', freq: 780, q: 1.4, gain: 0.62, lfo: 5.5, lfoDepth: 0.85 },
   mitt: { type: 'lowpass', freq: 900, q: 0.6, gain: 0.5, lfo: 5, lfoDepth: 0.4 },
   brush: { type: 'bandpass', freq: 2600, q: 1.1, gain: 0.7, lfo: 9, lfoDepth: 0.7 },
   roller: { type: 'highpass', freq: 2500, q: 0.8, gain: 0.6, lfo: 14, lfoDepth: 0.9 },
@@ -408,6 +410,12 @@ export function scrubSound(intensity: number, profile: ScrubProfile = 'cloth', t
   }
   const level = p.gain * (0.35 + 0.65 * Math.min(1, intensity));
   scrub.gain.gain.setTargetAtTime(level, ctx.currentTime, 0.04);
+  // 스펀지: 거품이 톡톡 터지는 소리(초당 3번쯤, 높낮이가 제각각) — 물기 있는 느낌과 닦는 재미를 더한다
+  if (profile === 'sponge' && performance.now() - lastPopAt > 180 + Math.random() * 260) {
+    lastPopAt = performance.now();
+    const f = 420 + Math.random() * 520;
+    tone(f, 0.05, 'sine', 0.07 + 0.05 * Math.min(1, intensity), 0, f * 1.7);
+  }
   if (scrub.oscGain) scrub.oscGain.gain.setTargetAtTime(level * (profile === 'squeegee' ? 0.25 : 0.5), ctx.currentTime, 0.05);
   if (scrub.osc && profile === 'vacuum') scrub.osc.frequency.setTargetAtTime(118 + 40 * Math.min(1, intensity), ctx.currentTime, 0.2);
   if (scrub.osc && profile === 'squeegee') scrub.osc.frequency.setTargetAtTime(1500 + Math.random() * 900, ctx.currentTime, 0.08);
@@ -478,7 +486,10 @@ export const sfx = {
         noise(0.3, 0.16, { type: 'lowpass', from: 900, to: 500, q: 1.2 });
         break;
       default:
-        noise(0.28, 0.35, { type: 'highpass', from: 3200, to: 5000, q: 0.6 });
+        // 분무기: 방아쇠 '딸깍' + 물안개 '치이익' + 가늘게 남는 꼬리
+        tone(190, 0.035, 'triangle', 0.16, 0, 120);
+        noise(0.3, 0.4, { type: 'highpass', from: 2800, to: 5200, q: 0.6 }, 0.02);
+        noise(0.22, 0.1, { type: 'highpass', from: 6000, q: 0.5 }, 0.16);
     }
   },
   /** 반짝임 — 콤보가 오를수록 높고 또렷하게 */

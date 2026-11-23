@@ -6,6 +6,7 @@ import { pickHint } from './hints'
 import { LEVELS } from './levels'
 
 const DT = 1 / 30
+const LIMIT = Number(process.env.HINT_LIMIT ?? 360)
 const toolOf = (id: string) => (BASE_TOOLS as Record<string, ToolSpec>)[id]
 const detOf = (id: string) => (BASE_DETERGENTS as Record<string, DetergentSpec>)[id]
 
@@ -36,7 +37,7 @@ function followHint(levelId: number, d: DirtType): { left: number; note: string 
     }
     // 12초까지: 눌러 흡수하는 오염은 천천히, 나머지는 작은 원을 그리며
     const slow = BLOT_DIRT.includes(d)
-    for (let n = 0; n < 360 && s.amount[i] > 0 && s.type[i] === k; n++) {
+    for (let n = 0; n < LIMIT && s.amount[i] > 0 && s.type[i] === k; n++) {
       const a = n * (slow ? 0.02 : 0.5)
       s.scrub(tool, x + Math.cos(a) * (slow ? 0.3 : 0.8), y + Math.sin(a) * (slow ? 0.3 : 0.8), DT)
       s.tick(DT)

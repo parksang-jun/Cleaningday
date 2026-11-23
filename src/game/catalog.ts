@@ -142,7 +142,7 @@ export const PRO_RATIO = 1.15;
 
 /** 렌더링 색 (RGB) + 불투명도 계수 */
 export const DIRT_COLOR: Record<DirtType, [number, number, number, number]> = {
-  dust: [150, 140, 122, 0.8],
+  dust: [122, 124, 132, 0.86], // 차가운 회색 — 갈색 계열(얼룩·진흙·기름)과 색으로 구분된다
   hair: [40, 34, 30, 0.95],
   mud: [104, 72, 42, 0.95],
   grease: [146, 98, 18, 0.88],

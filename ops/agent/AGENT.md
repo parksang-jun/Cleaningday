@@ -102,10 +102,12 @@ Sparkle Clean / 싹싹 클린 게임 사업을 예약 작업으로 돌리는 AI 
 목표: 우리 게임(싹싹 클린)을 **돈을 쓰지 않고** 알린다. 사장님 결정(2026-11-23): 유료 광고는 하지 않고, 무료로 할 수 있는 데까지는 최대한 자동으로 한다. 포맷·채널·정책 상세는 `ops/sparkle-clean-team/skills/sc-marketing/SKILL.md` 를 따른다. 채널은 숏폼 오가닉(유튜브 숏츠·인스타 릴스·틱톡)과 ASO.
 
 1. **읽는다.** `state/creatives.csv`(소재 목록), `state/campaigns.csv`(게시 목록), `state/decisions-inbox/`, `state/metrics/` 의 SNS 성과 파일. 성과 데이터가 없으면 "없음". 지난 소재와 훅·판이 겹치지 않게 한다.
-2. **만든다 — 바로 올릴 수 있는 완성 영상 3개.** 기획서만 쓰고 끝내지 않는다.
-   - `npm ci && npm run build` 후 `node scripts/ad-clip.mjs --area <지역> --stage <판> --steps <세제,도구 순서> --hook "<한 줄>" --lang <ko|en> --out ops/agent/ads/<소재ID>/clip.mp4` 로 실제 플레이를 녹화한다(1080x1920 mp4, 10~25초, 소리 없음). `--steps` 는 `src/game/catalog.ts` 의 레시피와 `src/game/levels.ts` 의 그 판 오염을 보고 정한다(세제를 먼저, 그다음 도구). 출력의 `finished` 가 false 면 순서를 고쳐 다시 찍는다.
+2. **만든다 — 바로 올릴 수 있는 완성 영상 3개(나레이션·소리 포함).** 기획서만 쓰고 끝내지 않는다.
+   - `npm ci && npm run build` 후, 소재마다 `ads/<소재ID>/spec.json` 을 쓰고 `node scripts/ad-montage.mjs --spec ops/agent/ads/<소재ID>/spec.json --out ops/agent/ads/<소재ID>/final.mp4` 로 만든다. 여러 판의 실제 플레이 3~4장면 + 장면별 한 줄 자막 + 한국어 나레이션 + 게임 소리 + 끝 화면이 한 영상(25~30초, 1080x1920)이 된다. spec 형식은 스크립트 맨 위 주석 참고.
+   - 장면은 서로 다른 지역·오염·도구가 나오게 고른다(`node scripts/ad-levels.mjs <판 번호…>` 로 그 판의 오염과 조합을 본다). 녹화는 게임이 힌트로 알려 주는 조합 그대로 닦는다 — `steps` 는 비워 둔다. 마지막 장면은 끝까지 닦이는 쉬운 판을 `"from": "end"` 로 넣어 별이 뜨는 결과 화면으로 끝낸다(녹화가 사람보다 느려 어려운 판은 제한 시간 안에 못 끝낸다).
+   - 나레이션은 `scripts/ad-voice.py`(기기 안에서 합성, 한국어만)가 만든다. 필요한 것: `pip install --break-system-packages piper-tts onnxruntime soundfile numpy`. 못 만들면 자막과 게임 소리만 들어가고 경고가 나온다 — 그 사실을 보고에 적는다. 영어 영상은 자막만.
    - 찍은 영상에서 프레임을 몇 장 뽑아 **직접 눈으로 확인**한다(더러운 화면 → 닦는 장면 → 반짝 결과가 보이는가, 문구가 가려지지 않는가). 이상하면 다시 찍는다.
-   - 소재마다 `ads/<소재ID>/` 에 `captions.md`(ko·en·ja 캡션, 해시태그 10~15개, CTA "App Store 에서 '싹싹 클린' 검색")와 `brief.md`(훅·판·다시 만드는 명령)를 둔다. 소재ID는 `cr-YYYYMMDD-NN`. 영상 파일(mp4)은 저장소에 올리지 않는다(.gitignore) — 명령으로 언제든 다시 만든다.
+   - 소재마다 `ads/<소재ID>/` 에 `spec.json`, `captions.md`(ko·en·ja 캡션, 해시태그 10~15개, CTA "App Store 에서 '싹싹 클린' 검색"), `brief.md`(훅·장면·다시 만드는 명령)를 둔다. 소재ID는 `cr-YYYYMMDD-NN`. 영상 파일(mp4)은 저장소에 올리지 않는다(.gitignore) — 명령으로 언제든 다시 만든다.
    - **실제 게임 화면만** 쓴다(플레이와 다른 광고 금지). 세제 혼합 소재는 "절대 섞지 마세요" 결론 필수. 실제 브랜드·스폰서 제품은 계약·검수 전 노출 금지.
 3. **내보낸다.**
    - **게시 도구가 세션에 연결돼 있고 싹싹 클린 전용 계정에 올릴 수 있으면** 직접 올린다(무료 일반 게시만). 채널당 하루 1건 이하, 한 실행에 채널당 1건. 올린 뒤 링크와 날짜를 `state/campaigns.csv` 에 `게시됨` 으로 적는다. 사장님 개인 계정에는 올리지 않는다.
