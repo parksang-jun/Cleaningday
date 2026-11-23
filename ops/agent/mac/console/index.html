@@ -163,6 +163,7 @@ pre.log { background: #0c1219; color: #cfe0f2; padding: 14px; border-radius: 10p
     <button class="nav on" data-page="home"><span class="ic">▦</span>대시보드</button>
     <button class="nav" data-page="command"><span class="ic">➤</span>명령<span class="badge" id="b-command" hidden></span></button>
     <button class="nav" data-page="approve"><span class="ic">✓</span>결재함<span class="badge" id="b-approve" hidden></span></button>
+    <button class="nav" data-page="archive"><span class="ic">▣</span>결재 보관함</button>
     <button class="nav" data-page="improve"><span class="ic">↗</span>제품 개선<span class="badge" id="b-improve" hidden></span></button>
     <button class="nav" data-page="adstudio"><span class="ic">▶</span>광고 제작·배포<span class="badge" id="b-adstudio" hidden></span></button>
     <button class="nav" data-page="gameadmin"><span class="ic">🛠</span>게임 운영자 모드</button>
@@ -215,6 +216,22 @@ function inboxModel() {
   const legacy = approvals().filter((x) => x.kind === '승인');
   return { waiting, decided, done, prs, branches, legacy, count: waiting.length + prs.length + branches.length + legacy.length };
 }
+// 결재 보관함 모델: 처리 끝난(done) 결재를 업무 분류(area)별로 묶는다. 최근 결재가 위. (2026-11-15 명령: 결재된 건 따로 보관·업무 분류)
+/*archive-model:start*/
+const AREAS = ['스토어·계정', '광고 수익', '제휴·광고주', '홍보', '게임 콘텐츠', '운영·기타'];
+const DECISION_WORD = { done: '완료', reject: '하지 않음', hold: '보류' };
+function archiveModel(list, filter) {
+  const done = (list || []).filter((a) => a && a.status === 'done').map((a) => ({
+    ...a,
+    area: AREAS.includes(a.area) ? a.area : '운영·기타',
+    decisionLabel: (a.options || []).find((o) => o.id === a.decision)?.label || DECISION_WORD[a.decision] || a.decision || '완료',
+  })).sort((a, b) => String(b.decided || '').localeCompare(String(a.decided || '')));
+  const counts = AREAS.map((area) => ({ area, n: done.filter((a) => a.area === area).length })).filter((c) => c.n);
+  const shown = filter && counts.some((c) => c.area === filter) ? done.filter((a) => a.area === filter) : done;
+  const groups = AREAS.map((area) => ({ area, items: shown.filter((a) => a.area === area) })).filter((g) => g.items.length);
+  return { total: done.length, counts, groups, filter: shown === done ? '' : filter };
+}
+/*archive-model:end*/
 function approvals() {
   const items = [];
   for (const line of (D?.backlog || '').split('\n')) {
@@ -356,9 +373,23 @@ const PAGES = {
     ${m.waiting.length ? `<h2 class="grp">사장님 결재가 필요한 일 <small>${m.waiting.length}건 · 위에서부터 급한 순</small></h2>${m.waiting.map((a) => reqCard(a, apTouched ? openAp.has(a.id) : a.id === first)).join('')}` : ''}
     ${m.legacy.length ? `<h2 class="grp">요청서 작성 대기 <small>다음 실행 때 에이전트가 절차를 자세히 적어 올립니다</small></h2><div class="card"><ul class="list">${m.legacy.map((a) => `<li><span class="pill">메모</span><div class="t">${esc(a.text)}</div></li>`).join('')}</ul></div>` : ''}
     ${m.decided.length ? `<h2 class="grp">결재 완료 · 반영 대기 <small>${m.decided.length}건</small></h2>${m.decided.map((a) => reqCard(a, false)).join('')}` : ''}
-    ${m.done.length ? `<h2 class="grp">처리 끝난 결재 <small>${m.done.length}건</small></h2><div class="card"><ul class="list">${m.done.map((a) => `<li><span class="pill ok">완료</span><div class="t">${esc(a.title)}<div class="m">${esc(a.decision || '')} ${esc(a.decided || '')}</div></div></li>`).join('')}</ul></div>` : ''}
+    ${m.done.length ? `<div class="card" style="margin-top:14px"><div class="btnrow" style="align-items:center"><span class="muted">처리 끝난 결재 ${m.done.length}건은 업무별로 따로 보관합니다.</span><span class="sp"></span><button class="btn sm" data-page-go="archive">결재 보관함 열기</button></div></div>` : ''}
     <h2 class="grp">에이전트 작업 대기열 <small>결재 없이 에이전트가 알아서 처리 · ${auto.length}건</small></h2>
     <div class="card">${auto.length ? `<ul class="list">${auto.map((a, i) => `<li><span class="pill">${i + 1}</span><div class="t">${esc(a.text)}</div></li>`).join('')}</ul>` : '<div class="empty">비어 있음</div>'}</div>`;
+  },
+  archive() {
+    const m = archiveModel(D?.approvals, arFilter);
+    const chip = (label, n, v) => `<button class="btn sm ${m.filter === v ? 'pri' : ''}" data-ar-filter="${esc(v)}">${esc(label)} ${n}</button>`;
+    const card = (a) => `<details class="ap"><summary><span class="pill ok">${esc(a.decisionLabel)}</span><span class="ttl">${esc(a.title)}</span><span class="meta">${esc(a.decided || '')}</span></summary>
+      <div class="body">
+        ${a.result ? `<div class="oneline">${esc(a.result)}</div>` : ''}
+        <div class="sec"><h4>무엇을 결재했나</h4><p>${esc(a.oneline || a.summary || '')}</p></div>
+        <div class="facts"><span class="pill">${esc(a.area)}</span>${a.kind === 'do' ? '<span class="pill">직접 하신 일</span>' : '<span class="pill">선택</span>'}${a.created ? `<span class="pill">요청 ${esc(a.created)}</span>` : ''}${a.decided ? `<span class="pill">결재 ${esc(a.decided)}</span>` : ''}</div>
+      </div></details>`;
+    return `<div class="top"><h1>결재 보관함</h1><span class="sub">처리가 끝난 결재를 업무별로 모아 둡니다</span><span class="sp"></span><span class="pill ok">보관 ${m.total}건</span></div>
+    ${m.total ? `<div class="btnrow" style="margin-bottom:6px">${chip('전체', m.total, '')}${m.counts.map((c) => chip(c.area, c.n, c.area)).join('')}</div>
+      ${m.groups.map((g) => `<h2 class="grp">${esc(g.area)} <small>${g.items.length}건 · 최근 결재가 위</small></h2>${g.items.map(card).join('')}`).join('')}`
+      : '<div class="card"><div class="empty">아직 보관된 결재가 없습니다.<br>결재함에서 결정한 일이 반영되면 여기로 옮겨집니다.</div></div>'}`;
   },
   improve() {
     const inbox = D?.inbox || { items: [], processing: 0 }, fb = D?.feedback || { rows: [], columns: [] }, r = S?.routines?.D;
@@ -561,7 +592,7 @@ async function loadLogs() {
   if (sel.log) { const v = await api(`/api/log?file=${encodeURIComponent(sel.log)}`); const pre = $('#logview'); sel.logRoutine = (sel.log.match(/^routine-([ABCD])-/) || [])[1] || null; const dv = $('#diagview'); if (dv && v.ok) dv.innerHTML = diagCard(v.diag); if (pre && v.ok) { const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30; pre.textContent = (v.truncated ? '… (앞부분 생략)\n' : '') + (v.text || '(아직 출력 없음 — 에이전트가 작업을 끝내면 결과가 한 번에 기록됩니다)'); if (atEnd) pre.scrollTop = pre.scrollHeight; } }
 }
 
-const openAp = new Set(); let apTouched = false; const memos = {};
+const openAp = new Set(); let apTouched = false; const memos = {}; let arFilter = '';
 document.addEventListener('toggle', (e) => { const d = e.target; if (!d.matches?.('details.ap[data-ap]')) return; apTouched = true; d.open ? openAp.add(d.dataset.ap) : openAp.delete(d.dataset.ap); }, true);
 document.addEventListener('input', (e) => { const k = e.target.dataset?.memo; if (k) memos[k] = e.target.value; });
 function render() {
@@ -605,6 +636,7 @@ document.addEventListener('click', (e) => {
   const d = t.dataset;
   if (t.tagName === 'SUMMARY') return;
   if (d.page || d.pageGo) { page = d.page || d.pageGo; try { localStorage.setItem('sc-page', page); } catch {} render(); return; }
+  if (d.arFilter !== undefined) { arFilter = d.arFilter; render(); return; }
   if (d.game === 'build') return act('/api/game-build', {}, t);
   if (d.game === 'reload') { const f = $('#gameframe'); f.src = `/game/?v=${Date.now()}#admin`; return; }
   if (d.urlGame) { window.open('/game/#admin', '_blank'); return; }
