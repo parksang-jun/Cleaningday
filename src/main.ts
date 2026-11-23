@@ -11,6 +11,7 @@ import { activeAffiliates, activeSponsors, affiliateEntry, allItems, countryFor,
 import { CHALLENGE, getLevel, LEVELS, LIMIT_FROM, tierFor, WORLDS, type AreaInfo, type LevelDef, type MessKind, type StageMode, type WorldInfo } from './game/levels';
 import { dominantDirt, GEAR_COOLDOWN_MS, GEAR_MESS_COUNT, GEAR_SLOW_AT, GEAR_SLOW_CLEAN, GEAR_TIP_SEC, premiumFor, type GearPick, type GearReason } from './gear';
 import { findMix, MIXES, mixParts } from './game/catalog';
+import { pickHint, pickHints, type HintItems, type HintPick } from './game/hints';
 import { mulberry32 } from './game/rng';
 import { FEVER_BOOST, feverMeter, rewardFor, stepFever, streakBonus, type FeverState, type Reward } from './game/reward';
 import { cautionTipFor, tipForCombo, tipForItems, tipsFor, type CleaningTip } from './game/tips';
@@ -1214,9 +1215,9 @@ function useBooster(id: BoosterId): boolean {
     const left = g.session.dirtKinds.filter((d) => g.session.remainingOf(d) > 0);
     for (const d of [...left.filter((k) => onTop.has(k)), ...left.filter((k) => !onTop.has(k))]) {
       g.hints.set(d, 2);
-      const hr = hintRecipe(d);
+      const hs = hintRecipes(d);
       const under = onTop.has(d) ? '' : ` <span class="scan__under">${esc(t('scanUnder'))}</span>`;
-      rows.push(`<div class="scan__row${under ? ' scan__row--under' : ''}"><b>${esc(t(`dirt_${d}`))}</b>${under} → ${hr ? `${iconFor(familyItem(hr.tool))} ${esc(familyName(hr.tool))}${hr.cleaner ? ` + ${iconFor(familyItem(hr.cleaner))} ${esc(familyName(hr.cleaner))}` : ''}` : `<span class="muted">${esc(t('scanNoTool'))}</span>`}</div>`);
+      rows.push(`<div class="scan__row${under ? ' scan__row--under' : ''}"><b>${esc(t(`dirt_${d}`))}</b>${under} → ${hs.length ? hs.map((h) => hintLine(h, hs.length > 1)).join(' · ') : `<span class="muted">${esc(t('scanNoTool'))}</span>`}</div>`);
     }
     const panel = app.querySelector<HTMLElement>('[data-el="scan"]');
     if (panel) {
@@ -1987,10 +1988,14 @@ function failTips(g: NonNullable<typeof game>, reason: 'time' | 'ruined'): strin
   const out: string[] = [];
   const left = [...g.session.dirtKinds].filter((d) => g.session.remainingOf(d) > 0).sort((a, b) => g.session.remainingOf(b) - g.session.remainingOf(a));
   for (const d of left.slice(0, 2)) {
-    const hr = hintRecipe(d);
-    if (!hr) continue;
+    const hs = hintRecipes(d);
+    if (!hs.length) continue;
     g.hints.set(d, 2); // 수첩에도 남겨 다음 판에서 다시 볼 수 있게
-    out.push(hr.cleaner ? t('failTipRecipe', { dirt: t(`dirt_${d}`), cleaner: familyName(hr.cleaner), tool: familyName(hr.tool) }) : t('failTipTool', { dirt: t(`dirt_${d}`), tool: familyName(hr.tool) }));
+    // 표면마다 방법이 다르면 표면 이름을 붙여 각각 알려 준다
+    for (const hr of hs.slice(0, 2)) {
+      const dirt = hs.length > 1 ? `${t(`dirt_${d}`)} (${t(`surf_${hr.surface}`)})` : t(`dirt_${d}`);
+      out.push(hr.cleaner ? t('failTipRecipe', { dirt, cleaner: familyName(hr.cleaner), tool: familyName(hr.tool) }) : t('failTipTool', { dirt, tool: familyName(hr.tool) }));
+    }
   }
   if (reason === 'ruined') out.push(t('failTipRuined'));
   else {
@@ -2124,18 +2129,30 @@ function mainSurfaceOf(d: DirtType): string {
   return best;
 }
 
-/** 힌트로 보여줄 레시피: 이 판의 표면에서 보유 기본 아이템으로 가능한 것 */
-function hintRecipe(d: DirtType): { tool: ToolFamily; cleaner: CleanerFamily | null } | null {
-  const surface = mainSurfaceOf(d) as never;
-  const ownedTools = items.filter((e) => e.spec.kind === 'tool' && owns(e.spec.id)).map((e) => e.spec as ToolSpec);
-  const ownedDets = items.filter((e) => e.spec.kind === 'detergent' && owns(e.spec.id)).map((e) => e.spec);
-  for (const r of recipesFor(d, surface)) {
-    const tool = ownedTools.find((tl) => !tl.premium && r.tools.some((f) => tl.families.includes(f)));
-    if (!tool) continue;
-    if (r.cleaner && !ownedDets.some((c) => c.kind === 'detergent' && c.family === r.cleaner) && !ownsMix(r.cleaner, ownedDets.map((d) => ({ spec: d as DetergentSpec })))) continue;
-    return { tool: r.tools.find((f) => tool.families.includes(f))!, cleaner: r.cleaner ?? null };
-  }
-  return null;
+/** 힌트를 고를 때 쓸 수 있는 것: 가진 기본 아이템 전부(도구 막대에 있는 것을 먼저 고른다) */
+function hintItems(): HintItems {
+  const dets = items.filter((e): e is ItemEntry & { spec: DetergentSpec } => e.spec.kind === 'detergent' && owns(e.spec.id));
+  return {
+    tools: items.filter((e) => e.spec.kind === 'tool' && owns(e.spec.id)).map((e) => e.spec as ToolSpec),
+    dets: dets.map((e) => e.spec),
+    canMix: (f) => ownsMix(f, dets),
+    kit: game?.kit,
+  };
+}
+
+/** 힌트로 보여줄 조합 — 그 오염이 실제로 묻은 표면에서 통하고, 이 판에서 쓸 수 있고, 표면을 상하게 하지 않는 것(game/hints.ts) */
+function hintRecipe(d: DirtType): HintPick | null {
+  return game ? pickHint(game.session, d, hintItems()) : null;
+}
+
+/** 구역마다 표면이 달라 방법이 갈리는 오염은 표면별 조합을 모두 알려 준다 */
+function hintRecipes(d: DirtType): HintPick[] {
+  return game ? pickHints(game.session, d, hintItems()) : [];
+}
+
+/** "세제 + 도구" 한 줄(아이콘 포함). 표면별로 방법이 다르면 앞에 표면 이름을 단다 */
+function hintLine(h: HintPick, withSurface: boolean): string {
+  return `${withSurface ? `<span class="scan__surf">${esc(t(`surf_${h.surface}`))}</span> ` : ''}${h.cleaner ? `${iconFor(familyItem(h.cleaner))} ${esc(familyName(h.cleaner))} + ` : ''}${iconFor(familyItem(h.tool))} ${esc(familyName(h.tool))}`;
 }
 
 function openJournal() {
@@ -2158,6 +2175,8 @@ function openJournal() {
         const parts: string[] = [];
         if (hintLvl >= 1 && hr) parts.push(`<span class="recipe">${hr.cleaner ? iconFor(familyItem(hr.cleaner)) : ''}<span class="small">${esc(hr.cleaner ? t('hintRevealCleaner', { item: familyName(hr.cleaner) }) : t('hintNoCleaner'))}</span></span>`);
         if (hintLvl >= 2 && hr) parts.push(`<span class="recipe">${iconFor(familyItem(hr.tool))}<span class="small">${esc(t('hintRevealTool', { item: familyName(hr.tool) }))}</span></span>`);
+        // 표면마다 방법이 다른 오염: 다른 표면의 조합도 함께 알려 준다(한 가지만 알려 주면 그 표면 밖에서는 안 닦인다)
+        if (hintLvl >= 2) for (const o of hintRecipes(d).slice(1)) parts.push(`<span class="recipe"><span class="small">${hintLine(o, true)}</span></span>`);
         body = parts.length ? parts.join('') : `<span class="unknown">${t('journalUnknown')}</span>`;
         if (guided(g.level)) {
           if (hr && hintLvl < 2) {

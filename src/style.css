@@ -1845,6 +1845,12 @@ body.has-banner .ad-banner {
 .scan--dim {
   opacity: 0.22;
 }
+.scan__surf {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.18);
+}
 .scan__under {
   font-weight: 400;
   opacity: 0.75;
