@@ -132,8 +132,9 @@ export function isUnlocked(): boolean {
 }
 
 /** 테스트용 상태 */
-export function audioDebug(): { unlocked: boolean; state: string; musicStep: number; sfx: boolean; music: boolean; scrub: string | null; scrubKey: string | null } {
-  return { unlocked, state: ctx?.state ?? 'none', musicStep, sfx: sfxEnabled, music: bgmEnabled, scrub: scrub?.profile ?? null, scrubKey: scrub?.key ?? null };
+// clock: 오디오 시계(초). 출력 장치가 없는 헤드리스 브라우저는 'running' 이면서 시계가 멈춰 있다 — 검사가 그걸 가려낸다
+export function audioDebug(): { unlocked: boolean; state: string; clock: number; musicStep: number; sfx: boolean; music: boolean; scrub: string | null; scrubKey: string | null } {
+  return { unlocked, state: ctx?.state ?? 'none', clock: ctx?.currentTime ?? 0, musicStep, sfx: sfxEnabled, music: bgmEnabled, scrub: scrub?.profile ?? null, scrubKey: scrub?.key ?? null };
 }
 
 /** 첫 사용자 입력 안에서 호출 — 컨텍스트 생성·재개, iOS 무음 스위치 우회 */
