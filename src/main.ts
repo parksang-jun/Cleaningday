@@ -846,6 +846,8 @@ interface GameState {
   lastTick: number;
   /** 쇼호스트가 떠 있는 동안 시계를 멈춤 */
   paused: boolean;
+  /** 검사용: 시계는 흐르되 제한시간·재오염 압박은 멈춤 (느린 기기에서 종단 검사 결과가 화면 속도에 좌우되지 않게) */
+  holdPressure: boolean;
   /** 이 판에서 이미 소개한 광고 제품 */
   hostShown: Set<string>;
   /** 이번 판에 쇼호스트가 저절로 나왔나 — 저절로 뜨는 소개는 판마다 한 번 */
@@ -984,6 +986,7 @@ function startLevel(id: number) {
     spawnToastAt: -10,
     lastTick: -1,
     paused: false,
+    holdPressure: false,
     hostShown: new Set(),
     hostAuto: false,
     used: new Set(),
@@ -1777,7 +1780,11 @@ function step(dt: number) {
   g.sprayCooldown -= dt;
   // 시계는 첫 효과(분사·제거)부터 — 도구를 고르고 시험해 보는 시간은 세지 않음
   if (g.session.engaged) {
-    for (let rest = dt; rest > 1e-6 && !g.finished && !g.failed; rest -= 0.05) handleEvents(g.session.tick(Math.min(0.05, rest)));
+    for (let rest = dt; rest > 1e-6 && !g.finished && !g.failed; rest -= 0.05) {
+      const slice = Math.min(0.05, rest);
+      if (g.holdPressure) g.session.holdPressure(slice);
+      handleEvents(g.session.tick(slice));
+    }
   }
   // 손을 뗀 뒤 남은 획(프레임 사이에 시작해서 끝난 빠른 문지르기 포함)은 이번 프레임에 마저 반영
   const flush = !g.pointer && g.pending.length ? g.pending.splice(0, g.pending.length) : null;
@@ -2887,6 +2894,7 @@ declare global {
       mess: () => { count: number; next: number | undefined; shield: number; kind: string | undefined };
       forceMess: () => void;
       setShield: (sec: number) => void;
+      holdPressure: (on: boolean) => void;
       gearTip: (reason: 'slow' | 'mess' | 'fail', dirt?: string) => boolean;
       itemSpec: (id: string) => { power?: number; radius: number } | null;
       setCoins: (n: number) => void;
@@ -2963,6 +2971,10 @@ function exposeDebug() {
     mess: () => ({ count: game?.session.messCount ?? 0, next: game?.session.messIn, shield: game?.session.shieldLeft ?? 0, kind: game?.level.mess?.kind }),
     setShield: (sec: number) => {
       if (game) game.session.shieldUntil = game.session.time + sec;
+    },
+    // 테스트용: 이 판 동안 제한시간·재오염 카운트다운을 멈춘다 (forceMess·forceExpire 로는 여전히 일으킬 수 있음). 판이 바뀌면 저절로 풀린다
+    holdPressure: (on: boolean) => {
+      if (game) game.holdPressure = on;
     },
     force2d: (on: boolean) => {
       getStore().settings.use3d = !on;

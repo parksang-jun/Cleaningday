@@ -178,6 +178,14 @@ describe('engine', () => {
     expect(s.expired).toBe(true)
     s.extendLimit(30)
     expect(s.expired).toBe(false)
+    // 검사용 압박 정지: 매 틱 같은 만큼 밀면 아무리 오래 흘러도 시간 초과가 오지 않는다
+    const held = new CleanSession(lv, timing)
+    for (let t = 0; t < timing.limitSec! * 3; t += 0.05) {
+      held.holdPressure(0.05)
+      held.tick(0.05)
+    }
+    expect(held.expired).toBe(false)
+    expect(held.time).toBeGreaterThan(timing.limitSec!)
     // 세제 용량
     expect(lv.sprayBudgetSec).toBeDefined()
     const det = BASE_DETERGENTS.allpurpose
@@ -242,6 +250,16 @@ describe('engine', () => {
     expect(s.messCount).toBeLessThanOrEqual(Math.ceil(m.cap / m.amount))
     expect(s.messIn).toBeUndefined()
     expect(s.initialTotal).toBeLessThanOrEqual(total0 * (1 + m.cap + m.amount)) // 마지막 한 번은 조금 넘칠 수 있다
+    // 검사용 압박 정지: 다음 재오염까지 남은 시간이 줄지 않고, 압박을 풀면 다시 흐른다
+    const held = new CleanSession(lv)
+    for (let t = 0; t < m.after * 3; t += 0.1) {
+      held.holdPressure(0.1)
+      held.tick(0.1)
+    }
+    expect(held.messCount).toBe(0)
+    expect(held.messIn).toBeCloseTo(m.after, 5)
+    for (let t = 0; t < m.after + 0.5; t += 0.1) held.tick(0.1)
+    expect(held.messCount).toBe(1)
     // 끌 수 있다 (봇 비교용)
     const quiet = new CleanSession(lv, undefined, lv.seed, { mess: false })
     for (let t = 0; t < 60; t += 0.5) quiet.tick(0.5)

@@ -8,7 +8,13 @@ const { chromium, devices } = createRequire(import.meta.url)('playwright');
 const root = resolve(import.meta.dirname, '..');
 const shots = resolve(root, 'screenshots');
 mkdirSync(shots, { recursive: true });
-const PORT = 4174;
+// E2E_PORT=4204 처럼 주면 다른 포트로 띄운다 — 다른 검사·미리보기가 4174 를 쓰고 있어도 같이 돌릴 수 있게
+// (환경 변수를 못 넘기는 실행기용으로 `node scripts/e2e.mjs --port=4204 --ci --keep-going` 처럼 인자로도 받는다)
+if (process.argv.includes('--ci')) process.env.CI = 'true';
+if (process.argv.includes('--keep-going')) process.env.E2E_KEEP_GOING = '1';
+const portArg = process.argv.find((a) => a.startsWith('--port='))?.slice('--port='.length);
+const PORT = Number(portArg ?? process.env.E2E_PORT ?? 4174);
+if (!Number.isInteger(PORT) || PORT <= 0) throw new Error(`bad e2e port: ${portArg ?? process.env.E2E_PORT}`);
 
 function startPreview() {
   const proc = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { cwd: root, stdio: 'pipe', detached: true });
@@ -20,7 +26,18 @@ function startPreview() {
         res(proc);
       }
     });
-    proc.stderr.on('data', (d) => process.stderr.write(d));
+    proc.stderr.on('data', (d) => {
+      process.stderr.write(d);
+      // 포트가 이미 쓰이고 있으면 20초 기다리지 않고 바로 이유를 알린다
+      if (String(d).includes('already in use')) {
+        clearTimeout(timer);
+        rej(new Error(`port ${PORT} is already in use — pass another port (e.g. node scripts/e2e.mjs --port=4204)`));
+      }
+    });
+    proc.on('exit', (code) => {
+      clearTimeout(timer);
+      rej(new Error(`preview server exited early (code ${code})`));
+    });
   });
 }
 
@@ -85,6 +102,19 @@ async function cleanUntilDone(page, maxPasses = 20) {
 }
 
 const preview = await startPreview();
+// 아래 try 밖(첫 구간)에서 실패해도 미리보기 서버를 꼭 끈다 — 안 끄면 서버가 남아 다음 실행이 '포트 사용 중'으로 못 돈다
+const killPreview = () => {
+  try {
+    process.kill(-preview.pid, 'SIGTERM');
+  } catch {}
+};
+process.on('exit', killPreview);
+process.on('uncaughtException', (e) => {
+  console.error('\nE2E FAILED (uncaught):', e?.stack ?? e);
+  killPreview();
+  process.exit(1);
+});
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
 const browser = await chromium.launch();
 // GPU 없는 CI 러너는 3배 해상도 캔버스를 소프트웨어로 그리느라 프레임이 크게 떨어진다 → 타이밍 검사가 흔들림.
 // CI 에서는 1배 해상도로 돌린다(검사 내용은 같음). 로컬 기본은 실제 기기 배율 그대로.
@@ -137,7 +167,19 @@ const ctx = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: fals
   };
   const win = async () => {
     await p0.evaluate(() => window.__sparkle.clearAll());
-    await p0.waitForSelector('[data-testid="result"]', { timeout: 8000 });
+    await p0.waitForSelector('[data-testid="result"]', { timeout: 8000 }).catch(async (e) => {
+      // 간헐적으로 결과 창이 늦는 원인을 보려고 그 순간의 상태를 남긴다 (2026-11-23 맥 로컬 5회 중 2회)
+      const st = await p0.evaluate(() => {
+        const k = window.__sparkle; const s = k.session();
+        return {
+          level: k.level(), paused: k.paused(), session: s && { time: s.time, engaged: s.engaged, cleanliness: s.cleanliness, passed: s.passed },
+          fever: k.fever(), visible: [...document.querySelectorAll('[data-testid]')].filter((el) => el.offsetParent).map((el) => el.dataset.testid).filter((id) => !/^(item|stage|lv|booster)-/.test(id)).slice(0, 40),
+        };
+      }).catch((err) => ({ error: String(err) }));
+      console.error('state when result did not show:', JSON.stringify(st));
+      await p0.screenshot({ path: resolve(shots, 'zz-fail-win.png') }).catch(() => {});
+      throw e;
+    });
     await p0.waitForTimeout(300);
   };
   await startStage(1);
@@ -266,7 +308,12 @@ try {
   await sweep(page, 1);
   await page.waitForTimeout(700);
   const audio2 = await page.evaluate(() => window.__sparkle.audio());
-  assert(audio2.musicStep > 2, `background music is scheduling notes (${audio2.musicStep} steps)`);
+  // 음악은 오디오 시계를 따라 박자를 예약한다. 출력 장치가 없는 헤드리스 브라우저(일부 맥 실행 환경)는
+  // 'running' 이라면서 시계가 멈춰 있어 예약이 처음 두 박에서 멈춘다 — 게임 문제가 아니므로 그때만 건너뛰고 이유를 남긴다.
+  // 시계가 흐르는 곳(CI 리눅스·일반 데스크톱)에서는 그대로 검사한다.
+  const clockMoved = audio2.clock > audio.clock + 0.05;
+  if (clockMoved) assert(audio2.musicStep > 2, `background music is scheduling notes (${audio2.musicStep} steps)`);
+  else console.log(`skip - background music scheduling: this browser's audio clock is frozen (${audio.clock.toFixed(3)}s → ${audio2.clock.toFixed(3)}s, no audio output device)`);
   const mid = await page.evaluate(() => window.__sparkle.session().cleanliness);
   assert(mid > 0.2, `one sweep with the cloth cleans ${(mid * 100).toFixed(0)}%`);
   assert((await page.evaluate(() => window.__sparkle.journal())).includes('dust|cloth|-'), 'cloth-on-dust recipe recorded in the notebook');
@@ -368,6 +415,8 @@ try {
   assert((await page.locator('[data-testid="intro-mess"]').innerText()).includes('Dust keeps settling'), 'stage 4 intro warns that dust keeps settling while you clean (re-soiling starts at stage 4)');
   await page.click('[data-testid="start"]');
   await page.waitForSelector('[data-testid="item-squeegee"]');
+  // 느린 기기(≈24fps)에서는 아래 문지르기 동안 먼지가 저절로 내려앉아 '첫 재오염 전' 검사가 깨졌다 — 이 판은 재오염을 forceMess 로만 일으킨다
+  await page.evaluate(() => window.__sparkle.holdPressure(true));
   assert((await page.locator('[data-testid="mess"]').innerText()).includes('⏸'), 'HUD shows the mess-maker paused until cleaning starts');
   const kit4 = await page.evaluate(() => window.__sparkle.kit());
   assert(kit4.includes('squeegee') && kit4.includes('glass') && kit4.length >= 5, `stage 4 kit mixes decoys in (${kit4.join(',')})`);
@@ -420,6 +469,7 @@ try {
   await page.waitForSelector('[data-testid="intro"]');
   await page.click('[data-testid="start"]');
   await page.evaluate(() => window.__sparkle.setShield(600)); // 이 구간은 세정제·도구 효과를 재는 곳 — 재오염(기름 튐)은 아래 차단 부스터 검사에서 다시 켠다
+  await page.evaluate(() => window.__sparkle.holdPressure(true)); // 느린 기기에서 기름때 반복 닦기 중 제한시간이 다 되어 판이 끝나던 문제 — 시간 초과 검사 직전에 푼다
   await page.waitForSelector('[data-testid="host"][data-placement="intro"]', { timeout: 4000 });
   assert((await page.locator('[data-testid="host"]').innerText()).includes('BrightMax'), 'live host introduces the sponsored degreaser at stage start');
   await page.waitForTimeout(1500);
@@ -498,7 +548,9 @@ try {
   await page.click('[data-testid="journal-modal"] [data-act="close"]');
 
   // 제한시간 초과 → 실패 모달 → 광고로 +30초
-  const limit = await page.evaluate(() => window.__sparkle.timing().limitSec);
+  await page.evaluate(() => window.__sparkle.holdPressure(false));
+  assert((await page.evaluate(() => window.__sparkle.timing().limitSec)) > 0, 'stage 25 has a time limit');
+  const limit = await page.evaluate(() => window.__sparkle.session().limitSec); // 위 압박 정지 동안 밀린 만큼 포함한 현재 제한시간 — 아래는 +30초가 붙는지만 본다
   assert(limit > 0, `stage 25 limit is ${limit}s`);
   await page.evaluate(() => window.__sparkle.forceExpire());
   await page.waitForSelector('[data-testid="fail"]');
@@ -630,8 +682,12 @@ try {
   await page.waitForSelector('[data-testid="mode"]');
   const pending0 = await page.evaluate(() => window.__sparkle.session().pendingSpawns);
   await page.click('[data-testid="item-vacuum"]');
-  await sweep(page, 3, 12, 6);
-  const pending1 = await page.evaluate(() => window.__sparkle.session().pendingSpawns);
+  // 한 번씩 문지르며 새 털이 생겼는지 본다 — 고정 3번이면 느린 기기(맥)에서 6번 다 생기고 다 치워져 판이 끝나, 결과 화면이 '뒤로'를 가렸다 (2026-11-23)
+  let pending1 = pending0;
+  for (let pass = 0; pass < 3 && pending1 >= pending0; pass++) {
+    await sweep(page, 1, 12, 6);
+    pending1 = await page.evaluate(() => window.__sparkle.session().pendingSpawns);
+  }
   assert(pending0 > 0 && pending1 < pending0, `hair keeps appearing while cleaning (${pending0} → ${pending1} left)`);
   await page.screenshot({ path: resolve(shots, '09c-rush.png') });
 
@@ -747,8 +803,12 @@ try {
     if (id === 5) {
       assert((await page.locator('[data-testid="item-cordlessvac"].is-premium').count()) === 1, 'bought premium vacuum shows up on the rug stage where it is needed');
       await page.click('[data-testid="item-cordlessvac"]');
-      await sweep(page, 2, 12, 4);
-      const polish = await page.evaluate(() => window.__sparkle.polish());
+      // 광택이 생길 때까지 한 번씩(최대 2번) — 고정 2번이면 맥에서 판이 다 닦여 결과 화면이 '뒤로'를 가렸다 (2026-11-23)
+      let polish = 0;
+      for (let pass = 0; pass < 2 && polish <= 0.05; pass++) {
+        await sweep(page, 1, 12, 4);
+        polish = await page.evaluate(() => window.__sparkle.polish());
+      }
       assert(polish > 0.05, `premium vacuum leaves a polished finish (${(polish * 100).toFixed(0)}% of cells)`);
     }
     const cb = await page.locator('[data-testid="canvas"]').boundingBox();
@@ -1142,8 +1202,6 @@ try {
   process.exitCode = 1;
 } finally {
   await browser.close();
-  try {
-    process.kill(-preview.pid, 'SIGTERM');
-  } catch {}
+  killPreview();
   process.exit(process.exitCode ?? 0);
 }
