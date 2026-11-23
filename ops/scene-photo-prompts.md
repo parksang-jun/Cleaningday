@@ -4,8 +4,8 @@
 파일은 `src/assets/scenes/<장면>.jpg` (896x1200, 3:4) 로 넣으면 그 장면을 쓰는 모든 판과 구역에 적용된다(`src/render/photos.ts`).
 
 - 모델: nano-banana-2.1, 3:4, 1K (장당 4크레딧 → 25장 약 100크레딧)
-- 상태(2026-11-24): 시험 3장(floor·sofa·sink)을 만들었으나, 그때의 작업 환경에서는 Runway 이미지 서버(`dnznrvs05pmza.cloudfront.net`)가
-  막혀 내려받지 못했다. 사용자가 허용 도메인에 추가했다 — **새로 시작한 작업(세션)** 에서만 적용된다. 아래 "작업 순서"대로 이어서 한다.
+- 상태(2026-11-23 완료): 장면 25개 전부 사진으로 넣었다(34장 — floor·deck 3장, brickWall·patio·sofa·bed·table 2장, 나머지 1장). Playwright 로 1~72판을 캡처해 확인했다.
+  아래 "작업 순서"는 사진을 더하거나 바꿀 때 다시 쓴다. Runway 이미지 서버(`dnznrvs05pmza.cloudfront.net`)는 허용 도메인에 있어야 내려받을 수 있다.
 
 ## 작업 순서 (새 세션에서)
 
@@ -21,11 +21,44 @@
 4. **검사하고 올린다.** `tsc` → `npm test` → `npm run build` → `npm run e2e` → `npx cap sync`, 빌드 번호(iOS·Android) 1씩 올리고 main 에 push.
    바꾸기 전/후 비교 이미지를 사용자에게 보낸다.
 
-| 장면 | Runway 작업 번호 |
+| 파일 (`src/assets/scenes/`) | Runway 작업 번호 |
 |---|---|
-| floor | 555897b9-5d78-4aed-ab5b-96e7b0ebbc86 |
-| sofa | 00721337-d1ee-4460-afe6-855077533108 |
-| sink | b5cae815-3f70-4f23-8024-e22d8c2216e4 |
+| floor.jpg | 555897b9-5d78-4aed-ab5b-96e7b0ebbc86 |
+| floor-2.jpg | 8221de78-abcd-4869-8514-9d52810c7ecb |
+| floor-3.jpg | cbc02708-8b77-4e48-8d57-7ea89ec0df7c |
+| deck.jpg | 71c000c9-2770-40e6-a048-a57f71c22ff2 |
+| deck-2.jpg | a1bf6ffe-6a80-40ad-8659-3837ec09a83a |
+| deck-3.jpg | 0a6779ff-5eb3-4bbc-be0d-dea56a53fbba |
+| brickWall.jpg | e7e176bf-1e10-47f3-86e4-89e6124d6788 |
+| brickWall-2.jpg | 96ae95b1-f529-4199-a2b1-c2020d9c2f93 |
+| patio.jpg | ed9a45fe-0380-410a-8a1a-c8782f8b30eb |
+| patio-2.jpg | 64de8db5-1fc9-435c-95b6-884f1cb57db9 |
+| sofa.jpg | 00721337-d1ee-4460-afe6-855077533108 |
+| sofa-2.jpg | 87bfd856-4cf1-4265-8b9e-02469e497500 |
+| bed.jpg | 63ca8cee-5758-44e4-b3ef-9a0192da8b01 |
+| bed-2.jpg | 57a9689c-0657-4390-8bc7-82627ea1e70a |
+| table.jpg | 394b8c48-07d0-4112-9235-485f45ed828d |
+| table-2.jpg | f3546902-5dbd-491e-af81-edc68879b2d9 |
+| kitchenTile.jpg | b444ab54-7dde-4b94-a2bd-1456749ac1b7 |
+| stove.jpg | dc198ad1-4237-46d4-a2ed-3ff852b6abd7 |
+| bathTile.jpg | 840df21b-a20d-4f65-89e9-9c4b1ac77095 |
+| gardenChair.jpg | 073a450f-89e2-49f4-a455-e0240ebe950b |
+| fence.jpg | b50d4249-2376-4079-9ce0-477b65ef867b |
+| desk.jpg | dfae3714-1e91-48c1-8d98-06d233730466 |
+| tub.jpg | a862575f-df41-421a-ac7a-533ebf47b643 |
+| window.jpg | 9cc132dc-a624-46f6-aaf4-35aa38ca9449 |
+| closet.jpg | e6188a30-4129-4ca8-85fb-ea422d117eb7 |
+| mirror.jpg | 03720ba9-15a0-4388-9fa8-72c04d176d69 |
+| sink.jpg | b5cae815-3f70-4f23-8024-e22d8c2216e4 |
+| fridge.jpg | 5f4698d2-37aa-421d-bc64-eb7b1b2182fd |
+| bathtub.jpg | 34e9ee44-431f-48d7-ad88-e4b168dea0af |
+| toilet.jpg | 706ff789-cbc9-43f8-a55c-a2654c91ffc9 |
+| grill.jpg | a75f8077-49d8-4a36-a619-d2b5432a20da |
+| shelf.jpg | 158ba58f-7fba-4c9b-a242-ef64338ae08f |
+| basin.jpg | 172f1500-efab-48f8-bbac-8ab8af175fa7 |
+| showerglass.jpg | b7f8ae60-9c39-4827-b4f7-5d45eb30bf8d |
+
+- gardenChair 는 처음 만든 것(b05b94aa-66b6-4667-81bf-2f31b3d41e9f, 잔디 배경)을 버리고 다시 만들었다 — 되풀이 판의 색 변형에서 잔디가 파랗게·빨갛게 변해 어색했다. 배경을 무채색(회색 바닥·벽)으로 바꿨다.
 
 ## 공통 꼬리말
 
