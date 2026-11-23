@@ -475,8 +475,8 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['cloth', 'sponge', 'eraser'], cleaner: 'polish', on: ['plastic'], speed: 0.8 }, // 꿀팁: 헤드라이트 황변은 흰 치약으로 5~10분
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 1.0 },
     { tools: ['sponge', 'deckbrush'], cleaner: 'deck', on: ['plastic', 'paint'], speed: 0.9 }, // 실외 가구의 뿌연 막
-    { tools: ['cloth', 'sponge'], cleaner: 'dishsoap', on: ['wood', 'steel', 'tile', 'ceramic', 'paint'], speed: 0.9 }, // 손때·기름막은 주방세제 희석액을 꼭 짠 걸레로 (다목적 세정제로는 번지기만 한다)
-    { tools: ['cloth', 'sponge'], cleaner: 'soapsoda', on: ['wood', 'steel', 'tile', 'ceramic', 'paint'], speed: 0.9 }, // 베이킹소다가 남은 자리에 주방세제가 섞여도 손때는 닦인다
+    { tools: ['cloth', 'sponge'], cleaner: 'dishsoap', on: ['wood', 'steel', 'tile', 'ceramic', 'paint', 'plastic'], speed: 0.9 }, // 손때·기름막은 주방세제 희석액을 꼭 짠 걸레로 (다목적 세정제로는 번지기만 한다)
+    { tools: ['cloth', 'sponge'], cleaner: 'soapsoda', on: ['wood', 'steel', 'tile', 'ceramic', 'paint', 'plastic'], speed: 0.9 }, // 베이킹소다가 남은 자리에 주방세제가 섞여도 손때는 닦인다
     { tools: ['mitt'], cleaner: 'carshampoo', on: ['paint', 'glass', 'plastic'], speed: 1.0 },
     { tools: ['eraser'], not: ['fabric'], speed: 1.1 },
     { tools: ['steam'], not: ['fabric'], speed: 1.0 },

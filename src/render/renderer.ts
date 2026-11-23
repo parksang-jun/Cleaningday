@@ -42,6 +42,10 @@ interface TrailPt {
 const MS = 3;
 /** 오염층 최대 픽셀 수 (휴대폰 성능) */
 const LAYER_MAX_PX = 1.15e6;
+/** 얇게 깔려 가장자리가 흐린 오염 */
+const SOFT_DIRT = new Set<string>(['dust', 'hair', 'film', 'crumbs']);
+/** 마르면서 테두리가 진하게 남는 오염 */
+const RING_DIRT = new Set<string>(['stain', 'spill', 'scale', 'soap', 'iron']);
 const LIQUID = new Set(['hose', 'rinse', 'washer', 'steam']);
 const BRUSHY = new Set(['scrubpad', 'tilebrush', 'deckbrush', 'wheelbrush']);
 const SUCKY = new Set(['vacuum', 'lintroller']);
@@ -528,6 +532,9 @@ export class Renderer {
     for (const ti of present) {
       const m = this.mask(ti);
       const d = m.img.data;
+      const kind = DIRT_TYPES[ti];
+      const soft = SOFT_DIRT.has(kind);
+      const ring = RING_DIRT.has(kind);
       // 이 종류의 칸 농도장 (다른 종류는 0) — 범위를 좁혀 빈 줄은 건너뛴다
       let minY = h;
       let maxY = -1;
@@ -563,7 +570,17 @@ export class Renderer {
           const e = field[y1 * w + x1];
           const v = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + e * fx) * fy;
           if (v <= 0.004) continue;
-          d[si * 4 + 3] = Math.min(255, 255 * v * sub[si]);
+          if (soft) {
+            // 먼지·머리카락·유막처럼 얇게 깔린 것: 번지듯 옅어지되 전보다 진하게
+            d[si * 4 + 3] = Math.min(255, 255 * v * 1.3 * sub[si]);
+          } else {
+            // 얼룩·기름·진흙처럼 묻은 것: 가장자리가 또렷하고(무엇이 어디까지인지 보인다), 닦을수록 안쪽이 옅어진다
+            const edge = v >= 0.2 ? 1 : (v - 0.05) / 0.15;
+            if (edge <= 0) continue;
+            // 말라붙은 테두리(커피 링·물때 자국): 가장자리 띠가 안쪽보다 진하다
+            const body = ring && v > 0.5 ? 0.5 + 0.34 * v : 0.56 + 0.44 * v;
+            d[si * 4 + 3] = Math.min(255, 255 * edge * body * (0.86 + 0.14 * sub[si]) * 1.12);
+          }
         }
       }
       m.canvas.getContext('2d')!.putImageData(m.img, 0, 0);

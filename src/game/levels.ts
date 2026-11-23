@@ -421,7 +421,7 @@ const WORLD_SEEDS: WorldSeed[] = [
           { scene: 'mirror', dirt: ['film', 'dust'], mode: 'fragile', theme: 'precision' },
           { scene: 'roomMix', dirt: ['dust', 'hair', 'stain'], layered: true, mode: 'dark', theme: 'blackout' },
           { scene: 'desk', dirt: ['film', 'stain', 'dust'], layered: true, mode: 'spots', theme: 'latenight' },
-          { scene: 'closet', dirt: ['sticker', 'crayon', 'film'], theme: 'rental' },
+          { scene: 'closet', dirt: ['crayon', 'sticker', 'film'], theme: 'rental' },
           { scene: 'roomMix', dirt: ['mud', 'hair', 'stain', 'film'], layered: true, mode: 'rush', spawnType: 'hair', theme: 'pet' },
           { scene: 'roomMix', dirt: ['stain', 'crayon', 'hair', 'crumbs', 'dust'], layered: true, hint: 'hintBig', theme: 'marathon' },
         ],
@@ -522,7 +522,7 @@ const WORLD_SEEDS: WorldSeed[] = [
       },
       {
         id: 'interior',
-        scale: 2.1,
+        scale: 2.5, // 차 안은 좁고 손이 많이 간다 — 외장보다 오래 걸리게(구역 순서대로 어려워진다)
         stages: [
           { scene: 'seat', dirt: ['dust', 'hair'], grants: ['interior'], hint: 'hintSeat', theme: 'morning' },
           { scene: 'dashboard', dirt: ['dust', 'film'], hint: 'hintVinyl', mode: 'fragile', theme: 'precision' },

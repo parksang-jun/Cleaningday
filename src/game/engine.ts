@@ -74,6 +74,90 @@ const SMEAR_REACH = 1.6
 const PUSH_RATE = 6
 const PUSH_REACH = 2.2
 
+/** 윤곽 모양별 오염 — 종류마다 실제 모습대로 생기게 한다(전에는 전부 별 모양 덩어리였다) */
+const SHAPE_OF: Partial<Record<DirtType, 'splat' | 'scatter' | 'colony' | 'smudge' | 'sticker' | 'scribble'>> = {
+  mud: 'splat',
+  tar: 'splat',
+  dust: 'scatter',
+  hair: 'scatter',
+  crumbs: 'scatter',
+  mold: 'colony',
+  moss: 'colony',
+  film: 'smudge',
+  sticker: 'sticker',
+  crayon: 'scribble',
+}
+
+/**
+ * 덩어리 중심에서 (dx, dy) 떨어진 칸의 농도 배수(0 = 바깥). r: 반지름(칸), wb: 0..1 난수 3개, fineV: 그 칸의 잔무늬 노이즈(0..1)
+ *  · 기본(얼룩·기름·물때·쏟은 음료…): 가장자리가 또렷한 불규칙 웅덩이
+ *  · splat(진흙·타르): 웅덩이 + 튄 방울
+ *  · scatter(먼지·머리카락·부스러기): 흩어져 깔린 얇은 층
+ *  · colony(곰팡이·이끼): 점점이 번진 군락
+ *  · smudge(지문·유막): 한쪽으로 길게 문질러진 자국
+ *  · sticker: 모서리 둥근 네모 · scribble(낙서): 지그재그 선
+ */
+export function patchShape(type: DirtType, dx: number, dy: number, r: number, wb: number[], fineV: number): number {
+  const d = Math.sqrt(dx * dx + dy * dy)
+  const ang = Math.atan2(dy, dx)
+  const p0 = wb[0] * 6.283
+  const p1 = wb[1] * 6.283
+  const p2 = wb[2] * 6.283
+  // 한쪽으로 돌린 좌표(길쭉한 모양용)
+  const u = dx * Math.cos(p0) + dy * Math.sin(p0)
+  const v = -dx * Math.sin(p0) + dy * Math.cos(p0)
+  switch (SHAPE_OF[type]) {
+    case 'splat': {
+      const rr = r * (0.57 + 0.12 * Math.sin(ang * 2 + p0) + 0.08 * Math.sin(ang * 3 + p1) + 0.05 * Math.sin(ang * 6 + p2))
+      if (d < rr) return 1 - Math.pow(d / rr, 3) * 0.3
+      // 튄 방울 4개
+      for (let k = 0; k < 4; k++) {
+        const a = p1 + k * 1.7 + wb[k % 3] * 0.8
+        const dist = r * (0.95 + 0.3 * wb[(k + 1) % 3])
+        const rad = Math.max(0.75, r * (0.16 + 0.1 * wb[(k + 2) % 3]))
+        if (Math.hypot(dx - Math.cos(a) * dist, dy - Math.sin(a) * dist) < rad) return 0.85
+      }
+      return 0
+    }
+    case 'scatter': {
+      const rr = r * 1.25
+      if (d >= rr) return 0
+      const k = (1 - Math.pow(d / rr, 1.8)) * (0.45 + 0.55 * fineV)
+      return k > 0.14 ? k : 0
+    }
+    case 'colony': {
+      const rr = r * 1.0
+      if (d >= rr) return 0
+      if (d < r * 0.35) return 0.9
+      return fineV > 0.45 ? 1 - Math.pow(d / rr, 2) * 0.5 : 0
+    }
+    case 'smudge': {
+      const e = Math.sqrt((u * u) / (1.15 * 1.15) + (v * v) / (0.55 * 0.55)) / r
+      return e < 1 ? 1 - Math.pow(e, 1.8) * 0.55 : 0
+    }
+    case 'sticker': {
+      const hw = r * 0.64
+      const hh = r * 0.46
+      const cr = r * 0.18
+      const qx = Math.abs(u) - (hw - cr)
+      const qy = Math.abs(v) - (hh - cr)
+      const out = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - cr
+      return out < 0 ? 1 : 0
+    }
+    case 'scribble': {
+      if (Math.abs(u) > r * 0.9) return 0
+      const tri = (x: number) => 2 * Math.abs(x - Math.floor(x + 0.5)) // 0..1 톱니
+      const y0 = (tri((u / r) * 1.1 + wb[1]) - 0.5) * r * 0.9
+      const thick = Math.max(0.9, r * 0.28)
+      return Math.abs(v - y0) < thick ? 0.95 : 0
+    }
+    default: {
+      const rr = r * (0.78 + 0.13 * Math.sin(ang * 2 + p0) * (0.5 + 0.5 * wb[1]) + 0.08 * Math.sin(ang * 3 + p1) + 0.045 * Math.sin(ang * 5 + p2))
+      return d < rr ? 1 - Math.pow(d / rr, 2.2) * 0.55 : 0
+    }
+  }
+}
+
 export class CleanSession {
   readonly w = GRID_W
   readonly h = GRID_H
@@ -220,6 +304,7 @@ export class CleanSession {
         const hasUnder = p.underAmount !== undefined && rng.next() < (p.underChance ?? 1)
         const uamt = hasUnder && p.underAmount ? p.underAmount[0] + rng.next() * (p.underAmount[1] - p.underAmount[0]) : 0
         const wobble = [rng.next(), rng.next(), rng.next()]
+        const centerSurf = SURFACES[this.surfaceIdx[Math.floor(cy) * this.w + Math.floor(cx)]]
         if (p.spot) {
           // 표적끼리 겹치지 않게: 기존 표적과 너무 가까우면 건너뜀
           if (this.spots.some((sp) => Math.hypot(sp.x - cx, sp.y - cy) < sp.r + r + 1)) continue
@@ -229,17 +314,15 @@ export class CleanSession {
           for (let x = Math.max(0, Math.floor(cx - r - 2)); x < Math.min(this.w, cx + r + 2); x++) {
             const dx = x - cx
             const dy = y - cy
-            const ang = Math.atan2(dy, dx)
-            const rr = r * (0.75 + 0.25 * Math.sin(ang * 3 + wobble[0] * 6) * wobble[1] + 0.15 * Math.sin(ang * 5 + wobble[2] * 6))
-            const d = Math.sqrt(dx * dx + dy * dy)
-            if (d < rr) {
+            const k = patchShape(p.type, dx, dy, r, wobble, fine[y * this.w + x])
+            if (k > 0) {
               const idx = y * this.w + x
               const surf = SURFACES[this.surfaceIdx[idx]]
-              if (!allowed.includes(surf)) continue
-              const falloff = 1 - Math.pow(d / rr, 2.2) * 0.6
-              this.put(idx, t, amt * falloff * (0.7 + 0.3 * fine[idx]))
+              // 덩어리는 중심이 놓인 표면 안에서만 번진다(소파 얼룩이 마루까지 이어지지 않는다 — 표면마다 닦는 법이 달라 헷갈린다)
+              if (surf !== centerSurf) continue
+              this.put(idx, t, amt * k * (0.7 + 0.3 * fine[idx]))
               kinds.add(p.type)
-              if (ut >= 0 && uamt > 0 && d < rr * 0.8 && underAllowed!.includes(surf)) {
+              if (ut >= 0 && uamt > 0 && k > 0.62 && underAllowed!.includes(surf)) {
                 const ua = uamt * (0.8 + 0.2 * fine[idx])
                 if (ua > this.under[idx]) {
                   this.under[idx] = Math.min(1, ua)
