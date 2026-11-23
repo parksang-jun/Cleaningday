@@ -39,3 +39,18 @@ describe('판마다 다른 배경', () => {
     expect([px[0], px[1], px[2]]).not.toEqual([200, 150, 100]);
   });
 });
+
+describe('장면 사진 돌려 쓰기', () => {
+  it('사진이 여러 장이면 번갈아 쓰고, 한 바퀴 돌 때마다 변형 단계가 오른다', async () => {
+    const { photoVariant } = await import('./photos');
+    expect(photoVariant(0, 3)).toEqual({ index: 0, lookStep: 0 });
+    expect(photoVariant(2, 3)).toEqual({ index: 2, lookStep: 0 });
+    expect(photoVariant(3, 3)).toEqual({ index: 0, lookStep: 1 });
+    expect(photoVariant(7, 3)).toEqual({ index: 1, lookStep: 2 });
+    // 사진이 없으면 손그림 + 변형 단계만
+    expect(photoVariant(4, 0)).toEqual({ index: -1, lookStep: 4 });
+    // 같은 (사진, 변형) 조합은 되풀이되지 않는다
+    const seen = new Set(Array.from({ length: 12 }, (_, n) => JSON.stringify(photoVariant(n, 3))));
+    expect(seen.size).toBe(12);
+  });
+});

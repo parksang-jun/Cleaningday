@@ -8,8 +8,8 @@ import type { LevelDef, SceneId } from '../game/levels';
 import { mulberry32 } from '../game/rng';
 import * as M from './materials';
 import * as P from './props';
-import { drawCover, levelPhotoKey, scenePhoto } from './photos';
-import { levelLook, recolor, zoneLook } from './looks';
+import { drawCover, levelPhotoKey, photoVariant, scenePhoto, sceneVariants } from './photos';
+import { canFlip, lookFor, recolor, sceneRepeat } from './looks';
 
 type Ctx = CanvasRenderingContext2D;
 type Rnd = () => number;
@@ -22,17 +22,20 @@ export function paintLevel(ctx: Ctx, level: LevelDef, w: number, h: number): voi
     drawCover(ctx, own, w, h);
     return;
   }
-  // 같은 장면이 여러 판에 쓰이면 판마다 색·방향을 바꾼다(looks.ts). 실사 사진으로 그리는 장면은 그대로 둔다
+  // 같은 장면이 여러 판에 쓰이면 판마다 다르게: 사진이 여러 장이면 번갈아 쓰고, 그래도 되풀이되면 색·방향을 바꾼다(looks.ts)
+  const n = sceneRepeat(level);
   if (!level.zones) {
-    const { look, flip } = scenePhoto(level.scene) ? { look: null, flip: false } : levelLook(level);
+    const v = pickVariant(level.scene, n);
+    const look = lookFor(level.surface, v.lookStep);
+    const flip = v.lookStep % 2 === 1 && canFlip(level.scene);
     ctx.save();
     if (flip) {
       ctx.translate(w, 0);
       ctx.scale(-1, 1);
     }
-    paintScene(ctx, level.scene, w, h);
+    paintScene(ctx, level.scene, w, h, v.photo);
     ctx.restore();
-    if (look) recolor(ctx, 0, 0, w, h, look);
+    recolor(ctx, 0, 0, w, h, look);
     return;
   }
   for (let zi = 0; zi < level.zones.length; zi++) {
@@ -58,9 +61,10 @@ export function paintLevel(ctx: Ctx, level: LevelDef, w: number, h: number): voi
     ctx.rect(x, y, zw, zh);
     ctx.clip();
     ctx.translate(x, y);
-    paintScene(ctx, z.scene, zw, zh);
+    const zv = pickVariant(z.scene, n + zi);
+    paintScene(ctx, z.scene, zw, zh, zv.photo);
     ctx.restore();
-    if (!scenePhoto(z.scene)) recolor(ctx, x, y, Math.min(zw, w - x), Math.min(zh, h - y), zoneLook(level, zi, z.surface));
+    recolor(ctx, x, y, Math.min(zw, w - x), Math.min(zh, h - y), lookFor(z.surface, zv.lookStep));
     // 구역 경계: 단차 그늘 + 가는 하이라이트
     ctx.save();
     M.innerShadow(ctx, x, y, zw, zh, Math.max(6, w * 0.018), inset ? 0.18 : 0.12);
@@ -71,7 +75,14 @@ export function paintLevel(ctx: Ctx, level: LevelDef, w: number, h: number): voi
   }
 }
 
-export function paintScene(ctx: Ctx, scene: SceneId, w: number, h: number): void {
+/** n 번째로 나오는 장면에 쓸 사진(없으면 null → 손그림)과 변형 단계 */
+function pickVariant(scene: SceneId, n: number): { photo: HTMLImageElement | null; lookStep: number } {
+  const ready = sceneVariants(scene).map((k) => scenePhoto(k)).filter((p): p is HTMLImageElement => p !== null);
+  const v = photoVariant(n, ready.length);
+  return { photo: v.index >= 0 ? ready[v.index] : null, lookStep: v.lookStep };
+}
+
+export function paintScene(ctx: Ctx, scene: SceneId, w: number, h: number, photoOverride?: HTMLImageElement | null): void {
   const r = mulberry32(scene.length * 131 + 977);
   const rnd = r.next;
   ctx.save();
@@ -79,7 +90,7 @@ export function paintScene(ctx: Ctx, scene: SceneId, w: number, h: number): void
   ctx.rect(0, 0, w, h);
   ctx.clip();
   // 실사 사진이 준비된 장면은 사진으로
-  const photo = scenePhoto(scene);
+  const photo = photoOverride ?? scenePhoto(scene);
   if (photo) {
     drawCover(ctx, photo, w, h);
     ctx.restore();

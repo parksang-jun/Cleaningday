@@ -14,6 +14,23 @@ export function levelPhotoKey(id: number): string {
   return `L${id}`;
 }
 
+/** 한 장면에 준비된 사진 이름들 — `<장면>.jpg` 다음에 `<장면>-2.jpg`, `<장면>-3.jpg` … 순서대로. 같은 장면이 여러 판에 나오면 번갈아 쓴다 */
+export function sceneVariants(scene: SceneId | string): string[] {
+  const out: string[] = [];
+  if (URL_OF.has(scene)) out.push(scene);
+  for (let k = 2; URL_OF.has(`${scene}-${k}`); k++) out.push(`${scene}-${k}`);
+  return out;
+}
+
+/**
+ * n 번째로 나오는 장면(0 = 처음)에 쓸 사진과 덧입힐 변형 단계.
+ * 사진이 count 장이면 먼저 사진을 돌려 쓰고, 한 바퀴 돌 때마다 변형 단계(색·방향)가 하나씩 오른다 → 같은 그림이 되풀이되지 않는다.
+ */
+export function photoVariant(n: number, count: number): { index: number; lookStep: number } {
+  if (count <= 0) return { index: -1, lookStep: n };
+  return { index: n % count, lookStep: Math.floor(n / count) };
+}
+
 export function hasScenePhoto(scene: SceneId | string): boolean {
   return URL_OF.has(scene);
 }
@@ -28,7 +45,8 @@ export async function loadScenePhotos(scenes: (SceneId | string)[]): Promise<boo
   if (typeof Image === 'undefined') return false;
   let fresh = false;
   await Promise.all(
-    [...new Set(scenes)].map((s) => {
+    // 장면의 다른 사진(-2, -3 …)도 함께 불러 둔다
+    [...new Set(scenes.flatMap((s) => [s, ...sceneVariants(s)]))].map((s) => {
       const url = URL_OF.get(s);
       if (!url || loaded.has(s)) return undefined;
       let p = loading.get(s);

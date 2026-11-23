@@ -69,6 +69,11 @@ const BY_SURFACE: Record<SurfaceType, Look[]> = {
 /** 좌우를 뒤집어도 어색하지 않은 장면(글자·숫자·계기·손잡이 방향이 없는 것) */
 const FLIP_OK = new Set<SceneId>(['floor', 'sofa', 'rug', 'bed', 'table', 'kitchenTile', 'bathTile', 'bathtub', 'patio', 'deck', 'brickWall', 'fence', 'gardenChair', 'window', 'mirror', 'showerglass', 'seat', 'floorMat']);
 
+/** 좌우를 뒤집어도 되는 장면인가 */
+export function canFlip(scene: SceneId): boolean {
+  return FLIP_OK.has(scene);
+}
+
 let repeats: Map<number, number> | null = null;
 
 /** 이 판의 장면이 앞선 판에서 몇 번 쓰였는가 (0 = 처음) */
