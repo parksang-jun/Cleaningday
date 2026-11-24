@@ -15,6 +15,7 @@
 - 아직 남은 묵은 PR(보호 경로라 자동 반영 불가, 결재 `stale-prs-cleanup`): #12(app-ads.txt, 올릴 주소는 결재 app-ads-host) · #18(Play 등록 자료 중 main b719d4f 에 없는 것) · #19(playwright 버전 고정 — package.json)
 
 ## 다음에 처리 (위에서부터)
+- [auto] 운영센터 '실행 기록'이 `state/log/*.md` 도 합쳐 보이게: main 의 `console/server.mjs` 는 `state/log.md` 만 읽어 11-23 이후 실행별 기록이 화면에 안 보임. 옛 PR #28 의 서버 코드 13줄을 main 기준으로 다시 올리기(운영센터 변경이라 PR). 그때까지는 `state/log.md` 에도 한 줄 요약을 함께 적는다 (근거: 11-24 점검)
 - [auto] '새 아이템' 알림 남은 한계: 미뤄 둔 알림은 앱을 껐다 켜면 사라짐(아이템 자체는 도구 칸에 정상 표시). 저장에 '알림 대기' 칸을 넣어 다음 실행에도 이어지게 (근거: 11-24 구현 중 확인. 1판에서 미뤄지는 스펀지·다목적 세정제가 해당)
 - [auto] 1.2·1.2.1 변경 효과 확인 준비: 스테이지별 이탈·재시도·광고 건너뛰기 사용·별 관문에서 멈춘 횟수를 지표 파일(`state/metrics/`)로 받는 양식 정리 — 결재 revenue-data-export 와 묶어 요청 (근거: 1.1~1.2.1 에 들어간 개선 10여 건이 모두 '확인 대기')
 - [auto] 묵은 PR 재상신(결재 stale-prs-cleanup 결과에 따라): #18(Play 자료 중 남는 것) → #12(app-ads.txt) → #19(e2e 준비). 셋 다 보호 경로(store-assets·docs·package.json)라 PR 로만
