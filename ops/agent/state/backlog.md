@@ -41,7 +41,7 @@
 - [승인] app-ads.txt 올릴 주소 → `app-ads-host`
 - [승인] 광고주 제안 메일 발송 시점 → `sponsor-outreach-send`
 - [승인] 쿠팡 파트너스·Amazon Associates 가입과 추적 코드 → `affiliate-accounts` (25개 전부 비어 있음)
-- [승인] 홍보용 SNS 계정 → `ad-channels`
+- [승인] 홍보용 SNS 계정 → `ad-channels` — Instagram 개설됨(11-24, `state/channels.md`). 유튜브·틱톡은 미개설
 
 ## 보류
 - 별 관문 비율(1.1, 50%→75%) — 봇 모형(11-20): 숙련자보다 1.6배 느린 사람은 첫 플레이만으로 차 외부 관문에서 별 11개 부족, 2배면 욕실 관문부터 부족. 강화·다시 하기를 유도하는 의도된 설계이고 수익과 맞물림 → 사람 지표(관문에서 멈춘 비율)가 생기면 결재로.
