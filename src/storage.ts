@@ -3,6 +3,7 @@ import { Preferences } from '@capacitor/preferences';
 import { Capacitor } from '@capacitor/core';
 import type { SponsorProduct } from './game/sponsor';
 import type { MissionState } from './retention';
+import { restorePendingNewItems } from './game/newItems';
 
 export interface Settings {
   sound: boolean;
@@ -95,6 +96,8 @@ export interface Store {
   /** 일일 카운터: 광고 코인·광고 부스터 횟수, 접속 보너스 */
   daily: { day: string; adCoins: number; adBoosters: number; bonusDay: string; streak: number; missions?: MissionState | null };
   owned: string[]; // 보유 아이템 id
+  /** 받았지만 아직 '새 아이템' 알림을 못 띄운 아이템 — 도구 칸에 처음 나오는 판에서 알린다(game/newItems.ts) */
+  pendingNewItems?: string[];
   /** 판별 연속 실패 횟수 — 여러 번 막히면 실패 화면에 요령을 보여 준다. 깨면 지운다 */
   failRuns?: Record<number, number>;
   /** 스토어 평가 요청 기록 (review.ts) */
@@ -161,6 +164,7 @@ export async function loadStore(): Promise<Store> {
         boosters: { ...DEFAULTS.boosters, ...(p.boosters ?? {}) },
         daily: { ...DEFAULTS.daily, ...(p.daily ?? {}) },
         owned: Array.isArray(p.owned) ? p.owned : [],
+        pendingNewItems: restorePendingNewItems(p.pendingNewItems, Array.isArray(p.owned) ? p.owned : []),
         upgrades: p.upgrades && typeof p.upgrades === 'object' ? { ...p.upgrades } : {},
         failRuns: p.failRuns && typeof p.failRuns === 'object' ? { ...p.failRuns } : {},
         review: p.review && typeof p.review.last === 'number' ? { last: p.review.last, count: Number(p.review.count) || 1 } : undefined,
