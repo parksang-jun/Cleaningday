@@ -16,3 +16,13 @@ export function splitNewItems(
     later: all.filter((id) => !kit.has(id)),
   };
 }
+
+/**
+ * 저장해 둔 '알림 대기' 목록을 되살린다 — 앱을 껐다 켜도 미룬 알림이 이어지게.
+ * 깨진 값·중복·보유하지 않은 아이템은 버린다.
+ */
+export function restorePendingNewItems(raw: unknown, owned: readonly string[]): string[] {
+  if (!Array.isArray(raw)) return [];
+  const have = new Set(owned);
+  return [...new Set(raw.filter((x): x is string => typeof x === 'string' && have.has(x)))];
+}

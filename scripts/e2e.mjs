@@ -1169,6 +1169,12 @@ try {
     {
       const nt = await p3.waitForFunction(() => window.__newToasts.length > 0 && window.__newToasts, null, { timeout: 3000 }).then((h) => h.jsonValue(), () => []);
       assert(nt.length === 1 && !nt[0].duringTour && !nt[0].duringIntro && /Cloth/.test(nt[0].text) && /Vacuum/.test(nt[0].text) && !/All-purpose|Sponge/.test(nt[0].text), `stage 1 "New item" toast comes after the walkthrough and lists only what this stage uses (got ${JSON.stringify(nt)})`);
+      // 미룬 알림(1판 도구 칸에 없는 것)은 저장에 남아 앱을 다시 켜도 이어진다
+      // 저장은 150ms 늦게 쓰이므로(persist 디바운스) 알림 뒤 저장이 바뀔 때까지 기다렸다가 판정한다
+      const readPend = () => p3.evaluate(() => JSON.parse(localStorage.getItem('sparkle-clean-v1') || '{}').pendingNewItems ?? null);
+      await p3.waitForFunction(() => { const s = JSON.parse(localStorage.getItem('sparkle-clean-v1') || '{}'); return Array.isArray(s.pendingNewItems) && !s.pendingNewItems.includes('cloth'); }, null, { timeout: 3000 }).catch(() => {});
+      const pend = await readPend();
+      assert(Array.isArray(pend) && pend.length > 0 && !pend.includes('cloth') && !pend.includes('vacuum'),`deferred "New item" announcements are saved, so they survive an app restart (got ${JSON.stringify(pend)})`);
     }
     assert(await p3.waitForFunction(() => JSON.parse(localStorage.getItem('sparkle-clean-v1') || '{}').settings?.tourDone === true, null, { timeout: 5000 }).then(() => true, () => false), 'finishing the walkthrough is remembered');
     // 1판은 다시 해도 안내가 나온다
