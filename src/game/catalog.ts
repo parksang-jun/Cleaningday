@@ -398,6 +398,7 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['sponge', 'tilebrush'], cleaner: 'fabric', on: ['fabric'], speed: 1.0 },
   ],
   grease: [
+    { tools: ['scrubpad'], cleaner: 'degreaser', on: ['steel', 'metal', 'ceramic', 'tile', 'stone'], speed: 1.4 }, // 전용 도구: 눌어붙은 기름때는 수세미가 제일 빠르다
     { tools: ['scrubpad', 'sponge'], cleaner: 'degreaser', not: ['wood', 'vinyl', 'fabric'], speed: 1.0 },
     { tools: ['scrubpad', 'sponge'], cleaner: 'bakingsoda', not: ['wood', 'vinyl', 'fabric'], speed: 0.8 }, // 꿀팁: 베이킹소다 반죽을 발라 20~30분 불린 뒤
     { tools: ['scrubpad', 'sponge'], cleaner: 'soapsoda', not: ['wood', 'vinyl', 'fabric'], speed: 1.05 }, // 섞어 쓰기: 베이킹소다 + 주방세제 페이스트 (전용 세제급)
@@ -412,6 +413,7 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     // 다목적 세정제(중성)는 원목·도장 가구 얼룩 전용 — 주방·욕실·차량·실외 얼룩은 그 자리에 맞는 세제가 따로 있다
     { tools: ['cloth', 'sponge'], cleaner: 'allpurpose', on: ['wood'], speed: 1.0 },
     { tools: ['cloth', 'sponge'], cleaner: 'allpurpose', on: ['paint'], speed: 0.6 },
+    { tools: ['tilebrush'], cleaner: 'bathroom', on: ['tile'], speed: 1.35 }, // 전용 도구: 타일·줄눈 얼룩은 타일 솔
     { tools: ['sponge', 'tilebrush'], cleaner: 'bathroom', on: ['ceramic', 'tile'], speed: 1.0 }, // 욕실 얼룩은 욕실 세정제
     { tools: ['sponge', 'deckbrush'], cleaner: 'deck', on: ['plastic', 'paint', 'wood', 'stone', 'brick'], speed: 0.9 }, // 실외 가구·담장 얼룩은 산소계 데크 클리너
     { tools: ['sponge'], cleaner: 'dishsoap', on: ['plastic'], speed: 0.9 }, // 플라스틱 의자·통의 얼룩은 주방세제 푼 물
@@ -420,6 +422,7 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['cloth', 'sponge', 'tilebrush'], cleaner: 'soapsoda', on: ['steel', 'ceramic', 'tile'], speed: 1.1 }, // 섞어 쓰기: 베이킹소다 + 주방세제 (욕조·싱크·변기 레시피)
     { tools: ['sponge', 'tilebrush'], cleaner: 'descaler', on: ['ceramic'], speed: 0.8 }, // 꿀팁: 변기 얼룩은 구연산 10분
     { tools: ['sponge', 'tilebrush', 'cloth'], cleaner: 'fabric', on: ['fabric'], speed: 1.0 },
+    { tools: ['squeegee'], cleaner: 'glass', on: ['glass'], speed: 1.35 }, // 전용 도구: 유리는 스퀴지로 한 번에
     { tools: ['cloth', 'squeegee'], cleaner: 'glass', on: ['glass'], speed: 1.0 },
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 1.0 },
     { tools: ['mitt'], cleaner: 'carshampoo', on: ['paint', 'glass', 'plastic', 'metal'], speed: 1.0 },
@@ -428,6 +431,9 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['washer'], on: ['stone', 'brick', 'tile'], speed: 0.7 },
   ],
   scale: [
+    { tools: ['tilebrush'], cleaner: 'descaler', on: ['tile', 'stone'], speed: 1.35 }, // 전용 도구: 타일 물때는 타일 솔
+    { tools: ['squeegee'], cleaner: 'descaler', on: ['glass'], speed: 1.45 }, // 전용 도구: 유리 물때는 스퀴지
+    { tools: ['wheelbrush'], cleaner: 'wheel', on: ['metal'], speed: 1.35 }, // 전용 도구: 휠은 휠 브러시
     { tools: ['sponge', 'tilebrush', 'scrubpad'], cleaner: 'descaler', not: ['glass', 'metal'], speed: 1.0 }, // 물때 제거제·구연산
     { tools: ['cloth', 'squeegee', 'sponge'], cleaner: 'descaler', on: ['glass'], speed: 1.0 },
     { tools: ['sponge', 'cloth'], cleaner: 'bakingsoda', on: ['steel'], speed: 0.6 }, // 꿀팁: 스테인리스 물자국은 베이킹소다 뿌려 결 방향으로
@@ -436,6 +442,8 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['sponge', 'tilebrush'], cleaner: 'bathroom', speed: 0.5 }, // 욕실 세정제로는 느리게
   ],
   soap: [
+    { tools: ['squeegee'], cleaner: 'bathroom', on: ['glass'], speed: 1.45 }, // 전용 도구: 샤워 부스 비누때는 스퀴지
+    { tools: ['tilebrush'], cleaner: 'bathroom', on: ['tile'], speed: 1.35 }, // 전용 도구: 타일 비누때는 타일 솔
     { tools: ['sponge', 'tilebrush'], cleaner: 'bathroom', not: ['glass'], speed: 1.0 },
     { tools: ['squeegee', 'sponge', 'cloth'], cleaner: 'bathroom', on: ['glass'], speed: 1.0 },
     { tools: ['sponge'], cleaner: 'descaler', speed: 0.6 },
@@ -446,6 +454,7 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['steam'], speed: 1.0 },
   ],
   mold: [
+    { tools: ['tilebrush'], cleaner: 'mold', on: ['tile', 'stone', 'brick'], speed: 1.4 }, // 전용 도구: 줄눈 곰팡이는 타일 솔
     { tools: ['tilebrush', 'sponge', 'squeegee', 'scrubpad'], cleaner: 'mold', not: ['wood', 'fabric', 'paint', 'plastic'], speed: 1.0 }, // 락스 습포
     { tools: ['tilebrush', 'sponge', 'scrubpad', 'deckbrush'], cleaner: 'oxy', not: ['paint', 'metal'], speed: 0.85 }, // 꿀팁: 과탄산소다 페이스트 20~30분 → 칫솔
     { tools: ['deckbrush', 'sponge', 'tilebrush'], cleaner: 'deck', speed: 0.9 }, // 원목·플라스틱·패브릭 곰팡이는 산소계
@@ -453,12 +462,14 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
   ],
   moss: [
     { tools: ['washer'], on: ['stone', 'brick', 'tile', 'metal', 'plastic', 'paint'], speed: 1.2 }, // 저~중압으로
+    { tools: ['deckbrush'], cleaner: 'moss', on: ['wood', 'stone', 'brick'], speed: 1.35 }, // 전용 도구: 이끼는 데크 솔
     { tools: ['deckbrush', 'tilebrush', 'wheelbrush'], cleaner: 'moss', speed: 1.0 },
     { tools: ['deckbrush'], cleaner: 'deck', on: ['wood'], speed: 0.9 },
     { tools: ['deckbrush', 'tilebrush'], cleaner: 'oxy', not: ['paint', 'metal'], speed: 0.85 }, // 꿀팁: 산소계(과탄산소다)로 녹조
     { tools: ['deckbrush'], cleaner: 'vinegar', on: ['wood', 'stone', 'brick'], speed: 0.7 }, // 꿀팁: 식초 1컵/양동이 10~20분 → 부드러운 솔
   ],
   iron: [
+    { tools: ['wheelbrush'], cleaner: 'wheel', speed: 1.4 }, // 전용 도구: 철분은 휠 브러시
     { tools: ['wheelbrush', 'tilebrush', 'sponge'], cleaner: 'wheel', speed: 1.0 },
     { tools: ['claybar'], cleaner: 'carshampoo', on: ['paint', 'glass'], speed: 1.0 }, // 꿀팁: 세차 후 까끌하면 클레이바 + 윤활
   ],

@@ -581,6 +581,17 @@ function stageKit(session: CleanSession): Set<string> {
   const kit = new Set<string>();
   for (const e of ownedTools) if (e.spec.families.some((f) => toolFams.has(f))) kit.add(e.spec.id);
   for (const e of ownedDets) if (cleanerFams.has(e.spec.family)) kit.add(e.spec.id);
+  // 코인으로 산 것은 이 판에서 한 군데라도 통하면 반드시 올린다 — 느린 조합이라고 빼면 "샀는데 안 보인다"가 된다
+  for (const e of ownedTools) {
+    if (kit.has(e.spec.id) || e.spec.cost <= 0) continue;
+    const works = [...pairs].some(([d, sfs]) => [...sfs].some((sf) => recipesFor(d, sf).some((r) => r.tools.some((f) => e.spec.families.includes(f)) && (!r.cleaner || ownedDets.some((c) => c.spec.family === r.cleaner) || ownsMix(r.cleaner, ownedDets)))));
+    if (works) kit.add(e.spec.id);
+  }
+  for (const e of ownedDets) {
+    if (kit.has(e.spec.id) || e.spec.cost <= 0) continue;
+    const works = [...pairs].some(([d, sfs]) => [...sfs].some((sf) => recipesFor(d, sf).some((r) => r.cleaner === e.spec.family && ownedTools.some((tl) => r.tools.some((f) => tl.spec.families.includes(f))))));
+    if (works) kit.add(e.spec.id);
+  }
   // 섞어 쓰는 레시피면 두 재료를 모두 챙긴다
   for (const f of cleanerFams) for (const id of mixParts(f) ?? []) if (ownedDets.some((e) => e.spec.id === id)) kit.add(id);
   // 염소계 + 산성 → 헹굼 필수
@@ -2541,7 +2552,11 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
           track('shop_buy', { item: e.spec.id, premium: Boolean(e.spec.premium) });
           sfx.buy();
           close();
-          if (game) renderToolbar();
+          if (game) {
+            // 판 도중에 산 것도 바로 도구 칸에 나온다(도구 칸은 판을 시작할 때 정해 두므로 다시 고른다)
+            game.kit = stageKit(game.session);
+            renderToolbar();
+          }
           openShop(inGame);
         }),
       );

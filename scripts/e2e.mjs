@@ -1198,6 +1198,30 @@ try {
     await b3d.close();
   }
 
+  // 판 도중에 코인으로 산 도구는 그 판 도구 칸에 바로 나온다 (제보: 샀는데 안 나타난다)
+  {
+    const cb = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: false });
+    const pb = await cb.newPage();
+    pb.on('pageerror', (e) => errors.push(String(e)));
+    await pb.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+    await pb.evaluate(() => { window.__sparkle.skipTour(); window.__sparkle.setUnlocked(96, 3); window.__sparkle.setCoins(5000); });
+    await pb.waitForTimeout(500);
+    await pb.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+    await pb.click('[data-testid="area-bathroom"]');
+    await pb.click('[data-testid="stage-44"]');
+    await pb.click('[data-testid="start"]');
+    await pb.waitForSelector('[data-testid="canvas"]');
+    await pb.evaluate(() => { document.querySelectorAll('.modal,.toast').forEach((m) => m.remove()); window.__sparkle.holdPressure(true); });
+    const barOf = () => pb.$$eval('.toolbar [data-item]', (els) => els.map((e) => e.getAttribute('data-item')));
+    assert(!(await barOf()).includes('steamer'), 'a tool that is not owned is not on the toolbar');
+    await pb.click('[data-testid="booster-time"]');
+    await pb.waitForSelector('[data-testid="shop"]');
+    await pb.click('[data-buy="steamer"]');
+    await pb.waitForTimeout(400);
+    assert((await barOf()).includes('steamer'), 'a tool bought with coins mid-stage appears on the toolbar right away');
+    await cb.close();
+  }
+
   assert(errors.length === 0, `no page errors (${errors.join(' | ')})`);
   if (softFails.length) throw new Error(`${softFails.length} soft failure(s): ${softFails.join(' | ')}`);
   console.log('\nE2E PASSED');

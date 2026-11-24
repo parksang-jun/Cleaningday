@@ -2654,3 +2654,144 @@ body.has-banner .ad-banner {
   border: 1px dashed rgba(0, 60, 60, 0.35);
   box-shadow: none;
 }
+
+/* ── 청소 화면을 크게 (2026-11 제보: 게임 화면이 너무 작다) — 위아래 안내를 한 줄씩으로 줄여 캔버스에 자리를 내준다 ── */
+.game {
+  padding-top: 6px;
+  padding-left: max(6px, env(safe-area-inset-left, 0px));
+  padding-right: max(6px, env(safe-area-inset-right, 0px));
+  gap: 4px;
+}
+/* 오른쪽 수치(진행률·시간·제한·모드)를 세로로 쌓지 않고 두 줄로 */
+.hud__right {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 0 8px;
+  max-width: 168px;
+  line-height: 1.25;
+}
+.hud__pct {
+  width: 100%;
+  line-height: 1.05;
+}
+/* 안내 문구는 두 줄까지만 */
+.hint {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.25;
+  padding: 0 4px;
+}
+/* 오염 견본은 한 줄 — 넘치면 옆으로 민다 */
+.legend {
+  flex-wrap: nowrap;
+  justify-content: safe center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  min-height: 22px;
+  padding: 1px 4px 0;
+}
+.legend::-webkit-scrollbar {
+  display: none;
+}
+.legend__chip {
+  flex: none;
+  padding: 1px 8px 1px 4px;
+  font-size: 12px;
+}
+.boosters {
+  gap: 6px;
+  padding: 2px 4px 0;
+}
+.booster {
+  padding: 4px 8px;
+}
+.toolbar {
+  gap: 2px;
+}
+.toolbar__label {
+  width: 34px;
+}
+.tool {
+  width: 60px;
+  height: 56px;
+}
+.tool svg {
+  width: 27px;
+  height: 27px;
+}
+/* 낮은 화면(구형·소형 폰): 도구 칸을 더 낮게 */
+@media (max-height: 700px) {
+  .tool {
+    height: 50px;
+    width: 58px;
+  }
+  .tool svg {
+    width: 23px;
+    height: 23px;
+  }
+  .hud__pct {
+    font-size: 18px;
+  }
+  .booster__name {
+    display: none;
+  }
+  .booster {
+    justify-content: center;
+  }
+}
+.hud {
+  gap: 6px;
+}
+.hud__right {
+  max-width: 136px;
+  min-width: 0;
+  gap: 0 6px;
+}
+.hud__time,
+.hud__limit,
+.hud__mode,
+.hud__mess {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.toolbar__label {
+  width: 38px;
+  font-size: 11px;
+  line-height: 1.15;
+}
+.tool__name {
+  max-width: 100%;
+  font-size: 10.5px;
+  letter-spacing: -0.3px;
+}
+/* 이름이 긴 세제는 잘라 내지 않고 두 줄로 */
+.tool__name {
+  white-space: normal;
+  word-break: keep-all;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.08;
+  text-align: center;
+  font-size: 10px;
+}
+.tool {
+  padding: 3px 1px 2px;
+}
+.toolbar__label {
+  width: 40px;
+  word-break: keep-all;
+}
+@media (max-height: 700px) {
+  .tool {
+    height: 54px;
+  }
+  .tool svg {
+    width: 20px;
+    height: 20px;
+  }
+}
