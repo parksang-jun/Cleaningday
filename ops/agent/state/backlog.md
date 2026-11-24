@@ -16,7 +16,7 @@
 - 아직 남은 묵은 PR(보호 경로라 자동 반영 불가, 결재 `stale-prs-cleanup`): #12(app-ads.txt, 올릴 주소는 결재 app-ads-host) · #18(Play 등록 자료 중 main b719d4f 에 없는 것) · #19(playwright 버전 고정 — package.json)
 
 ## 다음에 처리 (위에서부터)
-- [auto] 광고팀 후속(결재 ad-channels=done, 11-24): 게시 대상은 인스타그램 @sparklecleaninggame 하나. 루틴 E 가 릴스용 캡션·해시태그로 준비하고 `state/campaigns.csv` 에 채널로 등록. 게시 도구 연결이 없으면 '게시대기'로 영상·캡션 전달. 틱톡·유튜브는 계정 없음 — 성과를 본 뒤 필요하면 결재로
+- [auto] 광고팀 후속(결재 ad-channels=done, 11-24): 게시 대상은 인스타그램 @sparklecleaninggame 하나(채널 규칙 `state/channels.md` — 사장님이 직접 게시, 에이전트는 영상·캡션 준비). 루틴 E 가 릴스용 캡션·해시태그로 준비하고 `state/campaigns.csv` 에 채널로 등록. 게시 도구 연결이 없으면 '게시대기'로 영상·캡션 전달. 틱톡·유튜브는 계정 없음 — 성과를 본 뒤 필요하면 결재로
 - [auto] 1.2·1.2.1 변경 효과 확인 준비: 스테이지별 이탈·재시도·광고 건너뛰기 사용·별 관문에서 멈춘 횟수를 지표 파일(`state/metrics/`)로 받는 양식 정리 — 결재 revenue-data-export 와 묶어 요청 (근거: 1.1~1.2.1 에 들어간 개선 10여 건이 모두 '확인 대기')
 - [auto] 묵은 PR 재상신(결재 stale-prs-cleanup 결과에 따라): #18(Play 자료 중 남는 것) → #12(app-ads.txt) → #19(e2e 준비). 셋 다 보호 경로(store-assets·docs·package.json)라 PR 로만
 - [auto] 기록 파일 충돌 재발 방지 2단계: 결재 요청서를 건별 파일(`state/approvals/<id>.json`)로, feedback.csv 는 회차별 추가 파일로 — 운영 기록이 main 으로 바로 가게 된 뒤(11-23)로 급하지 않음. 같은 날 두 실행이 겹칠 때만 문제 (근거: 11-20 점검)
