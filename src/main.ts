@@ -13,6 +13,7 @@ import { dominantDirt, GEAR_COOLDOWN_MS, GEAR_MESS_COUNT, GEAR_SLOW_AT, GEAR_SLO
 import { BLOT_DIRT, findMix, MIXES, mixParts } from './game/catalog';
 import { pickHint, pickHints, type HintItems, type HintPick } from './game/hints';
 import { mulberry32 } from './game/rng';
+import { splitNewItems } from './game/newItems';
 import { FEVER_BOOST, feverMeter, rewardFor, stepFever, streakBonus, type FeverState, type Reward } from './game/reward';
 import { cautionTipFor, tipForCombo, tipForItems, tipsFor, type CleaningTip } from './game/tips';
 import { performanceRatios, REFERENCE_REMOVAL, type SponsorProduct } from './game/sponsor';
@@ -50,6 +51,8 @@ const HINT_AFTER_TRIES = 2;
 const GUIDED_UNTIL = 3;
 /** 결과 화면에서 "다음 판 체험"을 눌러 둔 광고 제품 — 다음 판 시작 시 체험 목록에 들어간다 */
 let pendingTrials: string[] = [];
+/** 받았지만 아직 '새 아이템' 알림을 못 띄운 아이템 — 도구 칸에 처음 나오는 판에서 알린다 */
+let pendingNewItems: string[] = [];
 
 function guided(level: LevelDef): boolean {
   return level.id <= GUIDED_UNTIL;
@@ -1019,7 +1022,15 @@ function startLevel(id: number) {
   });
   app.querySelector('[data-act="journal"]')!.addEventListener('click', () => openJournal());
   void applyView3D();
-  if (newOnes.length) toast(t('newItem', { item: newOnes.map((n) => itemName(findItem(n, items))).join(', ') }));
+  // '새 아이템' 알림: 이 판 도구 칸에 나오는 것만, 판 소개·조작 안내가 끝난 뒤에 (나머지는 쓰는 판까지 미룬다)
+  pendingNewItems = [...new Set([...pendingNewItems, ...newOnes])];
+  const runGame = game;
+  const announceNew = () => {
+    if (game !== runGame) return;
+    const { announce, later } = splitNewItems(pendingNewItems, [], runGame.kit);
+    pendingNewItems = later;
+    if (announce.length) toast(t('newItem', { item: announce.map((n) => itemName(findItem(n, items))).join(', ') }));
+  };
   track('level_start', { level: id, tier: level.tier, area: level.area });
   ads.gameplayStart();
   const loop = (now: number) => {
@@ -1086,8 +1097,12 @@ function startLevel(id: number) {
         duckMusic(true);
         // 1판에서는 매번 조작 안내(건너뛰기 가능), 다른 판은 아직 안 봤을 때만
         const cfg = getStore().settings;
-        if (!cfg.tourOff && (id === 1 || !cfg.tourDone)) startTour(maybeHostIntro);
-        else maybeHostIntro();
+        const afterIntro = () => {
+          announceNew();
+          maybeHostIntro();
+        };
+        if (!cfg.tourOff && (id === 1 || !cfg.tourDone)) startTour(afterIntro);
+        else afterIntro();
       });
     },
   );
