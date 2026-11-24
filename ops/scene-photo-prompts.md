@@ -94,3 +94,19 @@
 | shelf | 원목 | Photorealistic straight-on photograph of a clean wooden bookshelf with tidy rows of plain books and two storage boxes, filling the frame. |
 | basin | 도기 | Photorealistic overhead photograph looking straight down at a clean white ceramic bathroom washbasin with a chrome faucet, filling the frame. |
 | showerglass | 유리 | Photorealistic straight-on photograph of a clean glass shower door with a chrome handle, pale tiled shower behind it, filling the frame. |
+
+## 구역 판 전용 사진 (2026-11-24)
+
+구역이 나뉜 21개 판은 장면 사진을 구역별로 잘라 붙이는 대신, 그 판 전용 한 장(`L<판>.jpg`)을 쓴다.
+생성한 사진은 가구·경계선이 구역 사각형에 맞도록 가로·세로를 구간별로 늘리거나 줄여 맞췄다(경계 수치는 눈으로 잰 값).
+모델 nano-banana-2.1, 3:4, 1K (장당 4크레딧, 합계 84).
+
+| 배치 | 판 = Runway 작업 번호 |
+|---|---|
+| 거실: 마루 + 소파 (x 10–90 %, y 40–90 %) | 10 = 5008797d, 11 = 50056b51, 12 = 148b46d1 |
+| 방: 마루 + 침대 (x 8–92 %, y 6–58 %) | 20 = 5c92013a, 23 = 12c70062, 24 = 2681b72c |
+| 주방: 타일 36 % / 가스레인지 36 % / 나무 상판 28 % | 33 = 362a99b0, 34 = 5a5bb594, 36 = 171499b5 |
+| 욕실: 타일 벽 55 % / 욕조 45 % | 46 = e72173ca, 47 = 552bf995, 48 = 26a22087 |
+| 정원: 벽돌 벽 45 % / 데크 55 % | 63 = 4fdcc59c, 66 = d10068d9, 70 = 3af10b8a, 72 = 33b5a81c |
+| 정원: 왼쪽 돌 파티오 / 오른쪽 데크 | 64 = b73e871f, 67 = 90e87294, 71 = 5cf9654c |
+| 정원: 울타리 50 % / 플라스틱 벤치 50 % | 65 = c1ff3acb, 69 = 6de5e9cb |
