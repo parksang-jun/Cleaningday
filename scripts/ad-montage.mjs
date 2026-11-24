@@ -5,6 +5,7 @@
 //     "scenes": [ { "area": "living", "stage": 1, "steps": "cloth", "caption": "먼지? 한 번에 쓱", "say": "먼지는 한 번에 쓱.", "take": 5, "from": "start" } ],
 //     "end": { "title": "싹싹 클린", "sub": "App Store 에서 검색", "say": "싹싹 클린. 지금 앱스토어에서 만나 보세요." } }
 //   take: 그 장면을 몇 초 쓸지(나레이션이 더 길면 그만큼 늘어난다) · from: "start"(더러운 화면부터) 또는 "end"(반짝 결과까지)
+//   speed: 빨리 감기 배율(1~4, 기본 1) — 화면 구석에 x3 처럼 표시된다
 //   say: 나레이션(한국어·영어 — scripts/ad-voice.py). 비우면 그 장면은 게임 소리만.
 //   맨 위에 "voice": 0~9(0~4 남성, 5~9 여성 계열, 기본 5), "voiceSpeed": 0.8~1.3(기본 1.05) 을 줄 수 있다.
 // 먼저 `npm run build`. 장면 녹화는 scripts/ad-clip.mjs 가 한다(실제 플레이만).
@@ -66,14 +67,19 @@ try {
     const info = JSON.parse(run('node', a).trim().split('\n').find((l) => l.startsWith('{')));
     const voice = narrate(sc.say, `say${n}`);
     const want = Math.max(sc.take ?? 5, voice ? seconds(voice) + 0.7 : 0);
-    const len = Math.min(want, info.seconds);
-    const ss = sc.from === 'end' ? Math.max(0, info.seconds - len) : 0;
+    // speed: 빨리 감기 배율(1~4). 어려운 판은 녹화가 사람보다 느려서, 빨리 감아야 닦이는 모습이 보인다. 화면에 배율을 표시한다
+    const sp = Math.min(4, Math.max(1, sc.speed ?? 1));
+    const len = Math.min(want, info.seconds / sp);
+    const src = len * sp;
+    const ss = sc.from === 'end' ? Math.max(0, info.seconds - src) : 0;
     const out = resolve(tmp, `scene${n}.mp4`);
-    const fade = `fade=t=in:st=0:d=0.2,fade=t=out:st=${(len - 0.2).toFixed(2)}:d=0.2`;
+    const tag = sp > 1 ? `,drawtext=text='x${sp}':fontcolor=white:fontsize=34:x=w-tw-36:y=h-th-40:box=1:boxcolor=black@0.45:boxborderw=12` : '';
+    const fade = `${sp > 1 ? `setpts=PTS/${sp},` : ''}fade=t=in:st=0:d=0.2,fade=t=out:st=${(len - 0.2).toFixed(2)}:d=0.2${tag}`;
+    const tempo = sp > 1 ? (sp > 2 ? `atempo=2,atempo=${(sp / 2).toFixed(3)},` : `atempo=${sp},`) : '';
     if (voice) {
-      ff(['-ss', ss.toFixed(2), '-t', len.toFixed(2), '-i', raw, '-i', voice, '-filter_complex', `[0:v]${fade}[v];[0:a]volume=${GAME_VOL}[g];[1:a]aresample=48000,adelay=350|350,apad[s];[g][s]amix=inputs=2:duration=first:normalize=0[a]`, '-map', '[v]', '-map', '[a]', ...ENC], out);
+      ff(['-ss', ss.toFixed(2), '-t', src.toFixed(2), '-i', raw, '-i', voice, '-filter_complex', `[0:v]${fade}[v];[0:a]${tempo}volume=${GAME_VOL}[g];[1:a]aresample=48000,adelay=350|350,apad[s];[g][s]amix=inputs=2:duration=first:normalize=0[a]`, '-map', '[v]', '-map', '[a]', '-t', len.toFixed(2), ...ENC], out);
     } else {
-      ff(['-ss', ss.toFixed(2), '-t', len.toFixed(2), '-i', raw, '-vf', fade, ...ENC], out);
+      ff(['-ss', ss.toFixed(2), '-t', src.toFixed(2), '-i', raw, '-filter_complex', `[0:v]${fade}[v];[0:a]${tempo}anull[a]`, '-map', '[v]', '-map', '[a]', '-t', len.toFixed(2), ...ENC], out);
     }
     parts.push(out);
     report.push({ scene: n, area: sc.area, stage: sc.stage, seconds: Number(len.toFixed(1)), finished: info.finished, sound: info.sound, narration: !!voice });

@@ -114,6 +114,7 @@ try {
   const done = async () => (await p.locator('[data-testid="result"]').count()) > 0;
   const left = () => p.evaluate(() => { const s = window.__sparkle.session(); return s ? s.remaining : 0; });
   const deadline = Date.now() + MAX_MS;
+  const startLeft = await left();
   const toolbar = await p.$$eval('.toolbar [data-item]', (els) => els.map((e) => e.getAttribute('data-item')));
   for (const id of STEPS) if (!toolbar.includes(id)) throw new Error(`이 판의 도구 막대에 없는 항목: ${id} (있는 것: ${toolbar.join(', ')})`);
   const pick = async (id) => {
@@ -192,7 +193,7 @@ try {
   }
   const r = spawnSync('ffmpeg', args, { stdio: 'inherit' });
   if (r.status !== 0) throw new Error('ffmpeg 변환 실패');
-  console.log(JSON.stringify({ out: OUT, seconds: Number(dur), sound: !!(audio && audio.b64.length > 1000), finished, remaining: Number(remain.toFixed(2)), steps: order }));
+  console.log(JSON.stringify({ out: OUT, seconds: Number(dur), sound: !!(audio && audio.b64.length > 1000), finished, remaining: Number(remain.toFixed(2)), cleaned: Number((startLeft > 0 ? 1 - remain / startLeft : 1).toFixed(2)), steps: order }));
   if (!finished) console.log('주의 - 판을 끝까지 닦지 못했습니다. --steps 순서를 바꾸거나 --max 를 늘리세요.');
   ok = true;
 } finally {
