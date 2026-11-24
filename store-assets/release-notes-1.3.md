@@ -1,6 +1,6 @@
-# 1.2.1 출시 메모
+# 1.3 출시 메모
 
-App Store Connect → 배포 → (+) 새 버전 `1.2.1` → 빌드 17 선택.
+App Store Connect → 배포 → (+) 새 버전 `1.3` → 빌드 17 선택.
 Play Console → 비공개 테스트 → 새 버전 → versionCode 8 AAB.
 
 ## 이 버전의 새로운 기능 — 한국어
