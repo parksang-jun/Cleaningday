@@ -317,7 +317,6 @@ function renderHome() {
       </section>
       ${todayCardHtml()}
       ${WORLDS.map(worldCard).join('')}
-      <p class="muted small center">${t('adsFree')}</p>
       ${adminEnabled() ? `<p class="center"><button class="link-btn small" data-act="admin" data-testid="admin-entry">🛠 ${t('adminEntry')}</button></p>` : ''}
     </div>`;
   app.querySelector('[data-act="continue"]')!.addEventListener('click', () => startLevel(nextLevelId()));
