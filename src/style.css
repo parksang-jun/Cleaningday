@@ -2795,3 +2795,49 @@ body.has-banner .ad-banner {
     height: 20px;
   }
 }
+
+/* ── 상점 누르기·구매 확인 (2026-11-26 제보: 구매 버튼이 잘 안 눌리고, 샀는지 모르겠다) ── */
+/* 창이 상태 표시줄 밑으로 들어가 제목·코인이 가려졌다 — 위쪽 안전 영역만큼 내리고 높이도 그 안에서 */
+.modal {
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+}
+.modal__card {
+  max-height: calc(100vh - env(safe-area-inset-top, 0px) - var(--safe-bottom) - 32px);
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - var(--safe-bottom) - 32px);
+}
+/* 제목과 남은 코인은 목록을 내려도 위에 붙어 있다 */
+.shop__head {
+  position: sticky;
+  top: -18px;
+  z-index: 2;
+  margin: -18px -18px 0;
+  padding: 14px 18px 10px;
+  background: var(--card);
+  border-bottom: 1px solid rgba(20, 60, 70, 0.08);
+}
+.shop__head .coins {
+  font-size: 17px;
+}
+/* 버튼을 손가락 크기로, 두 버튼 사이도 띄운다 */
+.shop .btn--sm {
+  min-height: 42px;
+  min-width: 96px;
+  padding: 0 12px;
+  font-size: 14px;
+  touch-action: manipulation;
+}
+.shop__act {
+  gap: 8px;
+}
+.shop .btn:active {
+  transform: translateY(1px) scale(0.97);
+  filter: brightness(0.92);
+}
+/* 코인이 모자라면 흐리게 — 눌러도 안 사지는 이유가 보인다 */
+.shop .btn[data-poor] {
+  opacity: 0.55;
+}
+/* 구매 확인은 창보다 위, 눈에 띄게 */
+.toast--good {
+  font-size: 15px;
+}

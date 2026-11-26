@@ -1225,6 +1225,19 @@ try {
     await pb.click('[data-buy="steamer"]');
     await pb.waitForTimeout(400);
     assert((await barOf()).includes('steamer'), 'a tool bought with coins mid-stage appears on the toolbar right away');
+    // 샀다는 확인이 뜨고, 코인이 모자라면 얼마가 모자란지 알려 준다 (제보 2026-11-26: 눌러도 샀는지 모르겠다)
+    assert((await pb.locator('.toast--good').count()) > 0, 'buying shows a confirmation toast');
+    await pb.evaluate(() => { window.__sparkle.setCoins(10); document.querySelectorAll('.toast').forEach((x) => x.remove()); });
+    await pb.evaluate(() => { document.querySelector('.modal__card').scrollTop = 120; });
+    await pb.click('[data-buy-booster="bomb"]');
+    await pb.waitForTimeout(200);
+    assert(/10\s*\/\s*120/.test(await pb.locator('.toast--warn').first().innerText()), 'a purchase without enough coins says how many coins are missing');
+    await pb.evaluate(() => { window.__sparkle.setCoins(500); document.querySelectorAll('.toast').forEach((x) => x.remove()); });
+    const scrollBefore = await pb.evaluate(() => document.querySelector('.modal__card').scrollTop);
+    await pb.click('[data-buy-booster="bomb"]');
+    await pb.waitForTimeout(300);
+    assert(Math.abs((await pb.evaluate(() => document.querySelector('.modal__card').scrollTop)) - scrollBefore) < 4, 'the shop keeps its scroll position after a purchase');
+    assert(/×1/.test(await pb.locator('[data-testid="shop-booster-bomb"] .pill').innerText()), 'the owned count goes up after buying a booster');
     await cb.close();
   }
 

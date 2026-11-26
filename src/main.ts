@@ -2460,6 +2460,8 @@ function premiumBadges(e: ItemEntry): string {
     .join('');
 }
 
+/** 상점을 다시 그릴 때 이어 줄 스크롤 위치 */
+let shopScroll = 0;
 function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
   const st = getStore();
   const showMall = mallEnabled();
@@ -2522,14 +2524,23 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
     <h3>${t('cleanersSection')}</h3><ul class="shop__list">${baseDets.map(row).join('')}</ul>`;
   modal(
     `<div class="shop" data-testid="shop">
-      <div class="row"><h2>${t('shop')}</h2><span class="coins">● ${st.coins}</span></div>
+      <div class="row shop__head"><h2>${t('shop')}</h2><span class="coins" data-testid="shop-coins">● ${st.coins}</span></div>
       ${showMall ? `<div class="tabs" role="tablist"><button class="tab${tab === 'game' ? ' is-on' : ''}" data-tab="game" data-testid="tab-game">${t('gameTab')}</button><button class="tab${tab === 'mall' ? ' is-on' : ''}" data-tab="mall" data-testid="tab-mall">${t('mallTab')}</button></div>` : ''}
       <div data-el="panel">${tab === 'mall' && showMall ? mallPanel(defaultMarket(getLang())) : gameTab}</div>
       <button class="btn btn--block" data-act="close">${t('close')}</button>
     </div>`,
-    (root, close) => {
+    (root, close0) => {
+      // 사고 나면 목록을 다시 그리는데, 보던 자리가 맨 위로 튀지 않게 스크롤 위치를 이어 준다
+      root.scrollTop = shopScroll;
+      shopScroll = 0;
+      const close = () => {
+        shopScroll = root.scrollTop;
+        close0();
+      };
+      /** 코인이 모자라면 얼마가 모자란지 알려 준다 */
+      const poor = (cost: number) => toast(esc(t('needCoinsN', { have: getStore().coins, need: cost })), 'warn');
       root.querySelector('[data-act="close"]')!.addEventListener('click', () => {
-        close();
+        close0();
         if (!game) renderHome();
       });
       root.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) =>
@@ -2547,7 +2558,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
         b.addEventListener('click', () => {
           const e = findItem(b.dataset.buy!, items)!;
           if (getStore().coins < e.spec.cost) {
-            toast(t('needCoins'), 'warn');
+            poor(e.spec.cost);
             return;
           }
           getStore().coins -= e.spec.cost;
@@ -2555,6 +2566,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
           persist();
           track('shop_buy', { item: e.spec.id, premium: Boolean(e.spec.premium) });
           sfx.buy();
+          toast(esc(t('bought', { item: itemName(e) })), 'good');
           close();
           if (game) {
             // 판 도중에 산 것도 바로 도구 칸에 나온다(도구 칸은 판을 시작할 때 정해 두므로 다시 고른다)
@@ -2588,7 +2600,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
           const id = b.dataset.buyBooster as BoosterId;
           const st2 = getStore();
           if (st2.coins < BOOSTERS[id].cost) {
-            toast(t('needCoins'), 'warn');
+            poor(BOOSTERS[id].cost);
             return;
           }
           st2.coins -= BOOSTERS[id].cost;
@@ -2596,6 +2608,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
           persist();
           track('booster_buy', { booster: id, cost: BOOSTERS[id].cost });
           sfx.buy();
+          toast(esc(t('boughtN', { item: t(`booster_${id}`), n: st2.boosters[id] })), 'good');
           close();
           renderBoosters();
           openShop(inGame);
@@ -2613,6 +2626,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
             persist();
             track('booster_ad', { booster: id });
             sfx.buy();
+            toast(esc(t('boughtN', { item: t(`booster_${id}`), n: st2.boosters[id] })), 'good');
             close();
             renderBoosters();
             openShop(inGame);
@@ -2624,7 +2638,7 @@ function openShop(inGame = false, tab: 'game' | 'mall' = 'game') {
           const id = b.dataset.adfree as 'day' | 'week' | 'month';
           const st2 = getStore();
           if (!buyAdFree(st2, id)) {
-            toast(t('needCoins'), 'warn');
+            poor(AD_FREE_PASSES.find((x) => x.id === id)!.cost);
             return;
           }
           persist();
