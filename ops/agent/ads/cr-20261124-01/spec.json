@@ -1,12 +1,10 @@
 {
  "lang": "ko",
- "voice": 5,
  "scenes": [
   {
    "area": "living",
    "stage": 3,
    "caption": "먼지·머리카락, 싹싹",
-   "say": "먼지랑 머리카락, 싹싹 치워 볼까요?",
    "take": 6,
    "speed": 4,
    "max": 28
@@ -15,7 +13,6 @@
    "area": "kitchen",
    "stage": 25,
    "caption": "기름때는 세제 먼저!",
-   "say": "주방 기름때는 세제를 먼저 뿌려요.",
    "take": 5,
    "speed": 3,
    "max": 20
@@ -24,7 +21,6 @@
    "area": "room",
    "stage": 14,
    "caption": "침대 위도 말끔히",
-   "say": "침대 위도 말끔하게!",
    "take": 5.5,
    "speed": 4,
    "max": 26
@@ -33,7 +29,6 @@
    "area": "exterior",
    "stage": 73,
    "caption": "세차도 시원하게",
-   "say": "세차도 시원하게.",
    "take": 5.5,
    "speed": 4,
    "max": 26
@@ -42,7 +37,6 @@
    "area": "living",
    "stage": 1,
    "caption": "반짝반짝 완성!",
-   "say": "먼지는 한 번에 쓱. 반짝반짝 완성!",
    "take": 7,
    "from": "end",
    "max": 20
@@ -51,6 +45,6 @@
  "end": {
   "title": "싹싹 클린",
   "sub": "App Store 에서 '싹싹 클린' 검색",
-  "say": "스트레스 풀리는 청소 게임 싹싹 클린. 지금 앱스토어에서 만나 보세요."
+  "take": 3.2
  }
 }
