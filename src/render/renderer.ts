@@ -93,6 +93,9 @@ export function locateDirt(amount: ArrayLike<number>, under: ArrayLike<number>, 
   return out.slice(0, max).map(({ x, y, r }) => ({ x, y, r }));
 }
 
+/** 세로가 모자랄 때 캔버스를 가로로 더 넓혀 보여 주는 한도 — 이보다 늘리면 사진·얼룩이 눈에 띄게 퍼진다 */
+export const MAX_WIDEN = 1.2;
+
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private base = document.createElement('canvas');
@@ -242,7 +245,10 @@ export class Renderer {
     this.cssH = Math.floor(h);
     // 배율 3배는 자동 검사에서 시간 제한 판이 느려져 실패했다 — 실제 기기에서 속도를 확인하기 전까지 2배 유지
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.canvas.style.width = `${this.cssW}px`;
+    // 가로 여백 채우기(2026-11-26 제보): 세로가 모자라 양옆이 남는 폰에서는 화면에 보이는 폭만 최대 20% 늘린다.
+    // 그림(비트맵)은 격자 비율 그대로 두고 표시만 늘리므로 좌표 계산(toGrid)·판 내용은 달라지지 않는다
+    const shownW = Math.floor(Math.min(availW, this.cssW * MAX_WIDEN));
+    this.canvas.style.width = `${shownW}px`;
     this.canvas.style.height = `${this.cssH}px`;
     this.canvas.width = Math.floor(this.cssW * this.dpr);
     this.canvas.height = Math.floor(this.cssH * this.dpr);
