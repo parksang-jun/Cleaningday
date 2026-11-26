@@ -103,7 +103,8 @@ describe('sparkle time (fever)', () => {
         if (a > s.amount[i]) i = k
       })
       const before = s.amount[i]
-      s.scrub(BASE_TOOLS.cloth, (i % s.w) + 0.5, Math.floor(i / s.w) + 0.5, 0.05)
+      // 0.05초면 닦는 속도를 올린 뒤(WIPE_FEEL)로는 두 경우 모두 칸이 다 지워져 차이가 안 보인다 — 더 짧게 문질러 비교한다
+      s.scrub(BASE_TOOLS.cloth, (i % s.w) + 0.5, Math.floor(i / s.w) + 0.5, 0.01)
       return { removed: before - s.amount[i], damage: s.damage }
     }
     const normal = run(1)

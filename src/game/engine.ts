@@ -63,6 +63,19 @@ export function recipeKey(dirt: DirtType, tool: ToolFamily, cleaner: CleanerFami
 
 /** 문지름이 이어진 것으로 보는 최대 간격(초) */
 const STROKE_GAP_SEC = 0.25
+
+/**
+ * 닦이는 손맛(2026-11-27 제보: 닦아야 할 곳이 잘 안 닦인다 — 시원시원하게).
+ *  · WIPE_FEEL: 문질러 지우는 속도 전체 배율
+ *  · TIMING_WIPE: 목표·제한시간을 재는 봇에게만 쓰는 배율. WIPE_FEEL 보다 작게 두어, 빨라진 만큼 시간이 다 줄지 않고 여유가 남게 한다
+ *    (값은 balance·reward 테스트가 모두 통과하는 범위에서 골랐다: 1.35 이상은 92판 봇 경로가 깨지고, 1.5 는 고급 장비 이점이 1.5배 밑으로 내려간다)
+ *  · BRUSH_EDGE: 붓 가장자리의 세기(중심 1). 예전에는 0.45 라 가장자리가 지나간 자리에 옅은 얼룩이 남았다
+ *  · CLEAR_BELOW: 이 농도 밑으로 내려가면 다 닦인 것으로 친다. 예전 0.02 는 눈에 안 보이는 얼룩이 남아 "닦았는데 안 닦였다"가 됐다
+ */
+export const WIPE_FEEL = 1.3
+export const TIMING_WIPE = 1.0
+export const BRUSH_EDGE = 0.75
+export const CLEAR_BELOW = 0.05
 /** 눌러 흡수: 이 속도(칸/초) 이하면 "누르고 있다" → 흡수 배율 BLOT_BONUS, BLOT_FAST 이상이면 "문지른다" → BLOT_RUB 배율 + 번짐 */
 export const BLOT_SLOW = 3
 export const BLOT_FAST = 10
@@ -183,6 +196,8 @@ export class CleanSession {
   version = 0
   /** 닦는 속도 배율 — 반짝 타임(연속으로 닦으면 잠깐 빨라짐) 동안 1보다 크다. 표면 손상에는 적용되지 않는다 */
   boost = 1
+  /** 문질러 지우는 속도 배율(손맛). 시간 기준을 재는 봇만 TIMING_WIPE 로 낮춰 돈다 */
+  wipe = WIPE_FEEL
   /** 광택 마감: 고성능 도구·세정제로 끝까지 지운 칸 (렌더링·결과 보너스) */
   readonly shine: Uint8Array
   shineCells = 0
@@ -744,12 +759,12 @@ export class CleanSession {
   }
 
   /** 붓 영역 칸 순회 (가장자리로 갈수록 약해짐) */
-  private forEachInRadius(cx: number, cy: number, radius: number, fn: (i: number, w: number) => void) {
+  private forEachInRadius(cx: number, cy: number, radius: number, fn: (i: number, w: number) => void, wipe = false) {
     const r = radius
     for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(this.h - 1, Math.ceil(cy + r)); y++) {
       for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(this.w - 1, Math.ceil(cx + r)); x++) {
         const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy)
-        if (d <= r) fn(y * this.w + x, 1 - (d / r) * 0.55)
+        if (d <= r) fn(y * this.w + x, wipe ? 1 - (d / r) * (d / r) * (1 - BRUSH_EDGE) : 1 - (d / r) * 0.55)
       }
     }
   }
@@ -977,7 +992,7 @@ export class CleanSession {
       }
       const mult = det ? det.mult[dirt] : 1
       const pro = Boolean(tool.pro || det?.pro)
-      let rate = (tool.power * tool.effect[dirt] * recipe.speed * mult * w * this.boost) / (DIRT_RESIST[dirt] * resistMul)
+      let rate = (tool.power * tool.effect[dirt] * recipe.speed * mult * w * this.boost * this.wipe) / (DIRT_RESIST[dirt] * resistMul)
       if (BLOT_DIRT.includes(dirt) && !tool.families.includes('steam')) {
         rate *= blotRate
         if (sp >= BLOT_FAST) {
@@ -990,8 +1005,8 @@ export class CleanSession {
       this.take(i, a - next)
       this.amount[i] = next
       this.engaged = true
-      if (next < 0.02) this.finishCell(i, cleared, revealed, events, pro)
-    })
+      if (next < CLEAR_BELOW) this.finishCell(i, cleared, revealed, events, pro)
+    }, true)
     if (dirtyCells > 0) {
       if (effective === 0 && reasons.size) {
         let top: { n: number; reason: NoEffectReason; dirt: DirtType; surface: SurfaceType } | null = null

@@ -418,7 +418,8 @@ describe('sponsors', () => {
     const cy = Math.floor(best / generic.w) + 0.5
     generic.spray(BASE_DETERGENTS.degreaser, cx, cy, 0.2)
     if (sp.kind === 'detergent') branded.spray(sp, cx, cy, 0.2)
-    for (let k = 0; k < 15; k++) {
+    // 닦는 속도를 올린 뒤(WIPE_FEEL)로는 0.5초면 두 쪽 다 붓 안이 전부 지워져 차이가 안 난다 — 다 지워지기 전(0.1초)에 비교한다
+    for (let k = 0; k < 3; k++) {
       generic.scrub(BASE_TOOLS.scrubpad, cx, cy, 1 / 30)
       branded.scrub(BASE_TOOLS.scrubpad, cx, cy, 1 / 30)
     }

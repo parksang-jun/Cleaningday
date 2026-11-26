@@ -1,7 +1,7 @@
 // 기준 플레이어 봇 — 레시피(맞는 도구·세정제)를 모두 아는 "숙련자"가 플레이하는 시간을 재서 목표·제한시간의 기준으로 쓴다.
 // 결정적(같은 입력 → 같은 결과)이라 모든 기기에서 같은 목표시간이 나온다.
 import { BASE_DETERGENTS, BASE_TOOLS, DIRT_TYPES, isHazardMix, recipesFor, type DetergentSpec, type Recipe, type ToolSpec } from './catalog'
-import { CleanSession, SLOW_FACTOR, type Timing } from './engine'
+import { CleanSession, SLOW_FACTOR, TIMING_WIPE, type Timing } from './engine'
 import { grantsUpTo, type LevelDef } from './levels'
 
 export interface BotResult {
@@ -41,8 +41,9 @@ export function premiumKitFor(level: LevelDef): { tools: ToolSpec[]; dets: Deter
   }
 }
 
-export function simulateBot(level: LevelDef, maxSec = 900, kit: { tools: ToolSpec[]; dets: DetergentSpec[] } = kitFor(level), opts: { mess?: boolean } = {}): BotResult & { polish: number; messCount: number } {
+export function simulateBot(level: LevelDef, maxSec = 900, kit: { tools: ToolSpec[]; dets: DetergentSpec[] } = kitFor(level), opts: { mess?: boolean; wipe?: number } = {}): BotResult & { polish: number; messCount: number } {
   const s = new CleanSession(level, undefined, level.seed, opts)
+  if (opts.wipe) s.wipe = opts.wipe
   const { tools, dets } = kit
   const usable = tools.filter((t) => s.canUse(t))
   const rinse = tools.find((t) => t.families.includes('rinse') && !t.onlyOn) ?? tools.find((t) => t.families.includes('rinse'))
@@ -273,8 +274,9 @@ export const PAR_FLOOR_OVER_MESSY_BOT = 1.05
 export function resolveTiming(level: LevelDef): Timing {
   const hit = cache.get(level.id)
   if (hit) return hit
-  const quiet = simulateBot(level, 900, kitFor(level), { mess: false })
-  const messy = level.mess ? simulateBot(level).time : quiet.time
+  // 시간 기준은 손맛 배율을 낮춘 봇(TIMING_WIPE)으로 잰다 — 사람은 WIPE_FEEL 로 더 빨리 닦으므로 그만큼 여유가 생긴다
+  const quiet = simulateBot(level, 900, kitFor(level), { mess: false, wipe: TIMING_WIPE })
+  const messy = level.mess ? simulateBot(level, 900, kitFor(level), { wipe: TIMING_WIPE }).time : quiet.time
   const botSec = quiet.time + MESS_PAR_WEIGHT * (messy - quiet.time)
   const basePar = Math.max(15, Math.round(botSec * level.parFactor))
   const parSec = Math.max(basePar, Math.ceil(messy * PAR_FLOOR_OVER_MESSY_BOT))
