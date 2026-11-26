@@ -45,7 +45,11 @@ let voiceWarned = false;
 const narrate = (text, name) => {
   if (!text || !['ko', 'en'].includes(LANG)) return null;
   const wav = resolve(tmp, `${name}.wav`);
-  const r = spawnSync('python3', ['scripts/ad-voice.py', text, wav, String(spec.voiceSpeed ?? 1.05), String(spec.voice ?? 5), LANG], { cwd: root, encoding: 'utf8' });
+  // 영어는 Kokoro(ad-voice-en.py) — 사람 목소리에 가깝다. 한국어는 Supertonic(ad-voice.py)
+  const r =
+    LANG === 'en'
+      ? spawnSync('python3', ['scripts/ad-voice-en.py', text, wav, String(spec.voiceSpeed ?? 1.0), String(spec.voice ?? 3)], { cwd: root, encoding: 'utf8' })
+      : spawnSync('python3', ['scripts/ad-voice.py', text, wav, String(spec.voiceSpeed ?? 1.05), String(spec.voice ?? 5), LANG], { cwd: root, encoding: 'utf8' });
   if (r.status !== 0) {
     if (!voiceWarned) console.log('주의 - 나레이션을 만들지 못했습니다(자막과 게임 소리만 들어갑니다):', (r.stderr || '').trim().split('\n').pop());
     voiceWarned = true;
