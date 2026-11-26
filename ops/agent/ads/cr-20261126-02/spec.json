@@ -1,0 +1,46 @@
+{
+  "lang": "ko",
+  "voice": 7,
+  "scenes": [
+    {
+      "area": "living",
+      "stage": 6,
+      "caption": "스티커 자국, 뭘로 떼죠?",
+      "say": "끈적한 스티커 자국은 뭘로 뗄까요?",
+      "take": 5.5,
+      "speed": 4,
+      "max": 24
+    },
+    {
+      "area": "room",
+      "stage": 18,
+      "caption": "먼지는 청소기, 진흙은 스펀지",
+      "say": "먼지는 청소기로. 진흙은 스펀지로.",
+      "take": 5,
+      "speed": 4,
+      "max": 22
+    },
+    {
+      "area": "garden",
+      "stage": 56,
+      "caption": "그릴 기름때는 수세미로",
+      "say": "그릴 기름때는 세제 뿌리고 수세미로.",
+      "take": 5,
+      "speed": 4,
+      "max": 22
+    },
+    {
+      "area": "living",
+      "stage": 1,
+      "say": "맞는 도구를 고르면 한 번에 반짝!",
+      "take": 6.5,
+      "from": "end",
+      "max": 40
+    }
+  ],
+  "end": {
+    "title": "싹싹 클린",
+    "sub": "App Store 에서 '싹싹 클린' 검색",
+    "say": "어떤 도구를 쓸지 직접 골라 보세요. 싹싹 클린."
+  }
+}

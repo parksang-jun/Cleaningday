@@ -1,0 +1,41 @@
+{
+  "lang": "en",
+  "scenes": [
+    {
+      "area": "living",
+      "stage": 5,
+      "caption": "Muddy rug? Watch this.",
+      "take": 5.5,
+      "speed": 4,
+      "max": 24
+    },
+    {
+      "area": "bathroom",
+      "stage": 41,
+      "caption": "Limescale, gone.",
+      "take": 5.5,
+      "speed": 4,
+      "max": 24
+    },
+    {
+      "area": "garden",
+      "stage": 52,
+      "caption": "Pressure-wash the bricks",
+      "take": 5.5,
+      "speed": 4,
+      "max": 24
+    },
+    {
+      "area": "living",
+      "stage": 1,
+      "take": 6.5,
+      "from": "end",
+      "max": 40
+    }
+  ],
+  "end": {
+    "title": "Sparkle Clean",
+    "sub": "Search \"Sparkle Clean\" on the App Store",
+    "take": 3.2
+  }
+}

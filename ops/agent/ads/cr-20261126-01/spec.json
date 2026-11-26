@@ -1,0 +1,46 @@
+{
+  "lang": "ko",
+  "voice": 5,
+  "scenes": [
+    {
+      "area": "bathroom",
+      "stage": 37,
+      "caption": "욕실 물때, 그냥은 안 지워져요",
+      "say": "욕실 물때는 그냥 문지르면 안 지워져요.",
+      "take": 5.5,
+      "speed": 4,
+      "max": 24
+    },
+    {
+      "area": "garden",
+      "stage": 51,
+      "caption": "이끼는 고압 세척기로",
+      "say": "마당 이끼는 고압 세척기로 시원하게.",
+      "take": 5,
+      "speed": 4,
+      "max": 22
+    },
+    {
+      "area": "exterior",
+      "stage": 75,
+      "caption": "휠 쇳가루도 전용 세정제",
+      "say": "자동차 휠은 전용 세정제를 뿌려요.",
+      "take": 5,
+      "speed": 4,
+      "max": 22
+    },
+    {
+      "area": "living",
+      "stage": 1,
+      "say": "마무리 먼지까지 쓱. 반짝반짝 완성!",
+      "take": 6.5,
+      "from": "end",
+      "max": 40
+    }
+  ],
+  "end": {
+    "title": "싹싹 클린",
+    "sub": "App Store 에서 '싹싹 클린' 검색",
+    "say": "때마다 맞는 도구를 고르는 청소 게임 싹싹 클린."
+  }
+}
