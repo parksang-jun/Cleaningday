@@ -31,8 +31,11 @@
         }
       ],
       "after": "A·B: 붙여넣을 문구를 칸별로 정리해 드리고, 2주 뒤 검색 노출 전후를 비교합니다. C: 12월에 다시 올립니다. 초안: ops/agent/reports/drafts/aso-2026-11.md",
-      "status": "open",
-      "created": "2026-11-26"
+      "status": "done",
+      "created": "2026-11-26",
+      "decision": "subtitle-keywords",
+      "decided": "2026-11-26",
+      "result": "A안: 대화에서 '진행해'를 권장안 승인으로 읽었습니다. 붙여넣을 문구를 칸별로 전달했고, 스토어 입력은 사장님이 합니다."
     },
     {
       "id": "stale-prs-cleanup",
