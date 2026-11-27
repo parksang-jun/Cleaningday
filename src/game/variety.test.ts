@@ -62,14 +62,45 @@ describe('닦는 방법이 다른 오염', () => {
     expect(held).toBeGreaterThan(1)
     expect(revealed).toBe(true)
     expect(s.dirtAt(c)).toBe('stain')
-    // 문지르기 (좌우로 빠르게)
+    // 문지르기 (같은 자리에서 좌우로 빠르게) vs 누르기 — 첫 접촉(손이 아직 느림) 뒤 5프레임 동안 진행률이 오른 양.
+    // 예전 검사는 ±2.5칸을 휩쓴 뒤 판 위 쏟은 음료 총량을 비교했는데, 번진 양이 복제되던 버그(1.2~빌드 22)가
+    // 총량을 부풀려 통과했다. 실제로는 빠르게 문지르는 쪽이 진행률을 누르기보다 두 배 빨리 올리고 있었다
+    const gain = (move: (k: number) => number) => {
+      const t = mk()
+      const evs = []
+      evs.push(...t.scrub(BASE_TOOLS.cloth, move(0), cy, DT)); t.tick(DT)
+      const c1 = t.cleanliness
+      for (let k = 1; k < 6; k++) { evs.push(...t.scrub(BASE_TOOLS.cloth, move(k), cy, DT)); t.tick(DT) }
+      return { gain: t.cleanliness - c1, speed: t.strokeSpeed, evs }
+    }
+    const pressed = gain(() => cx)
+    const rubbed = gain((k) => cx + (k % 2 ? 0.4 : -0.4))
+    expect(rubbed.speed).toBeGreaterThan(BLOT_FAST)
+    expect(rubbed.gain).toBeLessThan(pressed.gain * 0.4)
     const r = mk()
     const events = []
     for (let k = 0; k < 90; k++) { const x = cx + Math.sin(k * 0.9) * 2.5; events.push(...r.scrub(BASE_TOOLS.cloth, x, cy, DT)); r.tick(DT) }
     expect(r.strokeSpeed).toBeGreaterThan(BLOT_FAST)
-    const rubbed = before - totalOf(r, 'spill')
-    expect(rubbed).toBeLessThan(held * 0.4)
+    expect(r.cleanliness).toBeLessThan(s.cleanliness) // 오래 휩쓸어도 꾹 누른 것보다 덜 닦인다
     expect(events.some((e) => e.kind === 'noeffect' && e.reason === 'smeared')).toBe(true)
+  })
+
+  // 자체 점검(2026-11-27 2회차): 빠르게 문질러 번진 양이 원래 칸에서 빠지지 않아 판 위 오염은 늘어나는데
+  // 진행률은 닦인 것으로 올라갔다(8판: 오염 150 → 197, 진행률 34%). 1.2~빌드 22
+  it('쏟은 음료를 빠르게 문질러 번져도 오염이 늘지 않고, 진행률은 판 위 실제 오염과 맞는다', () => {
+    for (const lv of LEVELS.filter((l) => l.patches.some((p) => p.type === 'spill'))) {
+      const s = new CleanSession(lv, undefined, lv.seed, { mess: false })
+      const board = () => { let n = 0; for (let i = 0; i < s.amount.length; i++) n += s.amount[i] + Math.max(0, s.under[i]); return n }
+      const start = board()
+      const [cx, cy] = xy(s, cellOf(s, 'spill'))
+      for (let k = 0; k < 90; k++) {
+        s.scrub(BASE_TOOLS.cloth, cx + Math.sin(k * 0.9) * 2.5, cy, DT)
+        s.tick(DT)
+        expect(board(), `${lv.id}판 ${k}번째`).toBeLessThanOrEqual(start + 1e-6)
+      }
+      expect(s.strokeSpeed).toBeGreaterThan(BLOT_FAST)
+      expect(1 - board() / start, `${lv.id}판 진행률`).toBeCloseTo(s.cleanliness, 3)
+    }
   })
 
   it('스티커: 긁개로 떼면 끈끈이가 남고, 끈끈이는 식용유를 뿌려야 닦인다', () => {
