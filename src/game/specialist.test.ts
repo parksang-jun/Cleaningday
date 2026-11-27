@@ -80,3 +80,25 @@ describe('닦이는 손맛', () => {
     }
   })
 })
+
+/** 제보(2026-11-27): 스팀 청소기가 어디서나 제일 좋아서 다른 도구를 쓸 이유가 없다 — 단단한 표면 전용으로 */
+describe('스팀 청소기는 단단한 표면 전용', () => {
+  const st = BASE_TOOLS.steamer
+  it('타일·스테인리스의 기름때·곰팡이·비누때는 세정제 없이 닦는다', () => {
+    expect(matchRecipe('grease', 'steel', st, null)).toBeTruthy()
+    expect(matchRecipe('mold', 'tile', st, null)).toBeTruthy()
+    expect(matchRecipe('soap', 'tile', st, null)).toBeTruthy()
+  })
+  it('나무·페인트·비닐·플라스틱·천에서는 통하지 않고 표면을 상하게 한다', () => {
+    for (const sf of ['wood', 'paint', 'vinyl', 'plastic', 'fabric'] as SurfaceType[]) {
+      expect(st.harms).toContain(sf)
+      expect(matchRecipe('stain', sf, st, null)).toBeFalsy()
+      expect(matchRecipe('grease', sf, st, null)).toBeFalsy()
+    }
+  })
+  it('먼지·엎지른 것은 못 치우고, 걸레 대신으로도 못 쓴다', () => {
+    expect(matchRecipe('dust', 'tile', st, null)).toBeFalsy()
+    expect(matchRecipe('spill', 'tile', st, null)).toBeFalsy()
+    expect(st.families).toEqual(['steam'])
+  })
+})

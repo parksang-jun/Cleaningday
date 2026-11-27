@@ -259,8 +259,12 @@ export const BASE_TOOLS: Record<ToolId, ToolSpec> = {
   cordlessvac: { id: 'cordlessvac', base: 'cordlessvac', kind: 'tool', families: ['vacuum', 'lintroller'], radius: 5.2, power: 1.8, effect: flat(1), harms: [], cost: 600, premium: true, pro: true },
   scrubber: { id: 'scrubber', base: 'scrubber', kind: 'tool', families: ['sponge', 'scrubpad', 'tilebrush', 'wheelbrush'], radius: 3.0, power: 2.2, effect: flat(1), harms: ['glass', 'paint', 'vinyl'], cost: 900, premium: true, pro: true },
   drillbrush: { id: 'drillbrush', base: 'drillbrush', kind: 'tool', families: ['tilebrush', 'deckbrush', 'wheelbrush', 'scrubpad'], radius: 2.8, power: 2.8, effect: flat(1), harms: ['glass', 'paint', 'wood', 'plastic', 'vinyl', 'fabric'], cost: 800, premium: true, pro: true },
-  /** 스팀 — 뜨거운 증기가 세정제 역할: 기름때·얼룩·비누때·유막·곰팡이를 세정제 없이 */
-  steamer: { id: 'steamer', base: 'steamer', kind: 'tool', families: ['steam', 'cloth'], radius: 3.0, power: 1.6, effect: flat(1), harms: ['fabric'], cost: 1200, premium: true, pro: true },
+  /**
+   * 스팀 — 뜨거운 증기가 세정제 역할: 기름때·얼룩·비누때·유막·곰팡이·스티커 자국을 세정제 없이.
+   * 단, 열과 물기에 강한 단단한 표면(타일·도기·스테인리스·금속·유리·돌·벽돌) 전용이다(2026-11-27: 어디에나 통해서 다른 도구를 쓸 이유가 없었다).
+   * 나무·페인트·비닐·플라스틱·천에는 상한다. 먼지·엎지른 것은 스팀으로 치우지 못한다. 걸레 겸용도 아니다.
+   */
+  steamer: { id: 'steamer', base: 'steamer', kind: 'tool', families: ['steam'], radius: 3.4, power: 2.0, effect: flat(1), harms: ['fabric', 'wood', 'paint', 'vinyl', 'plastic'], cost: 1200, premium: true, pro: true },
   /** 멜라민 스펀지 — 얼룩·유막·비누때를 세정제 없이 (광택면은 흠집) */
   magiceraser: { id: 'magiceraser', base: 'magiceraser', kind: 'tool', families: ['eraser', 'sponge'], radius: 2.6, power: 1.4, effect: flat(1), harms: ['paint', 'vinyl'], cost: 500, premium: true, pro: true },
 };
@@ -374,6 +378,9 @@ export interface Recipe {
 
 const HARD_NOT_FABRIC: SurfaceType[] = ['fabric'];
 
+/** 스팀을 써도 되는 표면 — 열과 물기에 강한 단단한 것 */
+const STEAM_SAFE: SurfaceType[] = ['tile', 'ceramic', 'steel', 'metal', 'glass', 'stone', 'brick']
+
 export const RECIPES: Record<DirtType, Recipe[]> = {
   dust: [
     { tools: ['vacuum'], speed: 1.2 },
@@ -381,7 +388,6 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['lintroller'], on: ['fabric'], speed: 0.8 },
     { tools: ['hose', 'washer'], speed: 1.3 },
     { tools: ['mitt'], cleaner: 'carshampoo', speed: 1.1 },
-    { tools: ['steam'], speed: 0.8 },
   ],
   hair: [
     { tools: ['vacuum'], speed: 1.0 },
@@ -407,7 +413,7 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['cloth'], cleaner: 'allpurpose', on: ['wood'], speed: 0.6 }, // 원목엔 알칼리 금지 → 중성세제로 천천히
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 0.9 },
     { tools: ['sponge'], cleaner: 'fabric', on: ['fabric'], speed: 0.7 },
-    { tools: ['steam'], speed: 1.2 },
+    { tools: ['steam'], on: STEAM_SAFE, speed: 1.2 },
   ],
   stain: [
     // 다목적 세정제(중성)는 원목·도장 가구 얼룩 전용 — 주방·욕실·차량·실외 얼룩은 그 자리에 맞는 세제가 따로 있다
@@ -427,7 +433,7 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['cloth'], cleaner: 'interior', on: ['vinyl', 'plastic'], speed: 1.0 },
     { tools: ['mitt'], cleaner: 'carshampoo', on: ['paint', 'glass', 'plastic', 'metal'], speed: 1.0 },
     { tools: ['eraser'], not: ['fabric'], speed: 1.1 },
-    { tools: ['steam'], speed: 1.0 },
+    { tools: ['steam'], on: STEAM_SAFE, speed: 1.0 },
     { tools: ['washer'], on: ['stone', 'brick', 'tile'], speed: 0.7 },
   ],
   scale: [
@@ -451,14 +457,14 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['sponge', 'squeegee'], cleaner: 'vinegar', speed: 0.6 },
     { tools: ['sponge', 'tilebrush', 'squeegee'], cleaner: 'soapsoda', speed: 1.05 }, // 섞어 쓰기: 베이킹소다 + 주방세제 (욕조 레시피)
     { tools: ['eraser'], speed: 1.0 },
-    { tools: ['steam'], speed: 1.0 },
+    { tools: ['steam'], on: STEAM_SAFE, speed: 1.0 },
   ],
   mold: [
     { tools: ['tilebrush'], cleaner: 'mold', on: ['tile', 'stone', 'brick'], speed: 1.4 }, // 전용 도구: 줄눈 곰팡이는 타일 솔
     { tools: ['tilebrush', 'sponge', 'squeegee', 'scrubpad'], cleaner: 'mold', not: ['wood', 'fabric', 'paint', 'plastic'], speed: 1.0 }, // 락스 습포
     { tools: ['tilebrush', 'sponge', 'scrubpad', 'deckbrush'], cleaner: 'oxy', not: ['paint', 'metal'], speed: 0.85 }, // 꿀팁: 과탄산소다 페이스트 20~30분 → 칫솔
     { tools: ['deckbrush', 'sponge', 'tilebrush'], cleaner: 'deck', speed: 0.9 }, // 원목·플라스틱·패브릭 곰팡이는 산소계
-    { tools: ['steam'], speed: 0.8 },
+    { tools: ['steam'], on: STEAM_SAFE, speed: 0.9 },
   ],
   moss: [
     { tools: ['washer'], on: ['stone', 'brick', 'tile', 'metal', 'plastic', 'paint'], speed: 1.2 }, // 저~중압으로
@@ -490,7 +496,7 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
     { tools: ['cloth', 'sponge'], cleaner: 'soapsoda', on: ['wood', 'steel', 'tile', 'ceramic', 'paint', 'plastic'], speed: 0.9 }, // 베이킹소다가 남은 자리에 주방세제가 섞여도 손때는 닦인다
     { tools: ['mitt'], cleaner: 'carshampoo', on: ['paint', 'glass', 'plastic'], speed: 1.0 },
     { tools: ['eraser'], not: ['fabric'], speed: 1.1 },
-    { tools: ['steam'], not: ['fabric'], speed: 1.0 },
+    { tools: ['steam'], on: STEAM_SAFE, speed: 1.0 },
   ],
   crumbs: [
     { tools: ['vacuum'], speed: 1.3 }, // 빨아들인다 — 걸레·스펀지로 닦으면 밀려나기만 한다(PUSHED_DIRT)
@@ -498,17 +504,16 @@ export const RECIPES: Record<DirtType, Recipe[]> = {
   ],
   spill: [
     { tools: ['cloth', 'sponge'], speed: 1.0 }, // 꾹 눌러 흡수 — 빠르게 문지르면 번진다(BLOT_DIRT)
-    { tools: ['steam'], speed: 0.8 },
   ],
   sticker: [
     { tools: ['scraper'], speed: 1.0 }, // 긁개 (원목·도장·비닐은 긁힌다 → 기름으로)
     { tools: ['cloth', 'sponge'], cleaner: 'tar', speed: 0.55 }, // 꿀팁: 식용유를 발라 불린 뒤 문질러 벗긴다
-    { tools: ['steam'], speed: 1.0 },
+    { tools: ['steam'], on: STEAM_SAFE, speed: 1.0 },
   ],
   glue: [
     { tools: ['cloth', 'sponge'], cleaner: 'tar', speed: 1.0 }, // 식용유·타르 리무버가 끈끈이를 녹인다
     { tools: ['eraser'], speed: 0.8 },
-    { tools: ['steam'], speed: 0.8 },
+    { tools: ['steam'], on: STEAM_SAFE, speed: 0.8 },
   ],
   crayon: [
     { tools: ['sponge', 'cloth'], cleaner: 'bakingsoda', speed: 1.0 }, // 꿀팁: 젖은 걸레에 베이킹소다를 묻혀 — 고운 연마가 왁스를 벗긴다 (도장면도 안전)
