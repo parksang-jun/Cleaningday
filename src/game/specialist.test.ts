@@ -102,3 +102,33 @@ describe('스팀 청소기는 단단한 표면 전용', () => {
     expect(st.families).toEqual(['steam'])
   })
 })
+
+/** 제보(2026-11-27): 스팀 청소기와 매직블럭만 있으면 다 닦인다 — 멜라민 스펀지도 제 자리에서만 */
+describe('멜라민 스펀지는 무광 단단한 표면 전용', () => {
+  const me = BASE_TOOLS.magiceraser
+  it('타일의 얼룩·비누때·낙서는 세정제 없이 닦는다', () => {
+    expect(matchRecipe('stain', 'tile', me, null)).toBeTruthy()
+    expect(matchRecipe('soap', 'tile', me, null)).toBeTruthy()
+    expect(matchRecipe('crayon', 'tile', me, null)).toBeTruthy()
+  })
+  it('광택·코팅 표면과 천에는 상하고, 일반 스펀지 대신으로는 못 쓴다', () => {
+    for (const sf of ['paint', 'vinyl', 'glass', 'wood', 'fabric'] as SurfaceType[]) expect(me.harms).toContain(sf)
+    expect(me.families).toEqual(['eraser'])
+    expect(matchRecipe('grease', 'steel', me, 'degreaser')).toBeFalsy() // 스펀지 + 기름때 제거제 조합을 대신하지 못한다
+  })
+})
+
+/** 제보(2026-11-27): 뒤로 갈수록 여러 오염이 섞여 여러 장비·세제를 쓰게 */
+describe('뒤 구역일수록 오염이 다양하다', () => {
+  const kinds = (id: number) => new Set(LEVELS[id - 1].patches.flatMap((p) => [p.type, ...(p.under ? [p.under] : [])])).size
+  const kindsOf = (ids: number[]) => ids.reduce((n, id) => n + kinds(id), 0) / ids.length
+  const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i)
+  it('정원 뒤 절반·차 외부·차 실내는 판마다 평균 3.5종 이상', () => {
+    expect(kindsOf(range(61, 72))).toBeGreaterThanOrEqual(4)
+    expect(kindsOf(range(73, 84))).toBeGreaterThanOrEqual(3.5)
+    expect(kindsOf(range(85, 96))).toBeGreaterThanOrEqual(3.5)
+  })
+  it('마지막 대청소 판들은 6종 이상', () => {
+    for (const id of [72, 84, 96]) expect(kinds(id)).toBeGreaterThanOrEqual(6)
+  })
+})

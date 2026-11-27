@@ -265,8 +265,12 @@ export const BASE_TOOLS: Record<ToolId, ToolSpec> = {
    * 나무·페인트·비닐·플라스틱·천에는 상한다. 먼지·엎지른 것은 스팀으로 치우지 못한다. 걸레 겸용도 아니다.
    */
   steamer: { id: 'steamer', base: 'steamer', kind: 'tool', families: ['steam'], radius: 3.4, power: 2.0, effect: flat(1), harms: ['fabric', 'wood', 'paint', 'vinyl', 'plastic'], cost: 1200, premium: true, pro: true },
-  /** 멜라민 스펀지 — 얼룩·유막·비누때를 세정제 없이 (광택면은 흠집) */
-  magiceraser: { id: 'magiceraser', base: 'magiceraser', kind: 'tool', families: ['eraser', 'sponge'], radius: 2.6, power: 1.4, effect: flat(1), harms: ['paint', 'vinyl'], cost: 500, premium: true, pro: true },
+  /**
+   * 멜라민 스펀지 — 얼룩·유막·비누때·낙서·스티커 자국을 세정제 없이 갈아 낸다.
+   * 미세하게 갈아 내는 것이라 광택·코팅이 있는 표면(페인트·비닐·유리·나무)과 천에는 쓰지 못한다(흠집).
+   * 일반 스펀지 겸용도 아니다(2026-11-27: 세제만 바꿔 가며 어디에나 통했다).
+   */
+  magiceraser: { id: 'magiceraser', base: 'magiceraser', kind: 'tool', families: ['eraser'], radius: 2.8, power: 1.9, effect: flat(1), harms: ['paint', 'vinyl', 'glass', 'wood', 'fabric'], cost: 500, premium: true, pro: true },
 };
 
 export const BASE_DETERGENTS: Record<DetergentId, DetergentSpec> = {
