@@ -79,4 +79,29 @@ describe('닦이는 손맛', () => {
       }
     }
   })
+  // 자체 점검(2026-11-27 2회차): 쏟은 음료를 빠르게 문지르면 번지고, 부스러기를 걸레로 밀면 밀려나는데,
+  // 한 프레임에 옮겨 가는 양(번짐 약 0.023)이 화면에 그려지는 농도보다 작아 옆 칸에 안 보이는 찌꺼기가 쌓였다
+  // (수정 전: 3초 문지르면 음료 7~16칸, 부스러기 1~6칸). 남은 오염 고리(0.05 초과만)로도 못 찾는다
+  it.each([
+    ['spill', 1 / 30], ['spill', 1 / 60], ['spill', 1 / 120],
+    ['crumbs', 1 / 30], ['crumbs', 1 / 60], ['crumbs', 1 / 120],
+  ] as const)('%s 를 빠르게 문질러 번지거나 밀려나도 안 보이는 찌꺼기가 생기지 않는다 (dt %f)', (d, dt) => {
+    const lv = LEVELS.find((l) => l.patches.some((p) => p.type === d))!
+    const s = new CleanSession(lv, undefined, lv.seed, { mess: false })
+    const faint = () => { let n = 0; for (let i = 0; i < s.amount.length; i++) if (s.amount[i] > 0 && s.amount[i] < CLEAR_BELOW) n++; return n }
+    expect(faint()).toBe(0)
+    let c = -1
+    for (let i = 0; i < s.amount.length; i++) if (s.amount[i] > 0.3 && s.dirtAt(i) === d) { c = i; break }
+    expect(c).toBeGreaterThanOrEqual(0)
+    const cx = (c % s.w) + 0.5
+    const cy = Math.floor(c / s.w) + 0.5
+    let moved = false
+    for (let k = 0; k < Math.round(3 / dt); k++) {
+      const ev = s.scrub(BASE_TOOLS.cloth, cx + Math.sin(k * dt * 27) * 2.5, cy + Math.sin(k * dt * 5), dt)
+      moved ||= ev.some((e) => e.kind === 'noeffect' && (e.reason === 'smeared' || e.reason === 'pushed'))
+      s.tick(dt)
+    }
+    expect(moved).toBe(true) // 실제로 번짐·밀려남이 일어난 상황에서
+    expect(faint()).toBe(0)
+  })
 })
