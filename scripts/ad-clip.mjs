@@ -26,7 +26,7 @@ const MAX_MS = Number(arg('max', '22')) * 1000;
 const OUT = resolve(root, arg('out', `screenshots/ad-clip-${AREA}-${STAGE}.mp4`));
 const PORT = 4177;
 const VIEW = { width: 540, height: 960 };
-const HIDE = '#ad-banner,.beta-tag,.toast,[data-testid="rec"],[data-testid="feedback"]{display:none!important}body.has-banner{--banner-h:0px!important}';
+const HIDE = '#ad-banner,.beta-tag,.toast,[data-el="gear"],[data-testid="rec"],[data-testid="feedback"]{display:none!important}body.has-banner{--banner-h:0px!important}';
 
 const preview = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { cwd: root, stdio: 'pipe', detached: true });
 await new Promise((res, rej) => {

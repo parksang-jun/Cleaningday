@@ -1,0 +1,60 @@
+{
+ "lang": "ko",
+ "scenes": [
+  {
+   "photo": "ops/agent/ads/cr-20261127-01/a.jpg",
+   "caption": "청소 끝내면\n속이 다 시원하죠?",
+   "take": 3.2,
+   "note": "연출된 이미지 (AI 생성)"
+  },
+  {
+   "photo": "ops/agent/ads/cr-20261127-01/b.jpg",
+   "caption": "이제 그 기분,\n폰으로도 느껴 보세요",
+   "take": 3.2,
+   "zoom": "out",
+   "note": "연출된 이미지 (AI 생성)"
+  },
+  {
+   "area": "living",
+   "stage": 3,
+   "caption": "먼지·머리카락, 쓱쓱",
+   "take": 5,
+   "speed": 3,
+   "max": 20
+  },
+  {
+   "photo": "ops/agent/ads/cr-20261127-01/c.jpg",
+   "caption": "청소 팁도 알려 줘요\n유리 물때엔 스퀴지!",
+   "take": 3.2,
+   "note": "연출된 이미지 (AI 생성)"
+  },
+  {
+   "area": "living",
+   "stage": 4,
+   "caption": "먼지는 청소기로, 유리엔 유리 세정제",
+   "take": 7,
+   "speed": 4,
+   "max": 32
+  },
+  {
+   "area": "kitchen",
+   "stage": 25,
+   "caption": "기름때엔 세제 먼저, 그다음 수세미",
+   "take": 5,
+   "speed": 4,
+   "max": 26
+  },
+  {
+   "photo": "ops/agent/ads/cr-20261127-01/d.jpg",
+   "caption": "아, 개운해!",
+   "take": 2.8,
+   "zoom": "out",
+   "note": "연출된 이미지 (AI 생성)"
+  }
+ ],
+ "end": {
+  "title": "싹싹 클린",
+  "sub": "청소 팁까지 알려 주는 청소 게임\nApp Store 에서 '싹싹 클린' 검색",
+  "take": 3.4
+ }
+}

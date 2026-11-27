@@ -5,6 +5,7 @@
 //     "scenes": [ { "area": "living", "stage": 1, "steps": "cloth", "caption": "먼지? 한 번에 쓱", "say": "먼지는 한 번에 쓱.", "take": 5, "from": "start" } ],
 //     "end": { "title": "싹싹 클린", "sub": "App Store 에서 검색", "say": "싹싹 클린. 지금 앱스토어에서 만나 보세요." } }
 //   take: 그 장면을 몇 초 쓸지(나레이션이 더 길면 그만큼 늘어난다) · from: "start"(더러운 화면부터) 또는 "end"(반짝 결과까지)
+//   photo: 사진 장면 — 게임 화면 대신 사진 한 장(저장소 기준 경로)을 천천히 당겨 보여 준다. caption·say·take·zoom('in'|'out')·note(작은 안내 글)
 //   speed: 빨리 감기 배율(1~4, 기본 1) — 화면 구석에 x3 처럼 표시된다
 //   say: 나레이션(한국어·영어 — scripts/ad-voice.py). 비우면 그 장면은 게임 소리만.
 //   맨 위에 "voice": 0~9(0~4 남성, 5~9 여성 계열, 기본 5), "voiceSpeed": 0.8~1.3(기본 1.05) 을 줄 수 있다.
@@ -58,12 +59,38 @@ const narrate = (text, name) => {
   return wav;
 };
 
+const { chromium } = createRequire(import.meta.url)('playwright');
 const parts = [];
 const report = [];
 try {
   let n = 0;
   for (const sc of spec.scenes) {
     n++;
+    // 사진 장면(photo): 게임 화면이 아닌 생활 장면 사진 한 장을 천천히 당겨 보여 준다. 자막은 화면 아래쪽에 얹는다
+    if (sc.photo) {
+      const len = sc.take ?? 3.2;
+      const voice = narrate(sc.say, `say${n}`);
+      const dur = Math.max(len, voice ? seconds(voice) + 0.7 : 0);
+      const cap = resolve(tmp, `cap${n}.png`);
+      const browser = await chromium.launch();
+      const page = await browser.newPage({ viewport: { width: 540, height: 960 }, deviceScaleFactor: 2 });
+      const esc = (t) => String(t ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+      await page.setContent(`<body style="margin:0;width:540px;height:960px;background:transparent;position:relative">
+        <div style="position:absolute;left:0;right:0;bottom:0;height:420px;background:linear-gradient(transparent,rgba(0,0,0,.62))"></div>
+        <div style="position:absolute;left:0;right:0;bottom:${sc.note ? 150 : 120}px;text-align:center;font:800 34px/1.28 system-ui,sans-serif;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.8);padding:0 28px;white-space:pre-line">${esc(sc.caption)}</div>
+        ${sc.note ? `<div style="position:absolute;left:0;right:0;bottom:44px;text-align:center;font:600 15px/1.3 system-ui,sans-serif;color:rgba(255,255,255,.78);padding:0 28px">${esc(sc.note)}</div>` : ''}</body>`);
+      await page.screenshot({ path: cap, omitBackground: true });
+      await browser.close();
+      const out = resolve(tmp, `scene${n}.mp4`);
+      const frames = Math.ceil(dur * 30);
+      const z = sc.zoom === 'out' ? `1.12-0.12*on/${frames}` : `1+0.12*on/${frames}`;
+      const v = `[0:v]scale=2160:3840:force_original_aspect_ratio=increase,crop=2160:3840,zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih*0.42-(ih/zoom*0.42)':d=${frames}:s=1080x1920:fps=30[bg];[bg][1:v]overlay=0:0,format=yuv420p,fade=t=in:st=0:d=0.25,fade=t=out:st=${(dur - 0.25).toFixed(2)}:d=0.25[v]`;
+      if (voice) ff(['-i', resolve(root, sc.photo), '-i', cap, '-i', voice, '-filter_complex', `${v};[2:a]aresample=48000,adelay=300|300,apad[a]`, '-map', '[v]', '-map', '[a]', '-t', dur.toFixed(2), ...ENC], out);
+      else ff(['-i', resolve(root, sc.photo), '-i', cap, '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-filter_complex', v, '-map', '[v]', '-map', '2:a', '-t', dur.toFixed(2), ...ENC], out);
+      parts.push(out);
+      report.push({ scene: `photo ${sc.photo}`, seconds: Number(dur.toFixed(1)), narration: !!voice });
+      continue;
+    }
     const raw = resolve(tmp, `raw${n}.mp4`);
     const a = ['scripts/ad-clip.mjs', '--area', sc.area, '--stage', String(sc.stage), '--lang', LANG, '--out', raw, '--max', String(sc.max ?? 30)];
     if (sc.steps) a.push('--steps', sc.steps);
@@ -95,7 +122,7 @@ try {
     const html = `<body style="margin:0;width:540px;height:960px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;background:linear-gradient(180deg,#e9f8f6,#bfe9e4);font-family:system-ui,sans-serif">
       <img src="data:image/png;base64,${icon}" style="width:190px;height:190px;border-radius:44px;box-shadow:0 14px 40px rgba(0,80,80,.25)">
       <div style="font:800 54px/1.1 system-ui,sans-serif;color:#0f3d3a">${spec.end.title ?? ''}</div>
-      <div style="font:700 26px/1.3 system-ui,sans-serif;color:#1c6f69;text-align:center;padding:0 40px">${spec.end.sub ?? ''}</div></body>`;
+      <div style="font:700 26px/1.4 system-ui,sans-serif;color:#1c6f69;text-align:center;padding:0 40px;white-space:pre-line">${spec.end.sub ?? ''}</div></body>`;
     const browser = await chromium.launch();
     const page = await browser.newPage({ viewport: { width: 540, height: 960 }, deviceScaleFactor: 2 });
     await page.setContent(html);
