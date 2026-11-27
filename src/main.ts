@@ -33,6 +33,7 @@ import { iconFor } from './ui/icons';
 import { markReviewAsked, requestNativeReview, shouldAskReview } from './review';
 import { applyUpgrade, buyUpgrade, upgradeCost, upgradeGain, upgradeLevel } from './upgrades';
 import { allAreas, areaGate, areaOf, starsShort, totalStars } from './game/gates';
+import { leaderboard, rankScore } from './leaderboard';
 import { COMEBACK_COINS, ATTENDANCE, attendanceIndex, attendanceReward, CHEST_COINS, chestReady, claimChest, claimMission, MISSION_COINS, missionDone, missionProgress, MISSIONS, missions, recordClear, recordVisit, type MissionId } from './retention';
 import { cancelComebackNotifications, notifySupported, refreshComebackNotifications } from './notify';
 
@@ -161,6 +162,20 @@ function bindTipLinks(root: HTMLElement) {
       openExternal(url);
     }),
   );
+}
+
+/** 랭킹(모은 별 총합) 화면 — Game Center / Play 게임. 로그인이 안 되면 안내만 한다 */
+async function openRanking() {
+  track('rank_open', {});
+  const lb = await leaderboard();
+  const ok = await lb.show(rankScore(getStore().progress.stars));
+  if (!ok) toast(t('rankUnavailable'), 'warn');
+}
+
+/** 클리어 뒤·앱 시작 때 현재 별 총합을 순위표에 올린다 (실패해도 조용히 넘어간다) */
+function syncRanking(start = false) {
+  const score = rankScore(getStore().progress.stars);
+  void leaderboard().then((lb) => (start ? lb.start(score) : lb.submit(score)));
 }
 
 function openExternal(url: string) {
@@ -302,6 +317,7 @@ function renderHome() {
       <header class="home__top">
         <button class="coins coins--btn" data-act="shop-coins" data-testid="coins" title="${esc(t('coinsUse'))}">● ${st.coins}</button>
         <div class="home__actions">
+          ${Capacitor.isNativePlatform() ? `<button class="icon-btn" data-act="rank" data-testid="rank" aria-label="${t('ranking')}">🏆</button>` : ''}
           <button class="icon-btn" data-act="shop" aria-label="${t('shop')}">🧴</button>
           <button class="icon-btn" data-act="settings" aria-label="${t('settings')}">⚙︎</button>
         </div>
@@ -323,6 +339,7 @@ function renderHome() {
   app.querySelector('[data-act="admin"]')?.addEventListener('click', openAdminGate);
   app.querySelector('[data-act="shop"]')!.addEventListener('click', () => openShop());
   app.querySelector('[data-act="shop-coins"]')!.addEventListener('click', () => openShop());
+  app.querySelector('[data-act="rank"]')?.addEventListener('click', () => void openRanking());
   app.querySelector('[data-act="settings"]')!.addEventListener('click', openSettings);
   app.querySelectorAll<HTMLButtonElement>('.area').forEach((b) => b.addEventListener('click', () => (b.dataset.gated ? openGate() : renderArea(b.dataset.area!))));
   app.querySelector('[data-act="gate"]')?.addEventListener('click', openGate);
@@ -2003,6 +2020,7 @@ function finishLevel() {
     st.progress.bestTime[id] = Math.min(st.progress.bestTime[id] ?? Infinity, result.timeSec);
     if (id === st.progress.unlocked && id < LEVELS.length) st.progress.unlocked = id + 1;
   }
+  syncRanking();
   st.coins += result.coins;
   if (st.failRuns) delete st.failRuns[id];
   st.stats.gamesPlayed++;
@@ -3121,6 +3139,7 @@ async function boot() {
   renderHome();
   exposeDebug();
   void ads.init();
+  syncRanking(true); // 조용히 로그인(창은 띄우지 않음) + 현재 별 총합 전송
   if (location.hash === '#admin' && adminEnabled()) {
     // 운영센터(이 맥의 127.0.0.1/game/)에서 열면 PIN 없이 바로 — 운영센터는 운영자 본인 컴퓨터에서만 열린다
     const viaOpsCenter = ['127.0.0.1', 'localhost'].includes(location.hostname) && location.pathname.startsWith('/game/');

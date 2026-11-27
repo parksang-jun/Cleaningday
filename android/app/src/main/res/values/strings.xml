@@ -4,4 +4,7 @@
     <string name="title_activity_main">Sparkle Clean</string>
     <string name="package_name">io.github.parksangjun.cleaningday</string>
     <string name="custom_url_scheme">io.github.parksangjun.cleaningday</string>
+    <!-- 랭킹(Play 게임 서비스). Play Console → Play 게임즈 서비스 설정 후 두 값을 채운다. 비어 있으면 랭킹이 꺼진다 -->
+    <string name="game_services_project_id" translatable="false"></string>
+    <string name="leaderboard_total_stars" translatable="false"></string>
 </resources>
