@@ -904,8 +904,10 @@ export class CleanSession {
     const t = this.type[i]
     if (this.amount[j] > 0 && this.type[j] !== t) return false
     if (!DIRT_SURFACES[DIRT_TYPES[t]].includes(this.surfaceAt(j))) return false
-    const m = Math.min(amt, this.amount[i], 1 - this.amount[j])
+    let m = Math.min(amt, this.amount[i], 1 - this.amount[j])
     if (m <= 0) return false
+    // 옮겨 간 자리가 안 보이는 농도(CLEAR_BELOW 밑)로 남지 않게, 적어도 보이는 만큼은 한꺼번에 옮긴다
+    if (this.amount[j] + m < CLEAR_BELOW) m = Math.min(this.amount[i], CLEAR_BELOW - this.amount[j])
     if (this.amount[j] <= 0) {
       this.type[j] = t
       this.dirtyCellsSeen++
