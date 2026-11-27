@@ -738,7 +738,8 @@ export class CleanSession {
       const next = Math.max(0, a - (rate * dt) / this.level.resistMul)
       this.take(i, a - next)
       this.amount[i] = next
-      if (next < 0.02) this.finishCell(i, cleared, null, events, Boolean(s.det.pro))
+      // 문질러 지울 때와 같은 기준 — 예전 0.02 는 불림이 끝난 자리에 안 보이는 찌꺼기를 남겼다
+      if (next < CLEAR_BELOW) this.finishCell(i, cleared, null, events, Boolean(s.det.pro))
     }
     if (cleared.length) {
       events.push({ kind: 'cleared', cells: cleared })
