@@ -916,8 +916,9 @@ export class CleanSession {
     }
     this.amount[j] += m
     this.amount[i] -= m
-    if (this.amount[i] < 0.02) {
+    if (this.amount[i] < CLEAR_BELOW) {
       // 거의 다 옮겨 갔다 — 남은 티끌도 넘기고, 밑에 깔린 것이 있으면 드러낸다
+      // (닦을 때와 같은 기준. 예전 0.02 는 0.02~0.05 가 남아 문지르는 쪽에서 '다 닦임'으로 그냥 지워졌다)
       const rest = Math.min(this.amount[i], 1 - this.amount[j])
       this.amount[j] += rest
       this.amount[i] -= rest
@@ -959,7 +960,7 @@ export class CleanSession {
     const reasons = new Map<string, { n: number; reason: NoEffectReason; dirt: DirtType; surface: SurfaceType }>()
     this.forEachInRadius(cx, cy, tool.radius, (i, w) => {
       if (isRinse) this.soak[i] = null // 헹굼: 세제를 씻어냄 (효과 판정은 헹굼 전 세제로)
-      const a = this.amount[i]
+      let a = this.amount[i]
       if (a <= 0) return
       const surface = this.surfaceAt(i)
       // 실외 전용 도구는 허용 표면 밖에서는 효과 없음
@@ -997,7 +998,13 @@ export class CleanSession {
       if (BLOT_DIRT.includes(dirt) && !tool.families.includes('steam')) {
         rate *= blotRate
         if (sp >= BLOT_FAST) {
-          if (this.shiftDirt(i, cx, cy, Math.min(a * 0.5, SMEAR_RATE * dt * w), SMEAR_REACH)) smeared = { dirt, surface }
+          if (this.shiftDirt(i, cx, cy, Math.min(a * 0.5, SMEAR_RATE * dt * w), SMEAR_REACH)) {
+            smeared = { dirt, surface }
+            // 번져 나간 만큼 이 칸은 줄었다 — 옮기기 전 값(a)으로 덮어쓰면 옮긴 양이 복제됐다(1.2~빌드 22)
+            if (this.type[i] !== DIRT_TYPES.indexOf(dirt)) return // 다 번져 나가 밑층이 드러남
+            a = this.amount[i]
+            if (a <= 0) return
+          }
         } else if (sp <= BLOT_SLOW) this.blotUntil = this.time + 0.25
       }
       // 찌든 때: 마지막 층은 일반 도구로는 더디다 (고성능 장비는 끝까지 같은 속도)
