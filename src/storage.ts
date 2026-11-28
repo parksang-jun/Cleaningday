@@ -102,6 +102,8 @@ export interface Store {
   failRuns?: Record<number, number>;
   /** 스토어 평가 요청 기록 (review.ts) */
   review?: { last: number; count: number };
+  /** 친구 추천 (invite.ts): 내 초대 코드 · 입력한 친구 코드 · 공유 보너스를 받은 날 */
+  invite?: { code: string; redeemed?: string; shareDay?: string };
   /** 아이템 강화 단계 (upgrades.ts) — 없으면 Lv1 */
   upgrades: Record<string, number>;
   journal: string[]; // 발견한 조합 키 "dirt|tool|cleaner" (recipeKey)
@@ -168,6 +170,7 @@ export async function loadStore(): Promise<Store> {
         upgrades: p.upgrades && typeof p.upgrades === 'object' ? { ...p.upgrades } : {},
         failRuns: p.failRuns && typeof p.failRuns === 'object' ? { ...p.failRuns } : {},
         review: p.review && typeof p.review.last === 'number' ? { last: p.review.last, count: Number(p.review.count) || 1 } : undefined,
+        invite: p.invite && typeof p.invite.code === 'string' ? { code: p.invite.code, ...(typeof p.invite.redeemed === 'string' ? { redeemed: p.invite.redeemed } : {}), ...(typeof p.invite.shareDay === 'string' ? { shareDay: p.invite.shareDay } : {}) } : undefined,
         journal: Array.isArray(p.journal) ? p.journal : [],
         ops: {
           sponsors: Array.isArray(p.ops?.sponsors) ? p.ops!.sponsors : [],

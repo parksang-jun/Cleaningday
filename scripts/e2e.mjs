@@ -1241,6 +1241,89 @@ try {
     await cb.close();
   }
 
+  // 친구 추천(공유 보너스·초대 코드)과 코인 쓸 곳(장비 대여·판 건너뛰기·별 3개 재도전)
+  {
+    const cb = await browser.newContext({ ...phone, locale: 'en-US', hasTouch: false });
+    const pb = await cb.newPage();
+    pb.on('pageerror', (e) => errors.push(String(e)));
+    await pb.addInitScript(() => { navigator.share = async () => {}; });
+    await pb.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+    await pb.evaluate(() => { window.__sparkle.skipTour(); window.__sparkle.setUnlocked(30, 3); window.__sparkle.setCoins(1000); });
+    await pb.waitForTimeout(500);
+    await pb.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+    const coins = () => pb.evaluate(() => window.__sparkle.coins());
+    const c0 = await coins();
+    assert((await pb.locator('[data-testid="invite"]').count()) === 1, 'home shows the tell-a-friend card');
+    await pb.screenshot({ path: resolve(shots, 'invite-home.png') });
+    await pb.click('[data-testid="invite-share"]');
+    await pb.waitForTimeout(300);
+    assert((await coins()) === c0 + 50, 'sharing pays +50 coins');
+    assert((await pb.locator('[data-testid="invite-share"]').innerText()).includes('✓'), 'the share button shows it was claimed today');
+    await pb.click('[data-testid="invite-share"]');
+    await pb.waitForTimeout(300);
+    assert((await coins()) === c0 + 50, 'a second share on the same day pays nothing');
+    await pb.click('[data-testid="invite-code"]');
+    await pb.waitForSelector('[data-testid="invite-input"]');
+    const mine = await pb.locator('[data-testid="invite-mine"]').innerText();
+    await pb.fill('[data-testid="invite-input"]', 'ABC');
+    await pb.click('[data-testid="invite-ok"]');
+    assert((await pb.locator('[data-testid="invite-msg"]').innerText()).length > 0 && (await coins()) === c0 + 50, 'a wrong code is rejected with a message');
+    await pb.fill('[data-testid="invite-input"]', mine);
+    await pb.click('[data-testid="invite-ok"]');
+    assert((await pb.locator('[data-testid="invite-msg"]').innerText()).includes('own') && (await coins()) === c0 + 50, 'my own code is rejected');
+    let friend = mine;
+    while (friend === mine) friend = await pb.evaluate(() => window.__sparkle.inviteCode());
+    await pb.fill('[data-testid="invite-input"]', friend.toLowerCase());
+    await pb.click('[data-testid="invite-ok"]');
+    await pb.waitForTimeout(300);
+    assert((await coins()) === c0 + 150, 'a friend code pays +100 coins');
+    assert((await pb.locator('[data-testid="invite-code"]').count()) === 0, 'the code entry disappears once used');
+
+    const barOf = () => pb.$$eval('.toolbar [data-item]', (els) => els.map((e) => e.getAttribute('data-item')));
+    const begin = async () => {
+      await pb.waitForSelector('[data-testid="intro"]');
+      await pb.click('[data-testid="start"]');
+      await pb.waitForSelector('[data-testid="canvas"]');
+      await pb.evaluate(() => { document.querySelectorAll('.modal,.toast').forEach((m) => m.remove()); window.__sparkle.holdPressure(true); });
+    };
+    await pb.click('[data-testid="play"]');
+    await begin();
+    assert((await pb.evaluate(() => window.__sparkle.level())) === 30, 'continue opens the frontier stage (30)');
+    await pb.evaluate(() => window.__sparkle.forceExpire());
+    await pb.waitForSelector('[data-testid="fail"]');
+    assert((await pb.locator('[data-testid="fail-skip"]').count()) === 0, 'skip is not offered on the first fail');
+    assert((await pb.locator('[data-testid="fail-rent"]').count()) === 1, 'fail screen offers to rent the gear that fits');
+    await pb.screenshot({ path: resolve(shots, 'coin-fail.png') });
+    const rentId = await pb.locator('[data-testid="fail-rent"]').getAttribute('data-rent');
+    const c1 = await coins();
+    await pb.click('[data-testid="fail-rent"]');
+    await begin();
+    assert((await coins()) === c1 - 40, 'renting costs 40 coins');
+    assert((await barOf()).includes(rentId), `the rented gear (${rentId}) is on the toolbar for this run`);
+    await pb.evaluate(() => window.__sparkle.forceExpire());
+    await pb.waitForSelector('[data-testid="fail"]');
+    assert((await pb.locator('[data-testid="fail-skip"]').count()) === 1, 'skip is offered after the second fail');
+    const c2 = await coins();
+    await pb.click('[data-testid="fail-skip"]');
+    await begin();
+    assert((await coins()) === c2 - 150, 'skipping costs 150 coins');
+    assert((await pb.evaluate(() => window.__sparkle.level())) === 31, 'skip opens the next stage');
+    assert(!(await barOf()).includes(rentId) || (await pb.evaluate((id) => window.__sparkle.owned?.().includes(id) ?? false, rentId)), 'rented gear does not carry over to another stage');
+    const barBefore = (await barOf()).length;
+    // 기준 시간을 넘겨 끝내면 별 2개 → 별 3개 재도전
+    await pb.evaluate(() => { const k = window.__sparkle; k.session().time = k.timing().parSec + 1; k.clearAll(); });
+    await pb.waitForSelector('[data-testid="result"]');
+    assert((await pb.locator('[data-testid="star-retry"]').count()) === 1, 'result with fewer than 3 stars offers the 3-star retry');
+    await pb.screenshot({ path: resolve(shots, 'coin-result.png') });
+    const c3 = await coins();
+    await pb.click('[data-testid="star-retry"]');
+    await begin();
+    assert((await coins()) === c3 - 60, '3-star retry costs 60 coins');
+    assert((await pb.evaluate(() => window.__sparkle.level())) === 31, '3-star retry restarts the same stage');
+    assert((await barOf()).length > barBefore, `3-star retry adds rented pro gear to the toolbar (${barBefore} → ${(await barOf()).length})`);
+    await cb.close();
+  }
+
   assert(errors.length === 0, `no page errors (${errors.join(' | ')})`);
   if (softFails.length) throw new Error(`${softFails.length} soft failure(s): ${softFails.join(' | ')}`);
   console.log('\nE2E PASSED');

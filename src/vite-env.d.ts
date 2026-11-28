@@ -15,6 +15,8 @@ interface ImportMetaEnv {
   readonly VITE_BETA?: string;
   /** 베타 피드백 폼(구글 폼 등) URL */
   readonly VITE_FEEDBACK_URL?: string;
+  /** 친구 추천 공유 글에 넣는 주소 (스토어 주소) */
+  readonly VITE_SHARE_URL?: string;
   readonly VITE_ADMIN?: 'on' | 'off';
   readonly VITE_ADMIN_PIN?: string;
   /** 스폰서 아이템 노출 (기본: 포털 빌드에서만 꺼짐) */

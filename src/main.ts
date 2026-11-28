@@ -34,6 +34,8 @@ import { markReviewAsked, requestNativeReview, shouldAskReview } from './review'
 import { applyUpgrade, buyUpgrade, upgradeCost, upgradeGain, upgradeLevel } from './upgrades';
 import { allAreas, areaGate, areaOf, starsShort, totalStars } from './game/gates';
 import { leaderboard, rankScore } from './leaderboard';
+import { claimShare, INVITE_COINS, myInviteCode, newInviteCode, redeemInvite, SHARE_COINS, shareClaimedToday } from './invite';
+import { canOfferSkip, RENT_COINS, SKIP_COINS, skipStage, spend, STAR_RETRY_COINS } from './coinUse';
 import { COMEBACK_COINS, ATTENDANCE, attendanceIndex, attendanceReward, CHEST_COINS, chestReady, claimChest, claimMission, MISSION_COINS, missionDone, missionProgress, MISSIONS, missions, recordClear, recordVisit, type MissionId } from './retention';
 import { cancelComebackNotifications, notifySupported, refreshComebackNotifications } from './notify';
 
@@ -52,6 +54,8 @@ const HINT_AFTER_TRIES = 2;
 const GUIDED_UNTIL = 3;
 /** 결과 화면에서 "다음 판 체험"을 눌러 둔 광고 제품 — 다음 판 시작 시 체험 목록에 들어간다 */
 let pendingTrials: string[] = [];
+/** 코인으로 빌린 장비 — 바로 다음 한 판에만 쓰이고, 쓰이든 안 쓰이든 그 판에서 끝난다 */
+let pendingRental: string[] = [];
 
 function guided(level: LevelDef): boolean {
   return level.id <= GUIDED_UNTIL;
@@ -162,6 +166,96 @@ function bindTipLinks(root: HTMLElement) {
       openExternal(url);
     }),
   );
+}
+
+// ---------- 친구 추천: 공유 보너스 + 초대 코드 (invite.ts) ----------
+/** 공유 글에 넣는 주소 — 스토어 주소가 정해지면 VITE_SHARE_URL 로 바꾼다 */
+const SHARE_URL: string = import.meta.env.VITE_SHARE_URL || 'https://parksang-jun.github.io/Cleaningday/';
+
+function inviteCardHtml(): string {
+  const st = getStore();
+  const done = shareClaimedToday(st);
+  return `
+    <section class="invite" data-testid="invite">
+      <span class="invite__icon">📣</span>
+      <span class="invite__body"><b>${esc(t('inviteTitle'))}</b><span class="small muted">${esc(t('inviteDesc', { c: SHARE_COINS, f: INVITE_COINS }))}</span>
+        ${st.invite?.redeemed ? '' : `<button class="link-btn small" data-act="invite-code" data-testid="invite-code">${esc(t('inviteEnter'))} ›</button>`}</span>
+      <button class="btn btn--sm btn--primary" data-act="invite-share" data-testid="invite-share">${done ? `✓ ${esc(t('inviteShareAgain'))}` : `${esc(t('inviteShare'))} +${SHARE_COINS}`}</button>
+    </section>`;
+}
+
+function bindInviteCard() {
+  app.querySelector('[data-act="invite-share"]')?.addEventListener('click', () => void shareGame());
+  app.querySelector('[data-act="invite-code"]')?.addEventListener('click', openInviteCode);
+}
+
+/** 공유 창을 연다. 앱: OS 공유 창 / 웹: 브라우저 공유 또는 글 복사. 보냈으면(취소가 아니면) true */
+async function openShare(text: string): Promise<boolean> {
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const { Share } = await import('@capacitor/share');
+      await Share.share({ text, url: SHARE_URL, dialogTitle: t('inviteTitle') });
+      return true;
+    }
+    if (typeof navigator.share === 'function') {
+      await navigator.share({ text, url: SHARE_URL });
+      return true;
+    }
+    await navigator.clipboard.writeText(`${text} ${SHARE_URL}`);
+    toast(t('inviteCopied'));
+    return true;
+  } catch {
+    return false; // 취소했거나 공유를 열 수 없음 — 보너스 없음
+  }
+}
+
+async function shareGame() {
+  const st = getStore();
+  const code = myInviteCode(st);
+  persist();
+  track('invite_share_open', {});
+  if (!(await openShare(t('inviteMessage', { code, f: INVITE_COINS })))) return;
+  const got = claimShare(getStore());
+  persist();
+  track('invite_share', { coins: got });
+  if (got > 0) {
+    sfx.buy();
+    toast(t('inviteShared', { c: got }), 'good');
+  }
+  if (document.querySelector('.home')) renderHome();
+}
+
+function openInviteCode() {
+  modal(
+    `<h2>${esc(t('inviteEnter'))}</h2>
+    <p class="muted small">${esc(t('inviteEnterDesc', { f: INVITE_COINS }))}</p>
+    <input class="invite__input" data-testid="invite-input" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC2345">
+    <p class="invite__msg small" data-el="msg" data-testid="invite-msg"></p>
+    <div class="btn-row"><button class="btn btn--primary" data-act="ok" data-testid="invite-ok">${t('inviteRedeem')}</button><button class="btn" data-act="close">${t('close')}</button></div>
+    <p class="muted small">${esc(t('inviteMine'))}: <b data-testid="invite-mine">${esc(myInviteCode(getStore()))}</b></p>`,
+    (root, close) => {
+      persist();
+      root.querySelector('[data-act="close"]')!.addEventListener('click', close);
+      root.querySelector('[data-act="ok"]')!.addEventListener('click', () => {
+        const res = redeemInvite(getStore(), root.querySelector<HTMLInputElement>('.invite__input')!.value);
+        track('invite_redeem', { result: res });
+        if (res !== 'ok') {
+          root.querySelector('[data-el="msg"]')!.textContent = t(`inviteErr_${res}`);
+          return;
+        }
+        persist();
+        sfx.buy();
+        close();
+        toast(t('inviteRedeemed', { c: INVITE_COINS }), 'good');
+        if (document.querySelector('.home')) renderHome();
+      });
+    },
+  );
+}
+
+/** 아직 없는 프로 장비·세제 전부 — "별 3개 재도전"에서 한 판만 빌려준다 (판에 맞는 것만 도구 칸에 나온다) */
+function rentableGear(): string[] {
+  return items.filter((e) => !e.sponsor && e.spec.premium && e.spec.cost > 0 && !owns(e.spec.id)).map((e) => e.spec.id);
 }
 
 /** 랭킹(모은 별 총합) 화면 — Game Center / Play 게임. 로그인이 안 되면 안내만 한다 */
@@ -331,6 +425,7 @@ function renderHome() {
         ${nextAreaGoalHtml()}
         ${(st.progress.winStreak ?? 0) >= 2 ? `<p class="goal goal--streak" data-testid="home-streak">🔥 ${esc(t('streakHome', { n: st.progress.winStreak!, p: Math.round(streakBonus(st.progress.winStreak! + 1) * 100) }))}</p>` : ''}
       </section>
+      ${inviteCardHtml()}
       ${todayCardHtml()}
       ${WORLDS.map(worldCard).join('')}
       ${adminEnabled() ? `<p class="center"><button class="link-btn small" data-act="admin" data-testid="admin-entry">🛠 ${t('adminEntry')}</button></p>` : ''}
@@ -344,6 +439,7 @@ function renderHome() {
   app.querySelectorAll<HTMLButtonElement>('.area').forEach((b) => b.addEventListener('click', () => (b.dataset.gated ? openGate() : renderArea(b.dataset.area!))));
   app.querySelector('[data-act="gate"]')?.addEventListener('click', openGate);
   bindTodayCard();
+  bindInviteCard();
   if (bonus) {
     const base = bonus.coins - (bonus.comeback ? COMEBACK_COINS : 0);
     const line = bonus.booster ? t('dailyBonusBooster', { c: base, d: bonus.streak, b: t(`booster_${bonus.booster}_short`) }) : t('dailyBonus', { c: base, d: bonus.streak });
@@ -1021,9 +1117,12 @@ function startLevel(id: number) {
   };
   // 결과 화면·홈 LIVE 에서 예약한 "다음 판 체험" — 이 판에 쓰이는 제품만 소비하고 나머지는 다음 판으로 이월
   for (const id of pendingTrials) if (findItem(id, items)) game.trials.add(id);
+  const rented = pendingRental.filter((id) => findItem(id, items));
+  pendingRental = [];
+  for (const id of rented) game.trials.add(id);
   game.kit = stageKit(session);
   pendingTrials = pendingTrials.filter((id) => !game!.kit.has(id));
-  for (const id of pendingTrials) game.trials.delete(id);
+  for (const id of pendingTrials) if (!rented.includes(id)) game.trials.delete(id);
   renderToolbar();
   renderer.setSession(session);
   // 남은 오염 고리가 처음 뜰 때 한 번 알려 준다
@@ -2106,6 +2205,7 @@ function failLevel(reason: 'time' | 'ruined' = 'time') {
   if (tips.length) track('fail_tips', { level: g.level.id, run: failRun, reason });
   const tipsHtml = tips.length ? `<div class="failtips" data-testid="fail-tips"><b>💡 ${esc(t('failTipsTitle'))}</b><ul>${tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
   const failGear = failDirt && g.level.id > 3 ? premiumFor(failDirt, mainSurfaceOf(failDirt) as SurfaceType, [...getStore().owned, ...g.trials]) : null;
+  const offerSkip = canOfferSkip(stf, g.level.id, failRun, LEVELS.length);
   modal(
     `<div class="result" data-testid="fail">
       <h2>${reason === 'ruined' ? `💔 ${t('ruinedTitle')}` : `⏱ ${t('failTitle')}`}</h2>
@@ -2114,6 +2214,8 @@ function failLevel(reason: 'time' | 'ruined' = 'time') {
       ${tipsHtml}
       ${reason === 'ruined' ? '' : `<button class="btn btn--ad btn--block" data-act="extend" data-testid="extend">${t('extendAd')}</button><button class="btn btn--block" data-act="extend-coins" data-testid="extend-coins" ${getStore().coins < CONTINUE_COINS ? 'disabled' : ''}>${esc(t('extendCoins', { c: CONTINUE_COINS, s: BOOSTERS.time.amount }))}</button>`}
       ${failGear ? `<p class="result__gear" data-testid="fail-gear">${iconFor(failGear.spec.base)} ${esc(t('gearLine_fail', { item: t(`item_${failGear.spec.base}`), dirt: t(`dirt_${failGear.dirt}`), x: failGear.x }))} <button class="link-btn small" data-act="fail-shop">${t('shop')} ›</button></p>` : ''}
+      ${failGear ? `<button class="btn btn--block" data-act="rent" data-testid="fail-rent" data-rent="${failGear.spec.id}" ${getStore().coins < RENT_COINS ? 'disabled' : ''}>🧰 ${esc(t('rentRetry', { item: t(`item_${failGear.spec.base}`), c: RENT_COINS }))}</button>` : ''}
+      ${offerSkip ? `<button class="btn btn--block" data-act="skip" data-testid="fail-skip" ${getStore().coins < SKIP_COINS ? 'disabled' : ''}>⏭ ${esc(t('skipStage', { c: SKIP_COINS }))}</button>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry" data-testid="fail-retry">${t('retry')}</button><button class="btn" data-act="menu">${t('menu')}</button></div>
       ${adSkipHtml()}
     </div>`,
@@ -2148,6 +2250,32 @@ function failLevel(reason: 'time' | 'ruined' = 'time') {
         }
         sfx.buy();
         close();
+      });
+      // 코인으로 장비 하나를 빌려 같은 판을 다시 한다 (그 판에서만 쓰인다)
+      root.querySelector('[data-act="rent"]')?.addEventListener('click', async () => {
+        if (!failGear || !spend(getStore(), RENT_COINS)) return;
+        persist();
+        sfx.buy();
+        track('coin_rent', { level: g.level.id, item: failGear.spec.id, coins: RENT_COINS });
+        pendingRental = [failGear.spec.id];
+        close();
+        breakStreak();
+        const id = g.level.id;
+        await ads.maybeShowInterstitial();
+        startLevel(id);
+      });
+      // 코인으로 이 판을 건너뛴다 — 별은 없고 다음 판만 열린다
+      root.querySelector('[data-act="skip"]')?.addEventListener('click', () => {
+        const id = g.level.id;
+        if (!skipStage(getStore(), id, failRun, LEVELS.length)) return;
+        persist();
+        sfx.buy();
+        track('coin_skip', { level: id, coins: SKIP_COINS });
+        close();
+        breakStreak();
+        toast(t('skipped'), 'good');
+        if (stageOpen(id + 1)) startLevel(id + 1);
+        else renderArea(g.level.area);
       });
       root.querySelector('[data-act="retry"]')!.addEventListener('click', async () => {
         close();
@@ -2348,6 +2476,8 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
   const recordBadge = extra?.record ? `<p class="result__record" data-testid="new-record">🏅 ${esc(t('newRecord', { s: r.timeSec }))}</p>` : '';
   const confetti = r.stars === 3 ? `<div class="confetti" aria-hidden="true">${Array.from({ length: 26 }, (_, i) => `<i style="left:${(i * 37) % 100}%;animation-delay:${(i % 9) * 0.07}s;background:hsl(${(i * 47) % 360} 85% 60%)"></i>`).join('')}</div>` : '';
   const hasNext = level.id < LEVELS.length && stageOpen(level.id + 1);
+  // 별이 모자라고, 빌려줄 프로 장비가 남아 있을 때만 (튜토리얼 판 제외)
+  const starRetry = r.stars < 3 && level.id > 3 && rentableGear().length > 0;
   // 다음 판이 별 관문 뒤에 있으면 "다음" 대신 강화·다시 하기로 이끈다
   const gateLeft = level.id < LEVELS.length ? gateShort(level.id + 1) : 0;
   const mainDirt = level.patches[0]?.type;
@@ -2392,6 +2522,7 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
       <button class="btn btn--ad btn--block" data-act="double" data-testid="double">${t('doubleAd')}</button>
       ${hasNext ? `<button class="btn btn--primary btn--block" data-act="next" data-testid="next">${t('next')}</button>` : ''}
       ${gateLeft > 0 ? `<button class="btn btn--primary btn--block" data-act="gate-result" data-testid="result-gate">🔒 ${esc(t('gateResult', { n: gateLeft }))}</button>` : ''}
+      ${starRetry ? `<button class="btn btn--block" data-act="star-retry" data-testid="star-retry" ${getStore().coins < STAR_RETRY_COINS ? 'disabled' : ''}>⭐ ${esc(t('starRetry', { c: STAR_RETRY_COINS }))}</button>` : ''}
       <div class="btn-row"><button class="btn" data-act="retry">${t('retry')}</button><button class="btn" data-act="menu" data-testid="to-menu">${t('menu')}</button></div>
       ${adSkipHtml()}
       ${hostCard}${showMall ? mallCard : ''}
@@ -2428,6 +2559,15 @@ function showResult(level: LevelDef, timing: Timing, r: Result, discoveries: Gam
         }),
       );
       root.querySelector('[data-act="retry"]')!.addEventListener('click', () => after(() => startLevel(level.id)));
+      // 별 3개 재도전: 아직 없는 프로 장비를 전부 한 판만 빌려 같은 판을 다시 한다
+      root.querySelector('[data-act="star-retry"]')?.addEventListener('click', () => {
+        if (!spend(getStore(), STAR_RETRY_COINS)) return;
+        persist();
+        sfx.buy();
+        track('coin_star_retry', { level: level.id, stars: r.stars, coins: STAR_RETRY_COINS });
+        pendingRental = rentableGear();
+        void after(() => startLevel(level.id));
+      });
       root.querySelector('[data-act="menu"]')!.addEventListener('click', () => after(() => renderArea(level.area)));
       root.querySelector<HTMLAnchorElement>('[data-mall]')?.addEventListener('click', (e) => {
         e.preventDefault();
@@ -2953,6 +3093,7 @@ declare global {
       mixes: () => string[];
       used: () => string[];
       coins: () => number;
+      inviteCode: () => string;
       selected: () => string | null;
       clearAll: () => void;
       setUnlocked: (n: number, stars?: number) => void;
@@ -3022,6 +3163,7 @@ function exposeDebug() {
     mixes: () => [...(game?.mixes ?? [])],
     used: () => [...(game?.used ?? [])],
     coins: () => getStore().coins,
+    inviteCode: () => newInviteCode(),
     boosters: () => ({ ...getStore().boosters }),
     selected: () => game?.selected ?? null,
     clearAll: () => {
